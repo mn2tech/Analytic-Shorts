@@ -13,13 +13,27 @@ const app = express()
 const PORT = process.env.PORT || 5000
 
 // Middleware
-// CORS configuration - allow all origins in development, restrict in production
+// CORS configuration - allow all origins (can be restricted in production)
 const corsOptions = {
-  origin: process.env.ALLOWED_ORIGINS 
-    ? process.env.ALLOWED_ORIGINS.split(',')
-    : '*', // Allow all in development, set ALLOWED_ORIGINS in production
+  origin: function (origin, callback) {
+    // Allow requests with no origin (mobile apps, Postman, etc.)
+    if (!origin) return callback(null, true)
+    
+    // In production, you can restrict to specific origins
+    const allowedOrigins = process.env.ALLOWED_ORIGINS 
+      ? process.env.ALLOWED_ORIGINS.split(',')
+      : ['*'] // Allow all in development
+    
+    if (allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+      callback(null, true)
+    } else {
+      callback(new Error('Not allowed by CORS'))
+    }
+  },
   credentials: true,
-  optionsSuccessStatus: 200
+  optionsSuccessStatus: 200,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }
 app.use(cors(corsOptions))
 app.use(express.json())
