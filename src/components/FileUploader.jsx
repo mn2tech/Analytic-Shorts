@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react'
-import axios from 'axios'
+import apiClient from '../config/api'
 
 function FileUploader({ onUploadSuccess, onError }) {
   const [isDragging, setIsDragging] = useState(false)
@@ -25,7 +25,7 @@ function FileUploader({ onUploadSuccess, onError }) {
     formData.append('file', file)
 
     try {
-      const response = await axios.post('/api/upload', formData, {
+      const response = await apiClient.post('/api/upload', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },

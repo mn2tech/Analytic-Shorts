@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import axios from 'axios'
+import apiClient from '../config/api'
 
 function ExampleDatasetButton({ onDatasetLoad, onError }) {
   const [loadingDataset, setLoadingDataset] = useState(null)
@@ -30,7 +30,7 @@ function ExampleDatasetButton({ onDatasetLoad, onError }) {
   const loadExample = async (endpoint, datasetName) => {
     setLoadingDataset(datasetName)
     try {
-      const response = await axios.get(endpoint)
+      const response = await apiClient.get(endpoint)
       if (response.data && response.data.data) {
         onDatasetLoad(response.data)
       } else {

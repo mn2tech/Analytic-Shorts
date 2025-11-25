@@ -3,7 +3,7 @@ frontend:
   phases:
     preBuild:
       commands:
-        - npm install
+        - npm ci
     build:
       commands:
         - npm run build
@@ -14,4 +14,40 @@ frontend:
   cache:
     paths:
       - node_modules/**/*
+      - .vite/**/*
+  customHeaders:
+    - pattern: '**/*'
+      headers:
+        - key: 'X-Content-Type-Options'
+          value: 'nosniff'
+        - key: 'X-Frame-Options'
+          value: 'DENY'
+        - key: 'X-XSS-Protection'
+          value: '1; mode=block'
+        - key: 'Strict-Transport-Security'
+          value: 'max-age=31536000; includeSubDomains'
+    - pattern: '/sw.js'
+      headers:
+        - key: 'Cache-Control'
+          value: 'public, max-age=0, must-revalidate'
+    - pattern: '**/*.js'
+      headers:
+        - key: 'Cache-Control'
+          value: 'public, max-age=31536000, immutable'
+    - pattern: '**/*.css'
+      headers:
+        - key: 'Cache-Control'
+          value: 'public, max-age=31536000, immutable'
+    - pattern: '**/*.png'
+      headers:
+        - key: 'Cache-Control'
+          value: 'public, max-age=31536000, immutable'
+    - pattern: '**/*.svg'
+      headers:
+        - key: 'Cache-Control'
+          value: 'public, max-age=31536000, immutable'
+  customRedirects:
+    - source: '/<*>'
+      target: '/index.html'
+      status: '200'
 

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import axios from 'axios'
+import apiClient from '../config/api'
 
 function AIInsights({ data, columns, totalRows, stats }) {
   const [insights, setInsights] = useState(null)
@@ -24,7 +24,7 @@ function AIInsights({ data, columns, totalRows, stats }) {
     try {
       // Send filtered data (limit to 1000 rows for API performance, but analyze all filtered rows)
       const dataToAnalyze = data.length > 1000 ? data.slice(0, 1000) : data
-      const response = await axios.post('/api/insights', {
+      const response = await apiClient.post('/api/insights', {
         data: dataToAnalyze,
         columns: columns,
         isFiltered: totalRows !== data.length, // Indicate if this is filtered data
