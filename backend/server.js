@@ -41,7 +41,13 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'NM2TECH Analytics Shorts API is running' })
 })
 
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`)
-})
+// Only start server if not running in Lambda
+if (!process.env.LAMBDA_TASK_ROOT) {
+  app.listen(PORT, () => {
+    console.log(`🚀 Server running on http://localhost:${PORT}`)
+  })
+}
+
+// Export for Lambda
+module.exports = app
 
