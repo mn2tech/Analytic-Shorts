@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Icon Generator</title>
+</head>
+<body>
+  <h1>PWA Icon Generator</h1>
+  <p>Open this file in a browser and right-click each canvas to save as PNG</p>
+  
+  <canvas id="icon192" width="192" height="192"></canvas>
+  <canvas id="icon512" width="512" height="512"></canvas>
+  
+  <script>
+    function drawIcon(canvas, size) {
+      const ctx = canvas.getContext('2d');
+      
+      // Create gradient background
+      const gradient = ctx.createLinearGradient(0, 0, size, size);
+      gradient.addColorStop(0, '#3b82f6');
+      gradient.addColorStop(1, '#8b5cf6');
+      
+      // Draw rounded rectangle
+      const radius = size * 0.2;
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      ctx.moveTo(radius, 0);
+      ctx.lineTo(size - radius, 0);
+      ctx.quadraticCurveTo(size, 0, size, radius);
+      ctx.lineTo(size, size - radius);
+      ctx.quadraticCurveTo(size, size, size - radius, size);
+      ctx.lineTo(radius, size);
+      ctx.quadraticCurveTo(0, size, 0, size - radius);
+      ctx.lineTo(0, radius);
+      ctx.quadraticCurveTo(0, 0, radius, 0);
+      ctx.closePath();
+      ctx.fill();
+      
+      // Draw "N" letter
+      ctx.fillStyle = 'white';
+      ctx.font = `bold ${size * 0.4}px Arial`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('N', size / 2, size / 2);
+    }
+    
+    const canvas192 = document.getElementById('icon192');
+    const canvas512 = document.getElementById('icon512');
+    
+    drawIcon(canvas192, 192);
+    drawIcon(canvas512, 512);
+    
+    // Add download links
+    canvas192.onclick = () => {
+      const link = document.createElement('a');
+      link.download = 'icon-192.png';
+      link.href = canvas192.toDataURL();
+      link.click();
+    };
+    
+    canvas512.onclick = () => {
+      const link = document.createElement('a');
+      link.download = 'icon-512.png';
+      link.href = canvas512.toDataURL();
+      link.click();
+    };
+    
+    console.log('Click on each canvas to download the icon');
+  </script>
+</body>
+</html>
+
