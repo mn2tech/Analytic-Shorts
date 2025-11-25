@@ -55,6 +55,42 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'NM2TECH Analytics Shorts API is running' })
 })
 
+// Root route
+app.get('/', (req, res) => {
+  res.json({
+    message: 'NM2TECH Analytics Shorts API',
+    version: '1.0.0',
+    endpoints: {
+      health: 'GET /api/health',
+      upload: 'POST /api/upload',
+      insights: 'POST /api/insights',
+      examples: {
+        sales: 'GET /api/example/sales',
+        attendance: 'GET /api/example/attendance',
+        donations: 'GET /api/example/donations',
+        medical: 'GET /api/example/medical'
+      }
+    }
+  })
+})
+
+// Catch-all route for undefined endpoints
+app.use((req, res) => {
+  res.status(404).json({
+    error: 'Route not found',
+    message: `Cannot ${req.method} ${req.path}`,
+    availableEndpoints: [
+      'GET /api/health',
+      'POST /api/upload',
+      'POST /api/insights',
+      'GET /api/example/sales',
+      'GET /api/example/attendance',
+      'GET /api/example/donations',
+      'GET /api/example/medical'
+    ]
+  })
+})
+
 // Only start server if not running in Lambda
 if (!process.env.LAMBDA_TASK_ROOT) {
   app.listen(PORT, () => {
