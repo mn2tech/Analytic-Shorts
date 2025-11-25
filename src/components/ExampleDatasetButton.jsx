@@ -38,7 +38,11 @@ function ExampleDatasetButton({ onDatasetLoad, onError }) {
       }
     } catch (error) {
       console.error('Error loading dataset:', error)
-      onError(error.response?.data?.error || error.message || 'Failed to load example dataset. Please check if the backend server is running.')
+      if (error.code === 'ERR_NETWORK' || error.message?.includes('Network Error')) {
+        onError('Cannot connect to backend server. Please ensure the API is running and VITE_API_URL is configured in Amplify environment variables.')
+      } else {
+        onError(error.response?.data?.error || error.message || 'Failed to load example dataset. Please check if the backend server is running.')
+      }
     } finally {
       setLoadingDataset(null)
     }

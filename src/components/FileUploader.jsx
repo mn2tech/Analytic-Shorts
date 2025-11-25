@@ -32,7 +32,12 @@ function FileUploader({ onUploadSuccess, onError }) {
       })
       onUploadSuccess(response.data)
     } catch (error) {
-      onError(error.response?.data?.error || 'Failed to upload file')
+      console.error('Upload error:', error)
+      if (error.code === 'ERR_NETWORK' || error.message?.includes('Network Error')) {
+        onError('Cannot connect to backend server. Please ensure the API is running and VITE_API_URL is configured.')
+      } else {
+        onError(error.response?.data?.error || error.message || 'Failed to upload file. Please check your connection and try again.')
+      }
     } finally {
       setIsUploading(false)
     }
