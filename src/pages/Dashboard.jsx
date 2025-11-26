@@ -31,6 +31,7 @@ function Dashboard() {
   const [dashboardTitle, setDashboardTitle] = useState('Analytics Dashboard')
   // Store the sidebar-filtered data separately
   const [sidebarFilteredData, setSidebarFilteredData] = useState(null)
+  const [isFullscreen, setIsFullscreen] = useState(false)
 
   useEffect(() => {
     const storedData = sessionStorage.getItem('analyticsData')
@@ -249,6 +250,21 @@ function Dashboard() {
 
   const stats = calculateStats()
 
+  const toggleFullscreen = () => {
+    setIsFullscreen(!isFullscreen)
+  }
+
+  // Handle ESC key to exit fullscreen
+  useEffect(() => {
+    const handleEsc = (event) => {
+      if (event.key === 'Escape' && isFullscreen) {
+        setIsFullscreen(false)
+      }
+    }
+    window.addEventListener('keydown', handleEsc)
+    return () => window.removeEventListener('keydown', handleEsc)
+  }, [isFullscreen])
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50">
@@ -283,6 +299,105 @@ function Dashboard() {
   const currentDate = new Date()
   const monthYear = currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
 
+  // Fullscreen content
+  if (isFullscreen) {
+    return (
+      <div className="fixed inset-0 bg-white z-50 overflow-auto">
+        {/* Fullscreen Header */}
+        <div className="sticky top-0 bg-white border-b border-gray-200 z-10 shadow-sm">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900 mb-1">
+                  {dashboardTitle}
+                </h1>
+                <p className="text-sm text-gray-600">
+                  {filteredData?.length || 0} records • {columns.length} columns
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setDashboardView(dashboardView === 'advanced' ? 'simple' : 'advanced')}
+                  className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50 transition-colors"
+                >
+                  {dashboardView === 'advanced' ? 'Simple View' : 'Advanced View'}
+                </button>
+                <button
+                  onClick={toggleFullscreen}
+                  className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors font-medium text-sm flex items-center gap-2"
+                  title="Exit Fullscreen (ESC)"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                  Exit Fullscreen
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Fullscreen Content */}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          {/* Active Filter Indicator */}
+          {chartFilter && (
+            <div className="mb-4 flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <div className="flex items-center space-x-2">
+                <span className="text-sm font-medium text-blue-900">
+                  Filtered by: <span className="font-semibold">
+                    {chartFilter.type === 'category' ? chartFilter.value : 
+                     chartFilter.type === 'date' ? new Date(chartFilter.value).toLocaleDateString() : ''}
+                  </span>
+                </span>
+              </div>
+              <button
+                onClick={clearChartFilter}
+                className="text-sm text-blue-700 hover:text-blue-900 font-medium px-3 py-1 rounded hover:bg-blue-100 transition-colors"
+              >
+                Clear Filter
+              </button>
+            </div>
+          )}
+
+          {/* Charts Section */}
+          {dashboardView === 'advanced' ? (
+            <AdvancedDashboard
+              data={data}
+              filteredData={filteredData}
+              selectedNumeric={selectedNumeric}
+              selectedCategorical={selectedCategorical}
+              selectedDate={selectedDate}
+              onChartFilter={handleChartFilter}
+              chartFilter={chartFilter}
+              categoricalColumns={categoricalColumns}
+            />
+          ) : (
+            <>
+              <DashboardCharts
+                data={data}
+                filteredData={filteredData}
+                selectedNumeric={selectedNumeric}
+                selectedCategorical={selectedCategorical}
+                selectedDate={selectedDate}
+                onChartFilter={handleChartFilter}
+                chartFilter={chartFilter}
+              />
+              {/* Metric Cards - Only in simple view */}
+              {dashboardView === 'simple' && (
+                <MetricCards
+                  data={filteredData}
+                  numericColumns={numericColumns}
+                  selectedNumeric={selectedNumeric}
+                  stats={stats}
+                />
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
@@ -306,6 +421,16 @@ function Dashboard() {
             </p>
           </div>
           <div className="flex items-center gap-2 mt-2 sm:mt-0">
+            <button
+              onClick={toggleFullscreen}
+              className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50 transition-colors flex items-center gap-2"
+              title="Enter Fullscreen"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+              </svg>
+              Fullscreen
+            </button>
             <button
               onClick={() => setDashboardView(dashboardView === 'advanced' ? 'simple' : 'advanced')}
               className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50 transition-colors"
