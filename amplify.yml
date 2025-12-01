@@ -8,8 +8,8 @@ frontend:
       commands:
         - npm run build
   environment:
-    # Backend API URL via Cloudflare Tunnel
-    VITE_API_URL: https://drawing-grounds-adaptor-advertisers.trycloudflare.com
+    # Backend API URL - Production domain
+    VITE_API_URL: https://api.nm2tech-sas.com
   artifacts:
     baseDirectory: dist
     files:
