@@ -58,3 +58,5 @@ function TreemapChart({ data, selectedCategorical, selectedNumeric }) {
 
 export default TreemapChart
 
+
+

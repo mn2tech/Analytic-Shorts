@@ -80,3 +80,5 @@ curl https://your-backend-url.com/api/health
 
 Should return: `{"status":"ok","message":"NM2TECH Analytics Shorts API is running"}`
 
+
+

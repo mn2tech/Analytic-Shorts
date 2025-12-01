@@ -35,3 +35,5 @@ console.log('⚠️  Note: For production, convert these to PNG format.');
 console.log('   You can use online tools like: https://convertio.co/svg-png/');
 console.log('   Or install sharp: npm install sharp --save-dev');
 
+
+

@@ -8,6 +8,9 @@ require('dotenv').config()
 const uploadRoutes = require('./routes/upload')
 const insightsRoutes = require('./routes/insights')
 const exampleRoutes = require('./routes/examples')
+const dashboardRoutes = require('./routes/dashboards')
+const subscriptionRoutes = require('./routes/subscription')
+const webhookRoutes = require('./routes/webhook')
 
 const app = express()
 const PORT = process.env.PORT || 5000
@@ -36,6 +39,8 @@ const corsOptions = {
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }
 app.use(cors(corsOptions))
+// Webhook route must be before JSON parsing (Stripe needs raw body)
+app.use('/api/subscription/webhook', express.raw({ type: 'application/json' }), webhookRoutes)
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 
@@ -49,6 +54,8 @@ if (!fs.existsSync(uploadsDir)) {
 app.use('/api/upload', uploadRoutes)
 app.use('/api/insights', insightsRoutes)
 app.use('/api/example', exampleRoutes)
+app.use('/api/dashboards', dashboardRoutes)
+app.use('/api/subscription', subscriptionRoutes)
 
 // Health check
 app.get('/api/health', (req, res) => {

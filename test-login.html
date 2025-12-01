@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Supabase Login</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <h1>Test Supabase Login</h1>
+    <div id="status"></div>
+    <form id="loginForm">
+        <div>
+            <label>Email:</label>
+            <input type="email" id="email" required>
+        </div>
+        <div>
+            <label>Password:</label>
+            <input type="password" id="password" required>
+        </div>
+        <button type="submit">Test Login</button>
+    </form>
+    <div id="result"></div>
+
+    <script>
+        // Get Supabase credentials from environment (you'll need to fill these in)
+        const SUPABASE_URL = prompt('Enter your VITE_SUPABASE_URL:') || '';
+        const SUPABASE_ANON_KEY = prompt('Enter your VITE_SUPABASE_ANON_KEY:') || '';
+
+        if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+            document.getElementById('status').innerHTML = '<p style="color: red;">Please set SUPABASE_URL and SUPABASE_ANON_KEY</p>';
+        } else {
+            const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+            document.getElementById('status').innerHTML = '<p style="color: green;">Supabase client initialized</p>';
+
+            document.getElementById('loginForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const email = document.getElementById('email').value.trim();
+                const password = document.getElementById('password').value;
+
+                const resultDiv = document.getElementById('result');
+                resultDiv.innerHTML = '<p>Attempting login...</p>';
+
+                try {
+                    const { data, error } = await supabase.auth.signInWithPassword({
+                        email: email,
+                        password: password
+                    });
+
+                    if (error) {
+                        resultDiv.innerHTML = `
+                            <h3 style="color: red;">Login Failed</h3>
+                            <p><strong>Error Message:</strong> ${error.message}</p>
+                            <p><strong>Error Status:</strong> ${error.status || 'N/A'}</p>
+                            <p><strong>Error Name:</strong> ${error.name || 'N/A'}</p>
+                            <pre>${JSON.stringify(error, null, 2)}</pre>
+                        `;
+                    } else {
+                        resultDiv.innerHTML = `
+                            <h3 style="color: green;">Login Successful!</h3>
+                            <p><strong>User ID:</strong> ${data.user?.id}</p>
+                            <p><strong>Email:</strong> ${data.user?.email}</p>
+                            <p><strong>Email Confirmed:</strong> ${data.user?.email_confirmed_at ? 'Yes' : 'No'}</p>
+                            <p><strong>Has Session:</strong> ${data.session ? 'Yes' : 'No'}</p>
+                            <pre>${JSON.stringify(data, null, 2)}</pre>
+                        `;
+                    }
+                } catch (err) {
+                    resultDiv.innerHTML = `
+                        <h3 style="color: red;">Exception Thrown</h3>
+                        <p><strong>Error:</strong> ${err.message}</p>
+                        <pre>${JSON.stringify(err, null, 2)}</pre>
+                    `;
+                }
+            });
+        }
+    </script>
+</body>
+</html>
+
+

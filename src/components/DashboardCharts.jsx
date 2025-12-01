@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import ChartInsights from './ChartInsights'
 
 const COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444', '#6366f1', '#14b8a6']
 
 function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategorical, selectedDate, onChartFilter, chartFilter }) {
   const [hoveredSegment, setHoveredSegment] = useState(null)
+  const [chartInsights, setChartInsights] = useState(null)
   
   // Use filteredData for display, but data for pie chart calculations (to show all categories)
   const displayData = filteredData || data
@@ -77,6 +79,52 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
   const pieData = preparePieChartData()
   const totalValue = pieData.reduce((sum, item) => sum + item.value, 0)
 
+  const handleChartClick = (chartType, chartData, chartTitle) => {
+    // Convert chart data back to original row format for insights
+    let dataForInsights = []
+    if (chartType === 'line') {
+      // For line charts, use the original rows if available, otherwise reconstruct
+      chartData.forEach(item => {
+        if (item.originalRow) {
+          dataForInsights.push(item.originalRow)
+        } else {
+          // Reconstruct row from chart data
+          const row = {}
+          if (selectedDate) row[selectedDate] = item.date || item.name
+          if (selectedNumeric) row[selectedNumeric] = item.value
+          dataForInsights.push(row)
+        }
+      })
+      // If we don't have enough data, use the full filtered dataset
+      if (dataForInsights.length === 0) {
+        dataForInsights = displayData || data || []
+      }
+    } else if (chartType === 'pie') {
+      // For pie chart, get the original rows that match each category shown
+      if (selectedCategorical && selectedNumeric && data) {
+        const categories = chartData.map(item => item.name)
+        dataForInsights = data.filter(row => 
+          categories.includes(row[selectedCategorical])
+        )
+      }
+      // Fallback to filtered data if no matches
+      if (dataForInsights.length === 0) {
+        dataForInsights = displayData || data || []
+      }
+    }
+    
+    if (dataForInsights.length > 0) {
+      setChartInsights({
+        chartType,
+        chartData: dataForInsights,
+        chartTitle,
+        selectedNumeric,
+        selectedCategorical,
+        selectedDate
+      })
+    }
+  }
+
   // Format date for display
   const formatDate = (dateStr) => {
     if (!dateStr) return ''
@@ -86,20 +134,34 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
   }
 
   return (
+    <>
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
       {/* Line Chart */}
-      <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200 hover:shadow-md transition-shadow">
+      <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200 hover:shadow-md transition-shadow relative group">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-semibold text-gray-900">
             {selectedNumeric || 'Value'} {selectedDate ? 'Over Time' : ''}
           </h3>
-          {lineData.length > 0 && (
-            <div className="text-right">
-              <p className="text-2xl font-bold text-gray-900">
-                {lineData.reduce((sum, item) => sum + (item.value || 0), 0).toLocaleString()}
-              </p>
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            {lineData.length > 0 && (
+              <div className="text-right">
+                <p className="text-2xl font-bold text-gray-900">
+                  {lineData.reduce((sum, item) => sum + (item.value || 0), 0).toLocaleString()}
+                </p>
+              </div>
+            )}
+            {lineData.length > 0 && (
+              <button
+                onClick={() => handleChartClick('line', lineData, `${selectedNumeric || 'Value'} ${selectedDate ? 'Over Time' : ''}`)}
+                className="opacity-0 group-hover:opacity-100 transition-opacity p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg"
+                title="Get AI insights for this chart"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                </svg>
+              </button>
+            )}
+          </div>
         </div>
         {lineData.length > 0 ? (
           <ResponsiveContainer width="100%" height={300}>
@@ -174,11 +236,22 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
       </div>
 
       {/* Pie/Donut Chart */}
-      <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200 hover:shadow-md transition-shadow">
+      <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200 hover:shadow-md transition-shadow relative group">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-semibold text-gray-900">
             {selectedCategorical || 'Distribution'}
           </h3>
+          {pieData.length > 0 && (
+            <button
+              onClick={() => handleChartClick('pie', pieData, `Distribution by ${selectedCategorical || 'Category'}`)}
+              className="opacity-0 group-hover:opacity-100 transition-opacity p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg"
+              title="Get AI insights for this chart"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+              </svg>
+            </button>
+          )}
         </div>
         {pieData.length > 0 ? (
           <div className="flex items-center gap-6">
@@ -279,6 +352,18 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
         )}
       </div>
     </div>
+    {chartInsights && (
+      <ChartInsights
+        chartData={chartInsights.chartData}
+        chartType={chartInsights.chartType}
+        chartTitle={chartInsights.chartTitle}
+        selectedNumeric={chartInsights.selectedNumeric}
+        selectedCategorical={chartInsights.selectedCategorical}
+        selectedDate={chartInsights.selectedDate}
+        onClose={() => setChartInsights(null)}
+      />
+    )}
+    </>
   )
 }
 

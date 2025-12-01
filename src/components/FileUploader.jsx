@@ -33,8 +33,34 @@ function FileUploader({ onUploadSuccess, onError }) {
       onUploadSuccess(response.data)
     } catch (error) {
       console.error('Upload error:', error)
-      if (error.code === 'ERR_NETWORK' || error.message?.includes('Network Error')) {
-        onError('Cannot connect to backend server. Please ensure the API is running and VITE_API_URL is configured.')
+      if (error.code === 'ERR_NETWORK' || error.message?.includes('Network Error') || error.code === 'ECONNREFUSED') {
+        const isProduction = import.meta.env.PROD
+        const hasApiUrl = import.meta.env.VITE_API_URL
+        
+        let errorMessage = 'Cannot connect to backend server.\n\n'
+        
+        if (isProduction && !hasApiUrl) {
+          errorMessage += '⚠️ VITE_API_URL is not configured in Amplify.\n\n'
+          errorMessage += 'To fix this:\n'
+          errorMessage += '1. Go to AWS Amplify Console\n'
+          errorMessage += '2. App settings → Environment variables\n'
+          errorMessage += '3. Add: VITE_API_URL = your backend URL\n'
+          errorMessage += '4. Redeploy the app\n\n'
+          errorMessage += 'Example: https://your-backend-url.com'
+        } else if (isProduction && hasApiUrl) {
+          errorMessage += 'The backend server may be down or unreachable.\n\n'
+          errorMessage += `Current API URL: ${import.meta.env.VITE_API_URL}\n\n`
+          errorMessage += 'Please verify:\n'
+          errorMessage += '1. Backend server is running\n'
+          errorMessage += '2. Backend URL is correct\n'
+          errorMessage += '3. CORS is configured properly'
+        } else {
+          errorMessage += 'Please ensure:\n'
+          errorMessage += '1. Backend server is running (npm run server)\n'
+          errorMessage += '2. Backend is accessible at http://localhost:5000'
+        }
+        
+        onError(errorMessage)
       } else {
         onError(error.response?.data?.error || error.message || 'Failed to upload file. Please check your connection and try again.')
       }

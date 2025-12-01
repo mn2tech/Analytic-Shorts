@@ -7,7 +7,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.ico', 'icon-192.png', 'icon-512.png'],
+      includeAssets: ['favicon.ico'],
       manifest: {
         name: 'NM2TECH Analytics Shorts',
         short_name: 'Analytics Shorts',
@@ -20,15 +20,15 @@ export default defineConfig({
         start_url: '/',
         icons: [
           {
-            src: '/icon-192.png',
+            src: '/icon-192.svg',
             sizes: '192x192',
-            type: 'image/png',
+            type: 'image/svg+xml',
             purpose: 'any maskable'
           },
           {
-            src: '/icon-512.png',
+            src: '/icon-512.svg',
             sizes: '512x512',
-            type: 'image/png',
+            type: 'image/svg+xml',
             purpose: 'any maskable'
           }
         ],
@@ -38,7 +38,7 @@ export default defineConfig({
             short_name: 'Upload',
             description: 'Upload a new CSV or Excel file',
             url: '/',
-            icons: [{ src: '/icon-192.png', sizes: '192x192' }]
+            icons: [{ src: '/icon-192.svg', sizes: '192x192' }]
           }
         ]
       },
@@ -77,6 +77,7 @@ export default defineConfig({
   ],
   server: {
     port: 3000,
+    host: '0.0.0.0', // Listen on all interfaces to allow external access
     proxy: {
       '/api': {
         target: 'http://localhost:5000',

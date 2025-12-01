@@ -1,17 +1,89 @@
 const express = require('express')
 const OpenAI = require('openai')
+const { createClient } = require('@supabase/supabase-js')
+const { checkInsightLimit } = require('../middleware/usageLimits')
 require('dotenv').config()
 
 const router = express.Router()
+
+// Initialize Supabase for authentication (optional)
+const supabaseUrl = process.env.SUPABASE_URL
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+// Validate URL before creating client
+let supabase = null
+if (supabaseUrl && supabaseServiceKey) {
+  try {
+    // Basic URL validation
+    if (supabaseUrl.startsWith('http://') || supabaseUrl.startsWith('https://')) {
+      supabase = createClient(supabaseUrl, supabaseServiceKey, {
+        auth: {
+          persistSession: false
+        }
+      })
+    } else {
+      console.warn('Invalid Supabase URL format. Insight tracking will not work.')
+    }
+  } catch (error) {
+    console.warn('Error initializing Supabase client:', error.message)
+  }
+}
+
+if (!supabase) {
+  console.warn('Supabase not configured. Insight tracking will not work.')
+}
+
+// Middleware to get user from JWT token (optional)
+const getUserFromToken = async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization
+
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      req.user = null
+      return next()
+    }
+
+    const token = authHeader.split(' ')[1]
+
+    if (!supabase || !token) {
+      req.user = null
+      return next()
+    }
+
+    const { data, error } = await supabase.auth.getUser(token)
+
+    if (error || !data || !data.user) {
+      req.user = null
+      return next()
+    }
+
+    req.user = data.user
+    next()
+  } catch (error) {
+    req.user = null
+    next()
+  }
+}
 
 // Initialize OpenAI (optional - can work without it)
 const openai = process.env.OPENAI_API_KEY
   ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
   : null
 
-router.post('/', async (req, res) => {
+// Insights route with optional auth and usage limits
+router.post('/', getUserFromToken, async (req, res, next) => {
+  // If user is authenticated, check usage limits
+  if (req.user && req.user.id) {
+    const allowed = await checkInsightLimit(req, res, null)
+    if (!allowed) {
+      // Limit check failed, response already sent
+      return
+    }
+  }
+  if (next) next()
+}, async (req, res) => {
   try {
-    const { data, columns, isFiltered, totalRows, filteredRows, analyzedRows, stats } = req.body
+    const { data, columns, isFiltered, totalRows, filteredRows, analyzedRows, stats, chartContext, chartType, forecastData, historicalData, trend } = req.body
 
     if (!data || !Array.isArray(data) || data.length === 0) {
       return res.status(400).json({ error: 'Invalid data provided' })
@@ -26,6 +98,71 @@ router.post('/', async (req, res) => {
       ? `\n\nIMPORTANT: This is a FILTERED subset of the original dataset. The original dataset had ${totalRows} rows, but you are analyzing ${filteredRows} filtered rows (showing ${analyzedCount} rows in the sample). All insights should be based ONLY on this filtered data, not the original full dataset.`
       : analyzedCount < filteredRows
       ? `\n\nNote: Analyzing ${analyzedCount} rows from a dataset of ${filteredRows} total rows.`
+      : ''
+
+    // Add chart-specific context if provided
+    const chartSpecificContext = chartContext 
+      ? `\n\nCHART CONTEXT: ${chartContext}Focus your analysis specifically on what this chart is showing. Provide insights that are relevant to this particular visualization.`
+      : ''
+
+    // Add forecast-specific context if available
+    let forecastContext = ''
+    if (chartType === 'forecast' && forecastData && historicalData && trend) {
+      const lastHistorical = historicalData[historicalData.length - 1]
+      const firstForecast = forecastData[0]
+      const lastForecast = forecastData[forecastData.length - 1]
+      const changePercent = lastHistorical && firstForecast
+        ? ((firstForecast.value - lastHistorical.value) / lastHistorical.value * 100).toFixed(1)
+        : '0'
+      
+      const overallChange = lastHistorical && lastForecast
+        ? ((lastForecast.value - lastHistorical.value) / lastHistorical.value * 100).toFixed(1)
+        : '0'
+      
+      forecastContext = `\n\nFORECAST ANALYSIS - EXPLAIN IN SIMPLE TERMS:
+- Historical data points: ${historicalData.length}
+- Forecast periods: ${forecastData.length}
+- Trend direction: ${trend.direction} (confidence: ${(trend.confidence * 100).toFixed(1)}%)
+- Last historical value: ${lastHistorical?.value.toLocaleString()}
+- First forecast value: ${firstForecast?.value.toLocaleString()} (${changePercent > 0 ? '+' : ''}${changePercent}% change)
+- Final forecast value: ${lastForecast?.value.toLocaleString()} (${overallChange > 0 ? '+' : ''}${overallChange}% total change)
+- Forecast trend slope: ${trend.slope > 0 ? '+' : ''}${trend.slope.toFixed(4)}
+
+IMPORTANT: Explain the forecast in SIMPLE, NON-TECHNICAL language that anyone can understand. Structure your response as follows:
+
+1. **What This Forecast Means (Simple Explanation)**: 
+   - Explain in plain language what the forecast is predicting
+   - Use simple analogies if helpful (e.g., "like predicting tomorrow's weather based on today's patterns")
+   - Explain what the ${selectedNumeric} values mean in practical terms
+
+2. **Current Prediction Summary**:
+   - Is the forecast showing improvement, decline, or stability?
+   - What does the ${trend.direction} trend mean in simple terms?
+   - How confident is this prediction? (${(trend.confidence * 100).toFixed(1)}% confidence)
+
+3. **What You Can Do to Make It More Positive** (Actionable Recommendations):
+   - Provide 3-5 specific, actionable steps to improve the forecasted outcomes
+   - Base recommendations on the data patterns you see
+   - Make suggestions practical and achievable
+   - Focus on what actions could shift the trend in a positive direction
+   - Consider what factors might influence ${selectedNumeric} based on the data context
+
+4. **Key Takeaways**:
+   - What should the user focus on most?
+   - What are the biggest opportunities or risks?
+
+Write in a friendly, conversational tone. Avoid jargon. Make it feel like you're explaining to a friend.`
+    }
+
+    // Add chart type specific guidance
+    const chartTypeGuidance = chartType === 'forecast'
+      ? 'CRITICAL: For forecast charts, you MUST explain everything in simple terms and provide actionable steps to improve outcomes. Focus on: 1) Simple explanation of what the forecast means, 2) What the prediction shows, 3) Specific actionable steps to make it more positive, 4) Key takeaways. Write conversationally, avoid technical jargon.'
+      : chartType === 'line'
+      ? 'Focus on trends over time, identify patterns, peaks, valleys, and any notable changes in the time series.'
+      : chartType === 'pie'
+      ? 'Focus on the distribution and proportions. Identify which categories dominate, which are underrepresented, and any notable imbalances.'
+      : chartType === 'bar'
+      ? 'Focus on comparisons between categories. Identify top performers, outliers, and any significant differences between categories.'
       : ''
 
     // Add summary statistics context
@@ -44,7 +181,30 @@ Please explain what these numbers mean in the context of the filtered dataset. E
     if (openai) {
       // Use OpenAI for AI insights
       try {
-        const prompt = `Analyze this dataset and provide 3-5 short, actionable insights. Be concise and specific. Focus on trends, patterns, and notable findings.${filterContext}${statsContext}
+        // Special formatting for forecast charts
+        const isForecastChart = chartType === 'forecast'
+        const basePrompt = isForecastChart
+          ? `You are analyzing a forecast/prediction chart. Your task is to explain the forecast in SIMPLE TERMS and provide actionable recommendations to improve outcomes.${filterContext}${chartSpecificContext}${forecastContext}${chartTypeGuidance ? `\n\n${chartTypeGuidance}` : ''}${statsContext}
+
+Columns: ${columns.join(', ')}
+Analyzing ${analyzedCount} rows from the filtered dataset.
+Sample data (first 15 rows):
+${JSON.stringify(data.slice(0, 15), null, 2)}
+
+IMPORTANT: 
+- Explain everything in SIMPLE, NON-TECHNICAL language
+- Provide SPECIFIC, ACTIONABLE steps to make the forecast more positive
+- Structure your response with clear sections as requested
+- Write conversationally, like explaining to a friend
+- Focus on practical recommendations based on the data patterns
+
+${statsContext ? 'Make sure to include explanations of the Sum, Average, and Trend values in your insights.' : ''}
+
+Provide insights in this format (one per line, no numbering):
+- Insight 1
+- Insight 2
+- Insight 3`
+          : `Analyze this dataset and provide 3-5 short, actionable insights. Be concise and specific. Focus on trends, patterns, and notable findings.${filterContext}${chartSpecificContext}${forecastContext}${chartTypeGuidance ? `\n\n${chartTypeGuidance}` : ''}${statsContext}
 
 Columns: ${columns.join(', ')}
 Analyzing ${analyzedCount} rows from the filtered dataset.
@@ -59,6 +219,8 @@ Provide insights in this format (one per line, no numbering):
 - Insight 1
 - Insight 2
 - Insight 3`
+
+        const prompt = basePrompt
 
         const completion = await openai.chat.completions.create({
           model: 'gpt-3.5-turbo',

@@ -5,8 +5,70 @@ const fs = require('fs')
 const Papa = require('papaparse')
 const XLSX = require('xlsx')
 const { detectColumnTypes, processData } = require('../controllers/dataProcessor')
+const { createClient } = require('@supabase/supabase-js')
+const { checkUploadLimit } = require('../middleware/usageLimits')
 
 const router = express.Router()
+
+// Initialize Supabase for authentication (optional - upload can work without auth)
+const supabaseUrl = process.env.SUPABASE_URL
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+// Validate URL before creating client
+let supabase = null
+if (supabaseUrl && supabaseServiceKey) {
+  try {
+    // Basic URL validation
+    if (supabaseUrl.startsWith('http://') || supabaseUrl.startsWith('https://')) {
+      supabase = createClient(supabaseUrl, supabaseServiceKey, {
+        auth: {
+          persistSession: false
+        }
+      })
+    } else {
+      console.warn('Invalid Supabase URL format. Upload tracking will not work.')
+    }
+  } catch (error) {
+    console.warn('Error initializing Supabase client:', error.message)
+  }
+}
+
+if (!supabase) {
+  console.warn('Supabase not configured. Upload tracking will not work.')
+}
+
+// Middleware to get user from JWT token (optional - allows anonymous uploads)
+const getUserFromToken = async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization
+
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      // No auth - allow but don't track usage
+      req.user = null
+      return next()
+    }
+
+    const token = authHeader.split(' ')[1]
+
+    if (!supabase || !token) {
+      req.user = null
+      return next()
+    }
+
+    const { data, error } = await supabase.auth.getUser(token)
+
+    if (error || !data || !data.user) {
+      req.user = null
+      return next()
+    }
+
+    req.user = data.user
+    next()
+  } catch (error) {
+    req.user = null
+    next() // Continue without auth
+  }
+}
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -42,7 +104,18 @@ const upload = multer({
   },
 })
 
-router.post('/', upload.single('file'), async (req, res) => {
+// Upload route with optional auth and usage limits
+router.post('/', getUserFromToken, upload.single('file'), async (req, res, next) => {
+  // If user is authenticated, check usage limits
+  if (req.user && req.user.id) {
+    const allowed = await checkUploadLimit(req, res, null)
+    if (!allowed) {
+      // Limit check failed, response already sent
+      return
+    }
+  }
+  next() // Continue to file processing
+}, async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' })
@@ -102,4 +175,5 @@ router.post('/', upload.single('file'), async (req, res) => {
 })
 
 module.exports = router
+
 

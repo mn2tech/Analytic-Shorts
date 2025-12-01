@@ -7,3 +7,5 @@ module.exports.handler = serverless(app, {
   binary: ['image/*', 'application/pdf', 'application/zip']
 })
 
+
+

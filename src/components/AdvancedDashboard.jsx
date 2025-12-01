@@ -1,10 +1,13 @@
 import { useState } from 'react'
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import SunburstChart from './SunburstChart'
+import ForecastChart from './ForecastChart'
+import ChartInsights from './ChartInsights'
 
 const COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444', '#6366f1', '#14b8a6', '#f97316', '#06b6d4']
 
 function AdvancedDashboard({ data, filteredData, selectedNumeric, selectedCategorical, selectedDate, onChartFilter, chartFilter, categoricalColumns }) {
+  const [chartInsights, setChartInsights] = useState(null)
   // Auto-select a secondary category for hierarchical view (use second categorical column if available)
   const secondaryCategory = categoricalColumns && categoricalColumns.length > 1 
     ? categoricalColumns.find(col => col !== selectedCategorical) || categoricalColumns[1]
@@ -106,15 +109,56 @@ function AdvancedDashboard({ data, filteredData, selectedNumeric, selectedCatego
     }
   }
 
+  const handleChartClick = (chartType, chartData, chartTitle) => {
+    // Convert chart data back to original row format for insights
+    let dataForInsights = []
+    if (chartType === 'line') {
+      dataForInsights = filteredData || data
+    } else if (chartType === 'pie' || chartType === 'bar') {
+      // For pie/bar charts, get rows matching the categories shown
+      if (selectedCategorical && selectedNumeric) {
+        const categories = chartData.map(item => item.name)
+        dataForInsights = (filteredData || data).filter(row => 
+          categories.includes(row[selectedCategorical])
+        )
+      }
+    }
+    
+    if (dataForInsights.length > 0) {
+      setChartInsights({
+        chartType,
+        chartData: dataForInsights,
+        chartTitle,
+        selectedNumeric,
+        selectedCategorical,
+        selectedDate
+      })
+    }
+  }
+
   return (
+    <>
     <div className="space-y-6">
       {/* Top Row - 2 Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Chart 1: Line Chart */}
-        <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">
-            {selectedNumeric || 'Value'} Over Time
-          </h3>
+        <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200 relative group">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">
+              {selectedNumeric || 'Value'} Over Time
+            </h3>
+            {lineData.length > 0 && (
+              <button
+                onClick={() => handleChartClick('line', lineData, `${selectedNumeric || 'Value'} Over Time`)}
+                className="opacity-0 group-hover:opacity-100 transition-opacity p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg"
+                title="Get AI insights for this chart"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                </svg>
+              </button>
+            )}
+          </div>
           {lineData.length > 0 ? (
             <ResponsiveContainer width="100%" height={300}>
               <LineChart data={lineData}>
@@ -180,10 +224,23 @@ function AdvancedDashboard({ data, filteredData, selectedNumeric, selectedCatego
         </div>
 
         {/* Chart 2: Sunburst/Donut with Legend */}
-        <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">
-            Distribution by {selectedCategorical || 'Category'}
-          </h3>
+        <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200 relative group">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">
+              Distribution by {selectedCategorical || 'Category'}
+            </h3>
+            {donutData.length > 0 && (
+              <button
+                onClick={() => handleChartClick('pie', donutData, `Distribution by ${selectedCategorical || 'Category'}`)}
+                className="opacity-0 group-hover:opacity-100 transition-opacity p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg"
+                title="Get AI insights for this chart"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                </svg>
+              </button>
+            )}
+          </div>
           {donutData.length > 0 ? (
             <div className="flex items-center gap-6">
               <div className="relative flex-1" style={{ maxWidth: '300px' }}>
@@ -331,16 +388,24 @@ function AdvancedDashboard({ data, filteredData, selectedNumeric, selectedCatego
         </div>
 
         {/* Chart 5: Bar Chart */}
-        <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
+        <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200 relative group">
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-lg font-semibold text-gray-900">
               {selectedCategorical || 'Category'} Comparison
             </h3>
-            <button className="text-gray-400 hover:text-gray-600 transition-colors">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-            </button>
+            <div className="flex items-center gap-2">
+              {barData.length > 0 && (
+                <button
+                  onClick={() => handleChartClick('bar', barData, `${selectedCategorical || 'Category'} Comparison`)}
+                  className="opacity-0 group-hover:opacity-100 transition-opacity p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg"
+                  title="Get AI insights for this chart"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                  </svg>
+                </button>
+              )}
+            </div>
           </div>
           {barData.length > 0 ? (
             <ResponsiveContainer width="100%" height={300}>
@@ -384,7 +449,31 @@ function AdvancedDashboard({ data, filteredData, selectedNumeric, selectedCatego
           )}
         </div>
       </div>
+
+      {/* Forecast Chart - Only show if date and numeric columns are selected */}
+      {selectedDate && selectedNumeric && (
+        <div className="mt-6">
+          <ForecastChart
+            data={filteredData || data}
+            selectedNumeric={selectedNumeric}
+            selectedDate={selectedDate}
+            forecastPeriods={6}
+          />
+        </div>
+      )}
     </div>
+    {chartInsights && (
+      <ChartInsights
+        chartData={chartInsights.chartData}
+        chartType={chartInsights.chartType}
+        chartTitle={chartInsights.chartTitle}
+        selectedNumeric={chartInsights.selectedNumeric}
+        selectedCategorical={chartInsights.selectedCategorical}
+        selectedDate={chartInsights.selectedDate}
+        onClose={() => setChartInsights(null)}
+      />
+    )}
+    </>
   )
 }
 
