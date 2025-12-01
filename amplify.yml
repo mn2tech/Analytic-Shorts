@@ -7,6 +7,9 @@ frontend:
     build:
       commands:
         - npm run build
+  environment:
+    # Backend API URL via Cloudflare Tunnel
+    VITE_API_URL: https://drawing-grounds-adaptor-advertisers.trycloudflare.com
   artifacts:
     baseDirectory: dist
     files:
