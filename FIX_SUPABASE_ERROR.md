@@ -16,7 +16,7 @@ Make sure `backend/.env` exists and has:
 
 ```env
 PORT=5000
-STRIPE_SECRET_KEY=sk_test_51RilIPCAL4InIKRQHV5dojJeHkbDZWmUCI8wNw92VTSIOqKiHNCuFrbPk1dX0VD4TajuAMFs3gB1PrmKva61Sw4200508lsk6x
+STRIPE_SECRET_KEY=sk_test_your_stripe_secret_key_here
 SUPABASE_URL=https://your-project-id.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your_service_role_key_here
 FRONTEND_URL=http://localhost:3000

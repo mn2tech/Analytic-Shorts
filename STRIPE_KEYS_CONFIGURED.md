@@ -2,8 +2,8 @@
 
 ## What You Have Now
 
-✅ **Publishable Key:** `pk_test_51RilIPCAL4InIKRQU4d6lOMScYKSWGA7SSAO7DGwgnGujTkH8T8urHpgwpehvLbdUKShSbk0dutiYQCJF2zHp0PK008JO9uWsj`
-✅ **Secret Key:** `sk_test_51RilIPCAL4InIKRQHV5dojJeHkbDZWmUCI8wNw92VTSIOqKiHNCuFrbPk1dX0VD4TajuAMFs3gB1PrmKva61Sw4200508lsk6x`
+✅ **Publishable Key:** `pk_test_your_stripe_publishable_key_here`
+✅ **Secret Key:** `sk_test_your_stripe_secret_key_here`
 
 ## 📝 Next Steps
 
@@ -13,7 +13,7 @@ Create a file named `.env` in the `backend` folder with this content:
 
 ```env
 PORT=5000
-STRIPE_SECRET_KEY=sk_test_51RilIPCAL4InIKRQHV5dojJeHkbDZWmUCI8wNw92VTSIOqKiHNCuFrbPk1dX0VD4TajuAMFs3gB1PrmKva61Sw4200508lsk6x
+STRIPE_SECRET_KEY=sk_test_your_stripe_secret_key_here
 SUPABASE_URL=your_supabase_project_url
 SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 FRONTEND_URL=http://localhost:3000
@@ -27,7 +27,7 @@ ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
 Create a file named `.env.local` in the root folder with:
 
 ```env
-VITE_STRIPE_PUBLISHABLE_KEY=pk_test_51RilIPCAL4InIKRQU4d6lOMScYKSWGA7SSAO7DGwgnGujTkH8T8urHpgwpehvLbdUKShSbk0dutiYQCJF2zHp0PK008JO9uWsj
+VITE_STRIPE_PUBLISHABLE_KEY=pk_test_your_stripe_publishable_key_here
 VITE_STRIPE_PRO_PRICE_ID=price_pro_monthly
 VITE_STRIPE_ENTERPRISE_PRICE_ID=price_enterprise_monthly
 VITE_API_URL=http://localhost:5000
