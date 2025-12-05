@@ -221,3 +221,5 @@ CREATE TRIGGER on_auth_user_created_shorts
   EXECUTE FUNCTION create_default_shorts_user();
 
 
+
+

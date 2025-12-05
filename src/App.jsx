@@ -8,6 +8,9 @@ import Dashboard from './pages/Dashboard'
 import SharedDashboard from './pages/SharedDashboard'
 import MyDashboards from './pages/MyDashboards'
 import Pricing from './pages/Pricing'
+import Help from './pages/Help'
+import Privacy from './pages/Privacy'
+import Terms from './pages/Terms'
 
 function App() {
   return (
@@ -17,6 +20,9 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/pricing" element={<Pricing />} />
+        <Route path="/help" element={<Help />} />
+        <Route path="/privacy" element={<Privacy />} />
+        <Route path="/terms" element={<Terms />} />
         <Route
           path="/dashboards"
           element={

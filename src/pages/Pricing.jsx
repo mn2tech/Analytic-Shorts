@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Navbar from '../components/Navbar'
+import Footer from '../components/Footer'
 import { PLANS } from '../config/pricing'
 import { createCheckoutSession } from '../services/subscriptionService'
 import { useAuth } from '../contexts/AuthContext'
@@ -47,7 +48,7 @@ function Pricing() {
     setLoading({ [planId]: true })
 
     try {
-      const { url } = await createCheckoutSession(plan.priceId)
+      const { url } = await createCheckoutSession(plan.priceId, plan.image)
       if (!url) {
         throw new Error('No checkout URL returned')
       }
@@ -90,7 +91,10 @@ function Pricing() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 watermark-bg relative">
+      {/* Analytics Watermark Pattern */}
+      <div className="analytics-watermark"></div>
+      <div className="analytics-watermark-icons"></div>
       <Navbar />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         {/* Header */}
@@ -238,6 +242,7 @@ function Pricing() {
           </div>
         </div>
       </div>
+      <Footer />
     </div>
   )
 }

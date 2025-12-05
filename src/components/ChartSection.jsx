@@ -24,6 +24,30 @@ function ChartSection({ data, numericColumns, categoricalColumns, dateColumns, s
     }
   }
 
+  const downloadChartAsPDF = async (chartId) => {
+    const chartElement = document.getElementById(chartId)
+    if (!chartElement) return
+
+    try {
+      const canvas = await html2canvas(chartElement, { scale: 2, useCORS: true })
+      const imgData = canvas.toDataURL('image/png')
+      
+      const pdf = new jsPDF('landscape', 'mm', 'a4')
+      const imgWidth = 297 // A4 landscape width in mm
+      const imgHeight = (canvas.height * imgWidth) / canvas.width
+      
+      // Center the image
+      const xOffset = 0
+      const yOffset = (210 - imgHeight) / 2 // Center vertically
+      
+      pdf.addImage(imgData, 'PNG', xOffset, yOffset, imgWidth, imgHeight)
+      pdf.save(`${chartId}-chart.pdf`)
+    } catch (error) {
+      console.error('Error exporting chart to PDF:', error)
+      alert('Error exporting chart to PDF. Please try again.')
+    }
+  }
+
   const prepareChartData = () => {
     if (!data || data.length === 0) return []
 
@@ -78,12 +102,20 @@ function ChartSection({ data, numericColumns, categoricalColumns, dateColumns, s
       <div className="bg-white rounded-lg shadow-md p-6" id="bar-chart" ref={chartRef}>
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-semibold text-gray-900">Bar Chart</h3>
-          <button
-            onClick={() => downloadChartAsPNG('bar-chart')}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
-          >
-            Download PNG
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => downloadChartAsPNG('bar-chart')}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+            >
+              PNG
+            </button>
+            <button
+              onClick={() => downloadChartAsPDF('bar-chart')}
+              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm"
+            >
+              PDF
+            </button>
+          </div>
         </div>
         <ResponsiveContainer width="100%" height={300}>
           <BarChart data={chartData}>
@@ -101,12 +133,20 @@ function ChartSection({ data, numericColumns, categoricalColumns, dateColumns, s
       <div className="bg-white rounded-lg shadow-md p-6" id="line-chart">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-semibold text-gray-900">Line Chart</h3>
-          <button
-            onClick={() => downloadChartAsPNG('line-chart')}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
-          >
-            Download PNG
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => downloadChartAsPNG('line-chart')}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+            >
+              PNG
+            </button>
+            <button
+              onClick={() => downloadChartAsPDF('line-chart')}
+              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm"
+            >
+              PDF
+            </button>
+          </div>
         </div>
         <ResponsiveContainer width="100%" height={300}>
           <LineChart data={chartData}>
@@ -125,12 +165,20 @@ function ChartSection({ data, numericColumns, categoricalColumns, dateColumns, s
         <div className="bg-white rounded-lg shadow-md p-6" id="pie-chart">
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-lg font-semibold text-gray-900">Pie Chart</h3>
-            <button
-              onClick={() => downloadChartAsPNG('pie-chart')}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
-            >
-              Download PNG
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => downloadChartAsPNG('pie-chart')}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+              >
+                PNG
+              </button>
+              <button
+                onClick={() => downloadChartAsPDF('pie-chart')}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm"
+              >
+                PDF
+              </button>
+            </div>
           </div>
           <ResponsiveContainer width="100%" height={300}>
             <PieChart>
@@ -158,6 +206,8 @@ function ChartSection({ data, numericColumns, categoricalColumns, dateColumns, s
 }
 
 export default ChartSection
+
+
 
 
 

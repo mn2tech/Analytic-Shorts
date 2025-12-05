@@ -145,3 +145,5 @@ If you need help, share:
 I've created `test-login.html` - you can open it in a browser to test Supabase login directly without the React app. This helps isolate if the issue is with the app or Supabase configuration.
 
 
+
+

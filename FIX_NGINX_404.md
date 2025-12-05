@@ -28,3 +28,5 @@ sudo nginx -T | grep -A 10 "server {"
 
 Let's see what's actually configured and fix it.
 
+
+

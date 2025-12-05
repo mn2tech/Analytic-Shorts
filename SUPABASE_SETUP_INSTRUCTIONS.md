@@ -126,3 +126,5 @@ Once authentication is working:
 - Supabase Discord: https://discord.supabase.com
 
 
+
+

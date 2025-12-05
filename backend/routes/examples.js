@@ -135,6 +135,70 @@ const exampleDatasets = {
       { Date: '2024-02-23', 'Patient ID': 'P050', Department: 'Dermatology', Diagnosis: 'Allergy', Age: 20, 'Blood Pressure (mmHg)': '119/77', 'Heart Rate (bpm)': 75, 'Temperature (°F)': 98.7, 'Treatment Cost ($)': 190, Medication: 'Antihistamine', 'Visit Duration (min)': 15, Status: 'Completed' },
     ],
   },
+  banking: {
+    data: [
+      { Date: '2024-01-01', 'Account': 'Business Checking', 'Transaction Type': 'Revenue', Category: 'Sales', Description: 'Client Payment - Project Alpha', Amount: 12500, Balance: 12500, Status: 'Completed' },
+      { Date: '2024-01-02', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Office Supplies', Description: 'Printer Paper & Ink', Amount: -245.50, Balance: 12254.50, Status: 'Completed' },
+      { Date: '2024-01-03', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Software', Description: 'Adobe Creative Suite Subscription', Amount: -52.99, Balance: 12201.51, Status: 'Completed' },
+      { Date: '2024-01-04', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Utilities', Description: 'Office Electricity Bill', Amount: -350.00, Balance: 11851.51, Status: 'Completed' },
+      { Date: '2024-01-05', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Marketing', Description: 'Google Ads Campaign', Amount: -850.00, Balance: 11001.51, Status: 'Completed' },
+      { Date: '2024-01-06', 'Account': 'Business Checking', 'Transaction Type': 'Revenue', Category: 'Sales', Description: 'Client Payment - Project Beta', Amount: 8900, Balance: 19901.51, Status: 'Completed' },
+      { Date: '2024-01-07', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Travel', Description: 'Client Meeting - Transportation', Amount: -125.00, Balance: 19776.51, Status: 'Completed' },
+      { Date: '2024-01-08', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Software', Description: 'Cloud Hosting Service', Amount: -199.99, Balance: 19576.52, Status: 'Completed' },
+      { Date: '2024-01-09', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Office Supplies', Description: 'Office Furniture', Amount: -450.00, Balance: 19126.52, Status: 'Completed' },
+      { Date: '2024-01-10', 'Account': 'Business Checking', 'Transaction Type': 'Revenue', Category: 'Sales', Description: 'Client Payment - Project Gamma', Amount: 15000, Balance: 34126.52, Status: 'Completed' },
+      { Date: '2024-01-11', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Payroll', Description: 'Employee Salary - January', Amount: -8500.00, Balance: 25626.52, Status: 'Completed' },
+      { Date: '2024-01-12', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Marketing', Description: 'Social Media Ads', Amount: -650.00, Balance: 24976.52, Status: 'Completed' },
+      { Date: '2024-01-13', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Professional Services', Description: 'Legal Consultation', Amount: -1200.00, Balance: 23776.52, Status: 'Completed' },
+      { Date: '2024-01-14', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Software', Description: 'CRM Software License', Amount: -89.99, Balance: 23686.53, Status: 'Completed' },
+      { Date: '2024-01-15', 'Account': 'Business Checking', 'Transaction Type': 'Revenue', Category: 'Sales', Description: 'Recurring Subscription Revenue', Amount: 3200, Balance: 26886.53, Status: 'Completed' },
+      { Date: '2024-01-16', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Office Supplies', Description: 'Computer Equipment', Amount: -1850.00, Balance: 25036.53, Status: 'Completed' },
+      { Date: '2024-01-17', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Rent', Description: 'Office Rent - January', Amount: -2500.00, Balance: 22536.53, Status: 'Completed' },
+      { Date: '2024-01-18', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Marketing', Description: 'Email Marketing Platform', Amount: -79.99, Balance: 22456.54, Status: 'Completed' },
+      { Date: '2024-01-19', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Travel', Description: 'Business Conference Registration', Amount: -850.00, Balance: 21606.54, Status: 'Completed' },
+      { Date: '2024-01-20', 'Account': 'Business Checking', 'Transaction Type': 'Revenue', Category: 'Sales', Description: 'Client Payment - Project Delta', Amount: 11200, Balance: 32806.54, Status: 'Completed' },
+      { Date: '2024-01-21', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Professional Services', Description: 'Accounting Services', Amount: -450.00, Balance: 32356.54, Status: 'Completed' },
+      { Date: '2024-01-22', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Utilities', Description: 'Internet & Phone Service', Amount: -195.00, Balance: 32161.54, Status: 'Completed' },
+      { Date: '2024-01-23', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Office Supplies', Description: 'Stationery & Supplies', Amount: -125.50, Balance: 32036.04, Status: 'Completed' },
+      { Date: '2024-01-24', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Marketing', Description: 'Content Creation Tools', Amount: -299.99, Balance: 31736.05, Status: 'Completed' },
+      { Date: '2024-01-25', 'Account': 'Business Checking', 'Transaction Type': 'Revenue', Category: 'Sales', Description: 'Client Payment - Project Epsilon', Amount: 9800, Balance: 41536.05, Status: 'Completed' },
+      { Date: '2024-01-26', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Software', Description: 'Project Management Tool', Amount: -149.99, Balance: 41386.06, Status: 'Completed' },
+      { Date: '2024-01-27', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Travel', Description: 'Client Site Visit - Travel', Amount: -425.00, Balance: 40961.06, Status: 'Completed' },
+      { Date: '2024-01-28', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Professional Services', Description: 'Tax Preparation Services', Amount: -850.00, Balance: 40111.06, Status: 'Completed' },
+      { Date: '2024-01-29', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Marketing', Description: 'Website Hosting & Domain', Amount: -89.99, Balance: 40021.07, Status: 'Completed' },
+      { Date: '2024-01-30', 'Account': 'Business Checking', 'Transaction Type': 'Revenue', Category: 'Sales', Description: 'Recurring Subscription Revenue', Amount: 3200, Balance: 43221.07, Status: 'Completed' },
+      { Date: '2024-01-31', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Office Supplies', Description: 'Monthly Office Supplies', Amount: -185.75, Balance: 43035.32, Status: 'Completed' },
+      { Date: '2024-02-01', 'Account': 'Business Checking', 'Transaction Type': 'Revenue', Category: 'Sales', Description: 'Client Payment - Project Zeta', Amount: 14500, Balance: 57535.32, Status: 'Completed' },
+      { Date: '2024-02-02', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Marketing', Description: 'Google Ads Campaign', Amount: -950.00, Balance: 56585.32, Status: 'Completed' },
+      { Date: '2024-02-03', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Software', Description: 'Design Software License', Amount: -79.99, Balance: 56505.33, Status: 'Completed' },
+      { Date: '2024-02-04', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Utilities', Description: 'Office Electricity Bill', Amount: -375.00, Balance: 56130.33, Status: 'Completed' },
+      { Date: '2024-02-05', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Marketing', Description: 'LinkedIn Ads Campaign', Amount: -650.00, Balance: 55480.33, Status: 'Completed' },
+      { Date: '2024-02-06', 'Account': 'Business Checking', 'Transaction Type': 'Revenue', Category: 'Sales', Description: 'Client Payment - Project Eta', Amount: 10200, Balance: 65680.33, Status: 'Completed' },
+      { Date: '2024-02-07', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Software', Description: 'Cloud Storage Service', Amount: -199.99, Balance: 65480.34, Status: 'Completed' },
+      { Date: '2024-02-08', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Office Supplies', Description: 'Office Equipment Maintenance', Amount: -325.00, Balance: 65155.34, Status: 'Completed' },
+      { Date: '2024-02-09', 'Account': 'Business Checking', 'Transaction Type': 'Revenue', Category: 'Sales', Description: 'Client Payment - Project Theta', Amount: 16800, Balance: 81955.34, Status: 'Completed' },
+      { Date: '2024-02-10', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Payroll', Description: 'Employee Salary - February', Amount: -8500.00, Balance: 73455.34, Status: 'Completed' },
+      { Date: '2024-02-11', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Marketing', Description: 'Facebook Ads Campaign', Amount: -750.00, Balance: 72705.34, Status: 'Completed' },
+      { Date: '2024-02-12', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Professional Services', Description: 'Legal Document Review', Amount: -550.00, Balance: 72155.34, Status: 'Completed' },
+      { Date: '2024-02-13', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Travel', Description: 'Business Trip - Accommodation', Amount: -650.00, Balance: 71505.34, Status: 'Completed' },
+      { Date: '2024-02-14', 'Account': 'Business Checking', 'Transaction Type': 'Revenue', Category: 'Sales', Description: 'Recurring Subscription Revenue', Amount: 3200, Balance: 74705.34, Status: 'Completed' },
+      { Date: '2024-02-15', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Software', Description: 'Analytics Tool Subscription', Amount: -149.99, Balance: 74555.35, Status: 'Completed' },
+      { Date: '2024-02-16', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Office Supplies', Description: 'New Office Furniture', Amount: -2200.00, Balance: 72355.35, Status: 'Completed' },
+      { Date: '2024-02-17', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Rent', Description: 'Office Rent - February', Amount: -2500.00, Balance: 69855.35, Status: 'Completed' },
+      { Date: '2024-02-18', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Marketing', Description: 'SEO Tools Subscription', Amount: -199.99, Balance: 69655.36, Status: 'Completed' },
+      { Date: '2024-02-19', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Travel', Description: 'Client Meeting - Transportation', Amount: -145.00, Balance: 69510.36, Status: 'Completed' },
+      { Date: '2024-02-20', 'Account': 'Business Checking', 'Transaction Type': 'Revenue', Category: 'Sales', Description: 'Client Payment - Project Iota', Amount: 13200, Balance: 82710.36, Status: 'Completed' },
+      { Date: '2024-02-21', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Professional Services', Description: 'Consulting Services', Amount: -1200.00, Balance: 81510.36, Status: 'Completed' },
+      { Date: '2024-02-22', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Utilities', Description: 'Internet & Phone Service', Amount: -195.00, Balance: 81315.36, Status: 'Completed' },
+      { Date: '2024-02-23', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Office Supplies', Description: 'Office Supplies Restock', Amount: -225.50, Balance: 81089.86, Status: 'Completed' },
+      { Date: '2024-02-24', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Marketing', Description: 'Video Production Tools', Amount: -450.00, Balance: 80639.86, Status: 'Completed' },
+      { Date: '2024-02-25', 'Account': 'Business Checking', 'Transaction Type': 'Revenue', Category: 'Sales', Description: 'Client Payment - Project Kappa', Amount: 11500, Balance: 92139.86, Status: 'Completed' },
+      { Date: '2024-02-26', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Software', Description: 'Security Software License', Amount: -299.99, Balance: 91839.87, Status: 'Completed' },
+      { Date: '2024-02-27', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Travel', Description: 'Industry Conference - Registration', Amount: -1200.00, Balance: 90639.87, Status: 'Completed' },
+      { Date: '2024-02-28', 'Account': 'Business Checking', 'Transaction Type': 'Expense', Category: 'Professional Services', Description: 'Financial Advisory Services', Amount: -650.00, Balance: 89989.87, Status: 'Completed' },
+      { Date: '2024-02-29', 'Account': 'Business Checking', 'Transaction Type': 'Revenue', Category: 'Sales', Description: 'Recurring Subscription Revenue', Amount: 3200, Balance: 93189.87, Status: 'Completed' },
+    ],
+  },
 }
 
 router.get('/sales', (req, res) => {
@@ -187,6 +251,22 @@ router.get('/donations', (req, res) => {
 
 router.get('/medical', (req, res) => {
   const dataset = exampleDatasets.medical
+  const columns = Object.keys(dataset.data[0])
+  const { numericColumns, categoricalColumns, dateColumns } = detectColumnTypes(dataset.data, columns)
+  const processedData = processData(dataset.data)
+
+  res.json({
+    data: processedData,
+    columns,
+    numericColumns,
+    categoricalColumns,
+    dateColumns,
+    rowCount: processedData.length,
+  })
+})
+
+router.get('/banking', (req, res) => {
+  const dataset = exampleDatasets.banking
   const columns = Object.keys(dataset.data[0])
   const { numericColumns, categoricalColumns, dateColumns } = detectColumnTypes(dataset.data, columns)
   const processedData = processData(dataset.data)

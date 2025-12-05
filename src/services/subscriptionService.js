@@ -12,10 +12,11 @@ export const getSubscription = async () => {
 }
 
 // Create Stripe checkout session
-export const createCheckoutSession = async (priceId) => {
+export const createCheckoutSession = async (priceId, imageUrl = null) => {
   try {
     const response = await apiClient.post('/api/subscription/checkout', {
-      priceId
+      priceId,
+      imageUrl
     })
     return response.data
   } catch (error) {

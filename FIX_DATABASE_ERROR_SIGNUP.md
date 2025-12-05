@@ -138,3 +138,5 @@ AND trigger_name LIKE '%shorts%';
 This will show you what's missing.
 
 
+
+

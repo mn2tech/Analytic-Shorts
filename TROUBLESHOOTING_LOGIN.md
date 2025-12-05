@@ -205,3 +205,5 @@ If this works in console but not in the app, the issue is in the React code.
 If this doesn't work in console, the issue is with Supabase configuration.
 
 
+
+

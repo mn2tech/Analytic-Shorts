@@ -31,6 +31,7 @@ export const PLANS = {
     priceId: import.meta.env.VITE_STRIPE_PRO_PRICE_ID || 'price_pro_monthly', // Set in .env
     interval: 'month',
     description: 'For power users and small teams',
+    image: import.meta.env.VITE_PRO_PLAN_IMAGE || '/images/pro-plan.jpg', // Plan image URL (local or external)
     features: [
       'Unlimited dashboards',
       'Unlimited file uploads',
@@ -57,15 +58,16 @@ export const PLANS = {
     priceId: import.meta.env.VITE_STRIPE_ENTERPRISE_PRICE_ID || 'price_enterprise_monthly',
     interval: 'month',
     description: 'For teams and organizations',
+    image: import.meta.env.VITE_ENTERPRISE_PLAN_IMAGE || '/images/enterprise-plan.jpg', // Plan image URL (local or external)
     features: [
       'Everything in Pro',
-      'API access',
-      'White-label option',
+      'API access (Coming Soon)',
+      'White-label option (Coming Soon)',
       'Dedicated support',
-      'Custom integrations',
+      'Custom integrations (Coming Soon)',
       '500MB file sizes',
       'Unlimited AI insights',
-      'Custom branding'
+      'Custom branding (Coming Soon)'
     ],
     limits: {
       dashboards: -1, // unlimited

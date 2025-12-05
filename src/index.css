@@ -15,5 +15,91 @@ body {
   box-sizing: border-box;
 }
 
+/* Background Watermark Pattern */
+.watermark-bg {
+  position: relative;
+  overflow: hidden;
+}
+
+.watermark-bg::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  opacity: 0.06;
+  background-image: 
+    repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 80px,
+      rgba(59, 130, 246, 0.08) 80px,
+      rgba(59, 130, 246, 0.08) 160px
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      transparent,
+      transparent 80px,
+      rgba(147, 51, 234, 0.08) 80px,
+      rgba(147, 51, 234, 0.08) 160px
+    );
+  pointer-events: none;
+  z-index: 0;
+}
+
+.watermark-bg > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Analytics Chart Watermark Pattern - Geometric & Elegant */
+.analytics-watermark {
+  position: fixed;
+  width: 100%;
+  height: 100%;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.03;
+  background-image: 
+    /* Subtle grid dots pattern */
+    radial-gradient(circle, rgba(59, 130, 246, 0.15) 1px, transparent 1px),
+    radial-gradient(circle, rgba(147, 51, 234, 0.1) 1px, transparent 1px);
+  background-size: 120px 120px, 180px 180px;
+  background-position: 0 0, 60px 60px;
+  background-repeat: repeat;
+}
+
+/* Alternative: Minimal chart icons pattern */
+.analytics-watermark-icons {
+  position: fixed;
+  width: 100%;
+  height: 100%;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.025;
+  background-image: 
+    /* Single elegant bar chart */
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%233b82f6'%3E%3Crect x='3' y='16' width='3' height='4'/%3E%3Crect x='8' y='12' width='3' height='8'/%3E%3Crect x='13' y='8' width='3' height='12'/%3E%3Crect x='18' y='4' width='3' height='16'/%3E%3C/svg%3E");
+  background-size: 200px 200px;
+  background-position: 0 0;
+  background-repeat: repeat;
+  transform: rotate(-5deg);
+}
+
+/* Subtle grid pattern */
+.grid-watermark {
+  background-image: 
+    linear-gradient(rgba(59, 130, 246, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(59, 130, 246, 0.03) 1px, transparent 1px);
+  background-size: 50px 50px;
+}
+
+
+
 
 

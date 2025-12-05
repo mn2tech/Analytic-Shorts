@@ -91,8 +91,7 @@ function Filters({
     : { min: 0, max: 100 }
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-6 space-y-6 animate-slide-up">
-      <h3 className="text-lg font-semibold text-gray-900 mb-4">Filters & Columns</h3>
+    <div className="space-y-6">
 
       {/* Column Selection */}
       <div className="space-y-4">
@@ -265,6 +264,8 @@ function Filters({
 }
 
 export default Filters
+
+
 
 
 
