@@ -148,3 +148,5 @@ To test if limits work:
 The system is designed to **force upgrades** when users hit their plan limits, making the pricing plans effective for monetization.
 
 
+
+

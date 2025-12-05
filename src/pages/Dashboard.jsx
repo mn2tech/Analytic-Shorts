@@ -4,7 +4,6 @@ import Navbar from '../components/Navbar'
 import Loader from '../components/Loader'
 import DashboardCharts from '../components/DashboardCharts'
 import AdvancedDashboard from '../components/AdvancedDashboard'
-import TabNavigation from '../components/TabNavigation'
 import MetricCards from '../components/MetricCards'
 import Filters from '../components/Filters'
 import AIInsights from '../components/AIInsights'
@@ -12,6 +11,9 @@ import ForecastChart from '../components/ForecastChart'
 import { saveAs } from 'file-saver'
 import { generateShareId, saveSharedDashboard, getShareableUrl, copyToClipboard } from '../utils/shareUtils'
 import { saveDashboard, updateDashboard } from '../services/dashboardService'
+import jsPDF from 'jspdf'
+import html2canvas from 'html2canvas'
+import * as XLSX from 'xlsx'
 
 function Dashboard() {
   const navigate = useNavigate()
@@ -28,7 +30,6 @@ function Dashboard() {
   const [chartFilter, setChartFilter] = useState(null) // { type: 'category' | 'date', value: string }
   const [shareId, setShareId] = useState(null)
   const [shareLinkCopied, setShareLinkCopied] = useState(false)
-  const [activeTab, setActiveTab] = useState('Overview')
   const [dashboardView, setDashboardView] = useState('advanced') // 'advanced' or 'simple'
   const [dashboardTitle, setDashboardTitle] = useState('Analytics Dashboard')
   // Store the sidebar-filtered data separately
@@ -37,6 +38,7 @@ function Dashboard() {
   const [savedDashboardId, setSavedDashboardId] = useState(null)
   const [saving, setSaving] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
+  const [showFilters, setShowFilters] = useState(false)
 
   useEffect(() => {
     const storedData = sessionStorage.getItem('analyticsData')
@@ -144,8 +146,6 @@ function Dashboard() {
       setDashboardTitle('Analytics Dashboard')
     }
 
-    // Set initial tab to "Overview"
-    setActiveTab('Overview')
 
     // Auto-select first columns
     if (parsedData.numericColumns && parsedData.numericColumns.length > 0) {
@@ -251,6 +251,93 @@ function Dashboard() {
     const csv = [headers, ...rows].join('\n')
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
     saveAs(blob, 'analytics-summary.csv')
+  }
+
+  const downloadSummaryExcel = () => {
+    if (!filteredData || filteredData.length === 0) return
+
+    try {
+      // Prepare data for Excel
+      const excelData = filteredData.map(row => {
+        const excelRow = {}
+        columns.forEach(col => {
+          excelRow[col] = row[col] || ''
+        })
+        return excelRow
+      })
+
+      // Create workbook and worksheet
+      const worksheet = XLSX.utils.json_to_sheet(excelData)
+      const workbook = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Analytics Data')
+
+      // Generate Excel file
+      XLSX.writeFile(workbook, 'analytics-summary.xlsx')
+    } catch (error) {
+      console.error('Error exporting to Excel:', error)
+      alert('Error exporting to Excel. Please try again.')
+    }
+  }
+
+  const downloadDashboardPDF = async (event) => {
+    try {
+      // Find the main dashboard container
+      const dashboardElement = document.querySelector('.min-h-screen')
+      if (!dashboardElement) {
+        alert('Could not find dashboard content to export.')
+        return
+      }
+
+      // Show loading state
+      const originalButton = event?.target
+      if (originalButton) {
+        originalButton.disabled = true
+        originalButton.textContent = 'Generating PDF...'
+      }
+
+      // Create PDF
+      const pdf = new jsPDF('p', 'mm', 'a4')
+      const canvas = await html2canvas(dashboardElement, {
+        scale: 2,
+        useCORS: true,
+        logging: false
+      })
+
+      const imgData = canvas.toDataURL('image/png')
+      const imgWidth = 210 // A4 width in mm
+      const pageHeight = 297 // A4 height in mm
+      const imgHeight = (canvas.height * imgWidth) / canvas.width
+      let heightLeft = imgHeight
+      let position = 0
+
+      // Add first page
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
+      heightLeft -= pageHeight
+
+      // Add additional pages if needed
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight
+        pdf.addPage()
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
+        heightLeft -= pageHeight
+      }
+
+      // Save PDF
+      pdf.save('analytics-dashboard.pdf')
+
+      // Restore button
+      if (originalButton) {
+        originalButton.disabled = false
+        originalButton.textContent = 'Export PDF'
+      }
+    } catch (error) {
+      console.error('Error exporting to PDF:', error)
+      alert('Error exporting to PDF. Please try again.')
+      if (event?.target) {
+        event.target.disabled = false
+        event.target.textContent = 'Export PDF'
+      }
+    }
   }
 
   const handleSaveDashboard = async () => {
@@ -361,7 +448,65 @@ function Dashboard() {
                   {filteredData?.length || 0} records • {columns.length} columns
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 relative">
+                {/* Filters Button & Dropdown */}
+                <div className="relative">
+                  <button
+                    onClick={() => setShowFilters(!showFilters)}
+                    className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50 transition-colors flex items-center gap-2"
+                    title="Filters"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                    </svg>
+                    Filters
+                    {showFilters && (
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                      </svg>
+                    )}
+                  </button>
+                  
+                  {/* Filters Dropdown Panel */}
+                  {showFilters && (
+                    <>
+                      {/* Backdrop to close on outside click */}
+                      <div 
+                        className="fixed inset-0 z-40" 
+                        onClick={() => setShowFilters(false)}
+                      ></div>
+                      
+                      {/* Dropdown Panel */}
+                      <div className="absolute right-0 top-full mt-2 w-96 bg-white rounded-lg shadow-xl border border-gray-200 z-50 max-h-[80vh] overflow-y-auto">
+                        <div className="p-4">
+                          <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-semibold text-gray-900">Filters & Columns</h3>
+                            <button
+                              onClick={() => setShowFilters(false)}
+                              className="text-gray-400 hover:text-gray-600 transition-colors"
+                            >
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </div>
+                          <Filters
+                            data={data}
+                            numericColumns={numericColumns}
+                            categoricalColumns={categoricalColumns}
+                            dateColumns={dateColumns}
+                            onFilterChange={handleFilterChange}
+                            selectedNumeric={selectedNumeric}
+                            selectedCategorical={selectedCategorical}
+                            selectedDate={selectedDate}
+                            onColumnChange={handleColumnChange}
+                          />
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+                
                 <button
                   onClick={() => setDashboardView(dashboardView === 'advanced' ? 'simple' : 'advanced')}
                   className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50 transition-colors"
@@ -445,15 +590,11 @@ function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-gray-50 to-purple-50 watermark-bg relative">
+      {/* Analytics Watermark Pattern */}
+      <div className="analytics-watermark"></div>
+      <div className="analytics-watermark-icons"></div>
       <Navbar />
-      
-      {/* Tab Navigation */}
-      <TabNavigation 
-        activeTab={activeTab} 
-        onTabChange={setActiveTab}
-        tabs={['Overview']}
-      />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {/* Header */}
@@ -466,7 +607,65 @@ function Dashboard() {
               {filteredData?.length || 0} records • {columns.length} columns
             </p>
           </div>
-          <div className="flex items-center gap-2 mt-2 sm:mt-0">
+          <div className="flex items-center gap-2 mt-2 sm:mt-0 relative">
+            {/* Filters Button & Dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => setShowFilters(!showFilters)}
+                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50 transition-colors flex items-center gap-2"
+                title="Filters"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                </svg>
+                Filters
+                {showFilters && (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                  </svg>
+                )}
+              </button>
+              
+              {/* Filters Dropdown Panel */}
+              {showFilters && (
+                <>
+                  {/* Backdrop to close on outside click */}
+                  <div 
+                    className="fixed inset-0 z-40" 
+                    onClick={() => setShowFilters(false)}
+                  ></div>
+                  
+                  {/* Dropdown Panel */}
+                  <div className="absolute right-0 top-full mt-2 w-96 bg-white rounded-lg shadow-xl border border-gray-200 z-50 max-h-[80vh] overflow-y-auto">
+                    <div className="p-4">
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-lg font-semibold text-gray-900">Filters & Columns</h3>
+                        <button
+                          onClick={() => setShowFilters(false)}
+                          className="text-gray-400 hover:text-gray-600 transition-colors"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                      <Filters
+                        data={data}
+                        numericColumns={numericColumns}
+                        categoricalColumns={categoricalColumns}
+                        dateColumns={dateColumns}
+                        onFilterChange={handleFilterChange}
+                        selectedNumeric={selectedNumeric}
+                        selectedCategorical={selectedCategorical}
+                        selectedDate={selectedDate}
+                        onColumnChange={handleColumnChange}
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+            
             <button
               onClick={toggleFullscreen}
               className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50 transition-colors flex items-center gap-2"
@@ -620,48 +819,45 @@ function Dashboard() {
           />
         )}
 
-        {/* Filters and AI Insights - Collapsible Section */}
+        {/* AI Insights Section */}
         <div className="mt-6 space-y-4">
           <details className="bg-gray-50 rounded-lg p-4 border border-gray-200">
             <summary className="cursor-pointer font-semibold text-gray-900 mb-4">
-              Filters & AI Insights
+              AI Insights & Export
             </summary>
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-4">
-              <div className="lg:col-span-1">
-                <Filters
-                  data={data}
-                  numericColumns={numericColumns}
-                  categoricalColumns={categoricalColumns}
-                  dateColumns={dateColumns}
-                  onFilterChange={handleFilterChange}
-                  selectedNumeric={selectedNumeric}
-                  selectedCategorical={selectedCategorical}
-                  selectedDate={selectedDate}
-                  onColumnChange={handleColumnChange}
-                />
+            <div className="mt-4">
+              <div className="flex gap-2 mb-4 flex-wrap">
+                <button
+                  onClick={downloadSummaryCSV}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium text-sm"
+                >
+                  Export CSV
+                </button>
+                <button
+                  onClick={downloadSummaryExcel}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm"
+                >
+                  Export Excel
+                </button>
+                <button
+                  onClick={downloadDashboardPDF}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium text-sm"
+                >
+                  Export PDF
+                </button>
+                <button
+                  onClick={() => navigate('/')}
+                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium text-sm"
+                >
+                  New Upload
+                </button>
               </div>
-              <div className="lg:col-span-2">
-                <div className="flex gap-2 mb-4">
-                  <button
-                    onClick={downloadSummaryCSV}
-                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium text-sm"
-                  >
-                    Export CSV
-                  </button>
-                  <button
-                    onClick={() => navigate('/')}
-                    className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium text-sm"
-                  >
-                    New Upload
-                  </button>
-                </div>
-                <AIInsights 
-                  data={filteredData} 
-                  columns={columns} 
-                  totalRows={data?.length || 0}
-                  stats={stats}
-                />
-              </div>
+              <AIInsights 
+                data={filteredData} 
+                columns={columns} 
+                totalRows={data?.length || 0}
+                stats={stats}
+              />
             </div>
           </details>
         </div>

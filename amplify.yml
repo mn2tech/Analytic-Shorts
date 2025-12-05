@@ -8,8 +8,15 @@ frontend:
       commands:
         - npm run build
   environment:
-    # Backend API URL - Production domain
-    VITE_API_URL: https://api.nm2tech-sas.com
+    # Backend API URL - Update with your production backend URL
+    VITE_API_URL: https://api.nm2tech-sas.com  # ← Update this with your actual backend URL
+    
+    # Production Stripe Publishable Key
+    VITE_STRIPE_PUBLISHABLE_KEY: pk_live_51RilIPCAL4InIKRQlas1xaG2odzZNj70YikLjKe1Jvf8qU2pKtx4HzLLm2Y5NP0FF4tJaf20nA08FOKAXPNB2awU00HXHdOVz8
+    
+    # Production Price IDs
+    VITE_STRIPE_PRO_PRICE_ID: price_1Sak7ICAL4InIKRQecSqTjLb
+    VITE_STRIPE_ENTERPRISE_PRICE_ID: price_1Sb3CtCAL4InIKRQrlhBex3j
   artifacts:
     baseDirectory: dist
     files:

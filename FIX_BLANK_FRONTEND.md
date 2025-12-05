@@ -137,3 +137,5 @@ VITE_SUPABASE_ANON_KEY=your_supabase_key
 With this info, I can help fix it quickly!
 
 
+
+

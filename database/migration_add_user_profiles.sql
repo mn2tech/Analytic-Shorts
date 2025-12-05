@@ -84,3 +84,5 @@ WHERE id NOT IN (SELECT id FROM shorts_user_profiles)
 ON CONFLICT (id) DO NOTHING;
 
 
+
+

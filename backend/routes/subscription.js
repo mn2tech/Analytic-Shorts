@@ -98,7 +98,7 @@ router.get('/', getUserFromToken, async (req, res) => {
 // Create Stripe checkout session
 router.post('/checkout', getUserFromToken, async (req, res) => {
   try {
-    const { priceId } = req.body
+    const { priceId, imageUrl } = req.body
 
     if (!priceId) {
       return res.status(400).json({ error: 'Price ID is required' })
@@ -120,12 +120,15 @@ router.post('/checkout', getUserFromToken, async (req, res) => {
       })
     }
 
-    // Validate priceId format (should start with 'price_')
-    if (!priceId.startsWith('price_') && priceId !== 'price_pro_monthly' && priceId !== 'price_enterprise_monthly') {
-      console.error('Invalid price ID format:', priceId)
+    // Validate priceId format (should start with 'price_' and be a real Stripe price ID)
+    const isPlaceholder = priceId === 'price_pro_monthly' || priceId === 'price_enterprise_monthly'
+    if (!priceId.startsWith('price_') || isPlaceholder) {
+      console.error('Invalid price ID format or placeholder detected:', priceId)
       return res.status(400).json({ 
         error: 'Invalid price ID',
-        message: 'Price ID must be a valid Stripe price ID (starts with "price_"). Please create products in Stripe Dashboard first.'
+        message: isPlaceholder 
+          ? 'Price ID is a placeholder. Please create products in Stripe Dashboard and add the real Price IDs to .env.local (VITE_STRIPE_PRO_PRICE_ID and VITE_STRIPE_ENTERPRISE_PRICE_ID).'
+          : 'Price ID must be a valid Stripe price ID (starts with "price_"). Please create products in Stripe Dashboard first.'
       })
     }
 
@@ -142,6 +145,18 @@ router.post('/checkout', getUserFromToken, async (req, res) => {
     }
 
     let customerId = subscription?.stripe_customer_id
+
+    // Verify customer exists in Stripe (handles test mode -> live mode migration)
+    if (customerId) {
+      try {
+        await stripe.customers.retrieve(customerId)
+        // Customer exists, use it
+      } catch (error) {
+        // Customer doesn't exist (likely from test mode), create new one
+        console.log(`Customer ${customerId} not found in Stripe (likely from test mode), creating new customer`)
+        customerId = null
+      }
+    }
 
     if (!customerId) {
       // Create Stripe customer
@@ -167,15 +182,17 @@ router.post('/checkout', getUserFromToken, async (req, res) => {
     }
 
     // Create checkout session
+    // Note: When using 'price' parameter, Stripe automatically uses the product image
+    // from the Stripe Dashboard. We cannot specify both 'price' and 'images'.
+    const lineItem = {
+      price: priceId,
+      quantity: 1
+    }
+    
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
       payment_method_types: ['card'],
-      line_items: [
-        {
-          price: priceId,
-          quantity: 1
-        }
-      ],
+      line_items: [lineItem],
       mode: 'subscription',
       success_url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/dashboard?success=true`,
       cancel_url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/pricing?canceled=true`,
@@ -186,14 +203,26 @@ router.post('/checkout', getUserFromToken, async (req, res) => {
 
     res.json({ url: session.url })
   } catch (error) {
-    console.error('Error creating checkout session:', error)
+    // Enhanced error logging
+    console.error('=== CHECKOUT ERROR ===')
+    console.error('Error type:', error.type || error.constructor.name)
+    console.error('Error message:', error.message)
+    console.error('Price ID received:', req.body?.priceId)
+    console.error('Stripe key configured:', !!stripe)
+    console.error('Supabase configured:', !!supabase)
+    if (error.stack) {
+      console.error('Stack trace:', error.stack)
+    }
+    console.error('====================')
     
     // Provide more detailed error messages
     let errorMessage = 'Failed to create checkout session'
     if (error.type === 'StripeInvalidRequestError') {
       errorMessage = `Stripe error: ${error.message}`
       if (error.message.includes('No such price')) {
-        errorMessage = 'Invalid price ID. Please create the product in Stripe Dashboard first.'
+        errorMessage = `Invalid price ID: ${req.body?.priceId}. The price ID does not exist in your Stripe account (Live mode). Please:\n1. Go to https://dashboard.stripe.com/products (make sure you're in Live mode)\n2. Verify the product exists and copy the correct Price ID (starts with "price_")\n3. Update .env.local with VITE_STRIPE_PRO_PRICE_ID or VITE_STRIPE_ENTERPRISE_PRICE_ID\n4. Restart your frontend server`
+      } else if (error.message.includes('No such customer')) {
+        errorMessage = `Customer error: ${error.message}. This usually means the customer ID in your database is from test mode. The system will create a new customer automatically.`
       }
     } else if (error.message) {
       errorMessage = error.message
@@ -202,6 +231,7 @@ router.post('/checkout', getUserFromToken, async (req, res) => {
     res.status(500).json({ 
       error: 'Failed to create checkout session',
       message: errorMessage,
+      priceId: req.body?.priceId,
       details: process.env.NODE_ENV === 'development' ? error.stack : undefined
     })
   }
@@ -218,6 +248,17 @@ router.post('/portal', getUserFromToken, async (req, res) => {
 
     if (!subscription?.stripe_customer_id) {
       return res.status(400).json({ error: 'No active subscription found' })
+    }
+
+    // Verify customer exists in Stripe (handles test mode -> live mode migration)
+    try {
+      await stripe.customers.retrieve(subscription.stripe_customer_id)
+    } catch (error) {
+      // Customer doesn't exist (likely from test mode)
+      return res.status(400).json({ 
+        error: 'Subscription not found',
+        message: 'Your subscription was created in test mode. Please create a new subscription in live mode.'
+      })
     }
 
     const session = await stripe.billingPortal.sessions.create({

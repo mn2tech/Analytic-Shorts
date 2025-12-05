@@ -16,6 +16,11 @@ function ExampleDatasetButton({ onDatasetLoad, onError }) {
       endpoint: '/api/example/sales',
     },
     {
+      name: 'Business Expenses',
+      description: 'Business revenue, expenses, and financial transactions',
+      endpoint: '/api/example/banking',
+    },
+    {
       name: 'Attendance Data',
       description: 'Employee attendance records',
       endpoint: '/api/example/attendance',

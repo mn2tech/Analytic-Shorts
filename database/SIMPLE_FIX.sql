@@ -127,3 +127,5 @@ ON CONFLICT (user_id) DO NOTHING;
 SELECT '✅ All done! Try signing up again.' as result;
 
 
+
+

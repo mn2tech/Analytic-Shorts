@@ -75,7 +75,8 @@ app.get('/', (req, res) => {
         sales: 'GET /api/example/sales',
         attendance: 'GET /api/example/attendance',
         donations: 'GET /api/example/donations',
-        medical: 'GET /api/example/medical'
+        medical: 'GET /api/example/medical',
+        banking: 'GET /api/example/banking'
       }
     }
   })
@@ -93,7 +94,8 @@ app.use((req, res) => {
       'GET /api/example/sales',
       'GET /api/example/attendance',
       'GET /api/example/donations',
-      'GET /api/example/medical'
+      'GET /api/example/medical',
+      'GET /api/example/banking'
     ]
   })
 })

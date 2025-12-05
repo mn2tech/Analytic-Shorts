@@ -38,10 +38,10 @@ const PLAN_LIMITS = {
     forecasting: false
   },
   pro: {
-    dashboards: 20,
-    uploadsPerMonth: 50,
-    fileSizeMB: 25,
-    aiInsights: 50,
+    dashboards: -1, // unlimited (matches frontend)
+    uploadsPerMonth: -1, // unlimited (matches frontend)
+    fileSizeMB: 50, // matches frontend
+    aiInsights: 100, // matches frontend
     exports: -1, // unlimited
     forecasting: true
   },

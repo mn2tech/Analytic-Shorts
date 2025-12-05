@@ -116,3 +116,5 @@ If triggers aren't working:
 4. Verify `.env.local` file is in the root directory (not in `src/` or `backend/`)
 
 
+
+
