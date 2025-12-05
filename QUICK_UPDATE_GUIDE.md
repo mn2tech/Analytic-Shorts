@@ -2,7 +2,7 @@
 
 ## ✅ You Have Everything!
 
-**Secret Key:** `sk_live_YOUR_SECRET_KEY_HERE`
+**Secret Key:** `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`
 
 ---
 
@@ -34,7 +34,7 @@ VITE_STRIPE_ENTERPRISE_PRICE_ID=price_1Sb3CtCAL4InIKRQrlhBex3j
 **Add or update these lines:**
 
 ```env
-STRIPE_SECRET_KEY=sk_live_YOUR_SECRET_KEY_HERE
+STRIPE_SECRET_KEY=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
 ```
 
 **Keep your existing:**

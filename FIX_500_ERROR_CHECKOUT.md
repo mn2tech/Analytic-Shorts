@@ -33,7 +33,7 @@ A 500 error means the backend server encountered an error. Common causes:
 
 ```env
 # Production Stripe Secret Key
-STRIPE_SECRET_KEY=sk_live_YOUR_SECRET_KEY_HERE
+STRIPE_SECRET_KEY=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
 
 # Supabase (your existing values)
 SUPABASE_URL=your_supabase_url

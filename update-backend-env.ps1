@@ -1,7 +1,7 @@
 # PowerShell script to update backend/.env with production Stripe secret key
 
 $envFile = "backend\.env"
-$newSecretKey = "sk_live_YOUR_SECRET_KEY_HERE"
+$newSecretKey = "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"
 
 # Check if .env file exists
 if (Test-Path $envFile) {

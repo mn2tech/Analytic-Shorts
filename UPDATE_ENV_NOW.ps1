@@ -23,7 +23,7 @@ VITE_API_URL=https://your-production-backend-url.com
 $backendEnvPath = "backend\.env"
 $backendContent = @"
 # Production Stripe Secret Key
-STRIPE_SECRET_KEY=sk_live_YOUR_SECRET_KEY_HERE
+STRIPE_SECRET_KEY=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
 
 # Production Webhook Secret (get from Stripe Dashboard → Webhooks)
 STRIPE_WEBHOOK_SECRET=whsec_YOUR_PRODUCTION_WEBHOOK_SECRET
