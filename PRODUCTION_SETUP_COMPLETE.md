@@ -8,7 +8,7 @@
 - **Enterprise Price ID:** `price_1Sb3CtCAL4InIKRQrlhBex3j`
 
 ### Backend Keys
-- **Secret Key:** `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`
+- **Secret Key:** `sk_live_YOUR_SECRET_KEY_HERE`
 
 ---
 
@@ -42,7 +42,7 @@ Add or update these lines:
 
 ```env
 # Production Stripe Secret Key
-STRIPE_SECRET_KEY=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
+STRIPE_SECRET_KEY=sk_live_YOUR_SECRET_KEY_HERE
 
 # Production Webhook Secret (get from Stripe Dashboard → Webhooks)
 STRIPE_WEBHOOK_SECRET=whsec_YOUR_PRODUCTION_WEBHOOK_SECRET

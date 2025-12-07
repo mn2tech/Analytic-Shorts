@@ -5,7 +5,7 @@
 - **Publishable Key:** `pk_live_51RilIPCAL4InIKRQlas1xaG2odzZNj70YikLjKe1Jvf8qU2pKtx4HzLLm2Y5NP0FF4tJaf20nA08FOKAXPNB2awU00HXHdOVz8`
 - **Pro Price ID:** `price_1Sak7ICAL4InIKRQecSqTjLb`
 - **Enterprise Price ID:** `price_1Sb3CtCAL4InIKRQrlhBex3j`
-- **Secret Key:** `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` ✅
+- **Secret Key:** `sk_live_YOUR_SECRET_KEY_HERE` ✅
 
 ---
 
@@ -28,7 +28,7 @@ This will update the `STRIPE_SECRET_KEY` in your `backend/.env` file automatical
 Open `backend/.env` and update or add:
 
 ```env
-STRIPE_SECRET_KEY=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
+STRIPE_SECRET_KEY=sk_live_YOUR_SECRET_KEY_HERE
 ```
 
 ### Update `.env.local` (Project Root)
