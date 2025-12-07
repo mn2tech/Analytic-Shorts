@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
-  base: '/analytics-shorts/',
+  base: '/',
   plugins: [
     react(),
     VitePWA({
@@ -17,8 +17,8 @@ export default defineConfig({
         background_color: '#ffffff',
         display: 'standalone',
         orientation: 'portrait-primary',
-        scope: '/analytics-shorts/',
-        start_url: '/analytics-shorts/',
+        scope: '/',
+        start_url: '/',
         icons: [
           {
             src: '/icon-192.svg',
@@ -38,7 +38,7 @@ export default defineConfig({
             name: 'Upload Data',
             short_name: 'Upload',
             description: 'Upload a new CSV or Excel file',
-            url: '/analytics-shorts/',
+            url: '/',
             icons: [{ src: '/icon-192.svg', sizes: '192x192' }]
           }
         ]
