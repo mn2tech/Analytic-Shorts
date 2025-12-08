@@ -29,6 +29,7 @@ function FileUploader({ onUploadSuccess, onError }) {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
+        timeout: 120000, // 2 minutes for large file uploads and processing
       })
       onUploadSuccess(response.data)
     } catch (error) {
@@ -61,6 +62,8 @@ function FileUploader({ onUploadSuccess, onError }) {
         }
         
         onError(errorMessage)
+      } else if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+        onError('Upload timeout: The file is too large or processing is taking too long. Please try:\n\n1. Upload a smaller file\n2. Check your internet connection\n3. Try again in a moment')
       } else {
         onError(error.response?.data?.error || error.message || 'Failed to upload file. Please check your connection and try again.')
       }

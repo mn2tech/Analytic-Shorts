@@ -50,7 +50,7 @@ export const checkBackendHealth = async () => {
 // Create axios instance with base URL
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 30000, // 30 seconds for file uploads
+  timeout: 120000, // 2 minutes for file uploads (increased from 30s for large files)
 })
 
 // Add auth token to all requests

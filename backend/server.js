@@ -41,8 +41,8 @@ const corsOptions = {
 app.use(cors(corsOptions))
 // Webhook route must be before JSON parsing (Stripe needs raw body)
 app.use('/api/subscription/webhook', express.raw({ type: 'application/json' }), webhookRoutes)
-app.use(express.json())
-app.use(express.urlencoded({ extended: true }))
+app.use(express.json({ limit: '50mb' })) // Increase JSON body size limit for large files
+app.use(express.urlencoded({ extended: true, limit: '50mb' })) // Increase URL-encoded body size limit
 
 // Create uploads directory if it doesn't exist
 const uploadsDir = path.join(__dirname, 'uploads')
