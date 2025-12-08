@@ -87,7 +87,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage: storage,
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit (matches Pro plan, actual limit enforced by usageLimits middleware)
+  limits: { fileSize: 500 * 1024 * 1024 }, // 500MB limit (supports Enterprise plan, actual limit enforced by usageLimits middleware based on user's plan)
   fileFilter: (req, file, cb) => {
     const allowedTypes = [
       'text/csv',
@@ -104,18 +104,51 @@ const upload = multer({
   },
 })
 
-// Upload route with optional auth and usage limits
-router.post('/', getUserFromToken, upload.single('file'), async (req, res, next) => {
-  // If user is authenticated, check usage limits
-  if (req.user && req.user.id) {
-    const allowed = await checkUploadLimit(req, res, null)
-    if (!allowed) {
-      // Limit check failed, response already sent
-      return
+// Wrapper middleware to add timeout to checkUploadLimit
+const checkUploadLimitWithTimeout = (req, res, next) => {
+  if (!req.user || !req.user.id) {
+    // No auth - skip limit check
+    return next()
+  }
+  
+  // Set timeout for the limit check
+  let timeoutFired = false
+  const timeout = setTimeout(() => {
+    if (!res.headersSent) {
+      timeoutFired = true
+      console.error('Upload limit check timeout')
+      return res.status(500).json({ 
+        error: 'Failed to check upload limits',
+        message: 'Upload limit check is taking too long. Please try again in a moment.'
+      })
+    }
+  }, 10000) // 10 second timeout
+  
+  // Create a wrapped next function that clears timeout
+  const wrappedNext = () => {
+    if (!timeoutFired) {
+      clearTimeout(timeout)
+      next()
     }
   }
-  next() // Continue to file processing
-}, async (req, res) => {
+  
+  // Call checkUploadLimit as middleware - it will call wrappedNext() when done
+  checkUploadLimit(req, res, wrappedNext).catch((err) => {
+    if (!timeoutFired) {
+      clearTimeout(timeout)
+      console.error('Upload limit check error:', err)
+      if (!res.headersSent) {
+        return res.status(500).json({ 
+          error: 'Failed to check upload limits',
+          message: 'Please try again in a moment'
+        })
+      }
+    }
+  })
+}
+
+// Upload route with optional auth and usage limits
+router.post('/', getUserFromToken, upload.single('file'), checkUploadLimitWithTimeout, async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' })

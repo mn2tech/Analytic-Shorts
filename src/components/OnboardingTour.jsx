@@ -1,18 +1,43 @@
 import { useEffect, useState } from 'react'
 
+// Try to import react-joyride - use dynamic import to handle build issues
 let Joyride = null
-try {
-  Joyride = require('react-joyride').default
-} catch (e) {
-  console.warn('react-joyride not available, onboarding disabled')
+let joyridePromise = null
+
+// Lazy load react-joyride
+const loadJoyride = async () => {
+  if (Joyride) return Joyride
+  if (joyridePromise) return joyridePromise
+  
+  joyridePromise = import('react-joyride')
+    .then((module) => {
+      Joyride = module.default || module
+      return Joyride
+    })
+    .catch((error) => {
+      if (import.meta.env.DEV) {
+        console.warn('react-joyride not available, onboarding disabled')
+      }
+      return null
+    })
+  
+  return joyridePromise
 }
 
 function OnboardingTour({ run, onComplete, steps }) {
   const [isRunning, setIsRunning] = useState(run)
+  const [joyrideLoaded, setJoyrideLoaded] = useState(false)
 
   useEffect(() => {
     setIsRunning(run)
   }, [run])
+
+  // Load react-joyride on mount
+  useEffect(() => {
+    loadJoyride().then((loaded) => {
+      setJoyrideLoaded(!!loaded)
+    })
+  }, [])
 
   const handleJoyrideCallback = (data) => {
     const { status, type } = data
@@ -25,8 +50,8 @@ function OnboardingTour({ run, onComplete, steps }) {
     }
   }
 
-  // If Joyride is not available, don't render anything
-  if (!Joyride) {
+  // If Joyride is not available or not loaded yet, don't render anything
+  if (!joyrideLoaded || !Joyride) {
     return null
   }
 

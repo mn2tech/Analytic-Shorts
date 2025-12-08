@@ -69,12 +69,16 @@ export const AuthProvider = ({ children }) => {
     }
 
     // Timeout fallback - if loading takes too long, stop loading
+    // Increased to 10 seconds to allow for slower Supabase connections
     const timeout = setTimeout(() => {
       if (loading) {
-        console.warn('Auth check timeout - assuming not logged in')
+        // Only log warning in development, not production
+        if (import.meta.env.DEV) {
+          console.warn('Auth check timeout - assuming not logged in')
+        }
         setLoading(false)
       }
-    }, 5000) // 5 second timeout
+    }, 10000) // 10 second timeout (increased from 5s)
 
     return () => {
       if (subscription) {
