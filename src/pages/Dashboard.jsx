@@ -764,6 +764,14 @@ function Dashboard() {
               dateColumns={dateColumns}
               onMetadataUpdate={handleMetadataUpdate}
             />
+          ) : dashboardView === 'timeseries' ? (
+            <TimeSeriesReport
+              data={data}
+              numericColumns={numericColumns}
+              dateColumns={dateColumns}
+              selectedNumeric={selectedNumeric}
+              selectedDate={selectedDate}
+            />
           ) : dashboardView === 'advanced' ? (
             <AdvancedDashboard
               data={data}
