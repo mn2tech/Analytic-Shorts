@@ -83,7 +83,7 @@ router.post('/', getUserFromToken, async (req, res, next) => {
   if (next) next()
 }, async (req, res) => {
   try {
-    const { data, columns, isFiltered, totalRows, filteredRows, analyzedRows, stats, chartContext, chartType, forecastData, historicalData, trend } = req.body
+    const { data, columns, isFiltered, totalRows, filteredRows, analyzedRows, stats, chartContext, chartType, forecastData, historicalData, trend, selectedNumeric } = req.body
 
     if (!data || !Array.isArray(data) || data.length === 0) {
       return res.status(400).json({ error: 'Invalid data provided' })
