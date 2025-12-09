@@ -50,9 +50,11 @@ function Dashboard() {
     // First check if data was passed via navigation state (for large files that exceed storage quota)
     if (location.state?.analyticsData) {
       hasInitialized.current = true
-      initializeData(location.state.analyticsData)
-      // Clear navigation state to prevent re-initialization on re-renders
+      const analyticsData = location.state.analyticsData
+      // Clear navigation state AFTER capturing the data
       navigate(location.pathname, { replace: true, state: {} })
+      // Initialize with captured data
+      initializeData(analyticsData)
       return
     }
 
@@ -190,7 +192,9 @@ function Dashboard() {
       setSelectedDate(parsedData.dateColumns[0])
     }
 
+    // Ensure loading is set to false after initialization
     setLoading(false)
+    console.log('Data initialization complete. Data length:', displayData?.length, 'Columns:', parsedData.columns?.length)
   }
 
   const applyChartFilter = (baseData) => {
