@@ -472,6 +472,7 @@ function Dashboard() {
 
   // Check if data exists
   if (!data || data.length === 0) {
+    console.warn('Dashboard: No data available. Data:', data, 'Loading:', loading, 'Has initialized:', hasInitialized.current)
     return (
       <div className="min-h-screen bg-gray-50">
         <Navbar />
