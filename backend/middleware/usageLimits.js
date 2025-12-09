@@ -60,12 +60,79 @@ const PLAN_LIMITS = {
     aiInsights: -1, // unlimited
     exports: -1, // unlimited
     forecasting: true
+  },
+  admin: {
+    dashboards: -1, // unlimited
+    uploadsPerMonth: -1, // unlimited
+    fileSizeMB: -1, // unlimited (no limit)
+    aiInsights: -1, // unlimited
+    exports: -1, // unlimited
+    forecasting: true
+  },
+  demo: {
+    dashboards: -1, // unlimited
+    uploadsPerMonth: -1, // unlimited
+    fileSizeMB: -1, // unlimited (no limit)
+    aiInsights: -1, // unlimited
+    exports: -1, // unlimited
+    forecasting: true
   }
 }
 
-// Get user's subscription
-async function getUserSubscription(userId) {
+// Admin/Demo email list (can be configured via environment variable)
+const ADMIN_EMAILS = process.env.ADMIN_EMAILS 
+  ? process.env.ADMIN_EMAILS.split(',').map(email => email.trim().toLowerCase())
+  : ['admin@nm2tech-sas.com', 'demo@nm2tech-sas.com'] // Default admin/demo emails
+
+// Check if user is admin or demo
+async function isAdminOrDemo(userId, userEmail) {
+  if (!userId || !userEmail) return false
+  
+  const emailLower = userEmail.toLowerCase()
+  
+  // Check if email is in admin list
+  if (ADMIN_EMAILS.includes(emailLower)) {
+    return true
+  }
+  
+  // Check if user has admin/demo plan in subscription
   try {
+    const { data } = await supabase
+      .from('shorts_subscriptions')
+      .select('plan')
+      .eq('user_id', userId)
+      .single()
+    
+    if (data && (data.plan === 'admin' || data.plan === 'demo')) {
+      return true
+    }
+  } catch (error) {
+    // Ignore errors, continue with email check
+  }
+  
+  return false
+}
+
+// Get user's subscription
+async function getUserSubscription(userId, userEmail = null) {
+  try {
+    // Check if user is admin/demo first
+    if (userEmail && await isAdminOrDemo(userId, userEmail)) {
+      // Check subscription table for admin/demo plan
+      const { data } = await supabase
+        .from('shorts_subscriptions')
+        .select('*')
+        .eq('user_id', userId)
+        .single()
+      
+      if (data && (data.plan === 'admin' || data.plan === 'demo')) {
+        return data
+      }
+      
+      // If email is admin/demo but no subscription record, return admin plan
+      return { plan: 'admin', status: 'active' }
+    }
+    
     const { data, error } = await supabase
       .from('shorts_subscriptions')
       .select('*')
@@ -140,10 +207,21 @@ async function getCurrentUsage(userId, limitType) {
 }
 
 // Check if user can perform an action
-async function checkLimit(userId, limitType, additionalUsage = 1) {
+async function checkLimit(userId, limitType, additionalUsage = 1, userEmail = null) {
   try {
-    const subscription = await getUserSubscription(userId)
+    const subscription = await getUserSubscription(userId, userEmail)
     const plan = subscription.plan || 'free'
+    
+    // Admin and demo users have unlimited access
+    if (plan === 'admin' || plan === 'demo') {
+      return {
+        allowed: true,
+        remaining: -1,
+        limit: -1,
+        plan: plan
+      }
+    }
+    
     const limits = PLAN_LIMITS[plan] || PLAN_LIMITS.free
 
     const limit = limits[limitType]
@@ -202,7 +280,7 @@ async function checkDashboardLimit(req, res, next) {
     return res.status(401).json({ error: 'Authentication required' })
   }
 
-  const limitCheck = await checkLimit(req.user.id, 'dashboards', 1)
+  const limitCheck = await checkLimit(req.user.id, 'dashboards', 1, req.user.email)
 
   if (!limitCheck.allowed) {
     return res.status(403).json({
@@ -225,8 +303,17 @@ async function checkUploadLimit(req, res, next) {
     return res.status(401).json({ error: 'Authentication required' })
   }
 
+  const subscription = await getUserSubscription(req.user.id, req.user.email)
+  const plan = subscription.plan || 'free'
+  
+  // Admin and demo users have unlimited access - skip limit checks
+  if (plan === 'admin' || plan === 'demo') {
+    req.limitCheck = { allowed: true, remaining: -1, limit: -1, plan: plan }
+    return next()
+  }
+
   const fileSizeMB = req.file ? (req.file.size / (1024 * 1024)) : 0
-  const planLimits = PLAN_LIMITS[(await getUserSubscription(req.user.id)).plan] || PLAN_LIMITS.free
+  const planLimits = PLAN_LIMITS[plan] || PLAN_LIMITS.free
 
   // Check file size limit
   if (planLimits.fileSizeMB !== -1 && fileSizeMB > planLimits.fileSizeMB) {
@@ -235,13 +322,13 @@ async function checkUploadLimit(req, res, next) {
       message: `File size (${fileSizeMB.toFixed(2)}MB) exceeds your plan limit of ${planLimits.fileSizeMB}MB. Please upgrade to upload larger files.`,
       fileSize: fileSizeMB,
       limit: planLimits.fileSizeMB,
-      plan: (await getUserSubscription(req.user.id)).plan,
+      plan: plan,
       upgradeRequired: true
     })
   }
 
   // Check upload count limit
-  const limitCheck = await checkLimit(req.user.id, 'uploadsPerMonth', 1)
+  const limitCheck = await checkLimit(req.user.id, 'uploadsPerMonth', 1, req.user.email)
 
   if (!limitCheck.allowed) {
     return res.status(403).json({
@@ -265,7 +352,7 @@ async function checkInsightLimit(req, res, next) {
     return true
   }
 
-  const limitCheck = await checkLimit(req.user.id, 'aiInsights', 1)
+  const limitCheck = await checkLimit(req.user.id, 'aiInsights', 1, req.user.email)
 
   if (!limitCheck.allowed) {
     if (res) {
@@ -292,7 +379,7 @@ async function checkExportLimit(req, res, next) {
     return res.status(401).json({ error: 'Authentication required' })
   }
 
-  const limitCheck = await checkLimit(req.user.id, 'exports', 1)
+  const limitCheck = await checkLimit(req.user.id, 'exports', 1, req.user.email)
 
   if (!limitCheck.allowed) {
     return res.status(403).json({
@@ -310,9 +397,15 @@ async function checkExportLimit(req, res, next) {
 }
 
 // Check if feature is available (for forecasting, etc.)
-async function checkFeatureAccess(userId, feature) {
-  const subscription = await getUserSubscription(userId)
+async function checkFeatureAccess(userId, feature, userEmail = null) {
+  const subscription = await getUserSubscription(userId, userEmail)
   const plan = subscription.plan || 'free'
+  
+  // Admin and demo users have access to all features
+  if (plan === 'admin' || plan === 'demo') {
+    return true
+  }
+  
   const limits = PLAN_LIMITS[plan] || PLAN_LIMITS.free
 
   switch (feature) {
@@ -332,6 +425,7 @@ module.exports = {
   checkFeatureAccess,
   getUserSubscription,
   getCurrentUsage,
+  isAdminOrDemo,
   PLAN_LIMITS
 }
 

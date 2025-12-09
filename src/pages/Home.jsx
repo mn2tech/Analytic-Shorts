@@ -5,6 +5,7 @@ import Footer from '../components/Footer'
 import FileUploader from '../components/FileUploader'
 import ExampleDatasetButton from '../components/ExampleDatasetButton'
 import OnboardingTour from '../components/OnboardingTour'
+import UpgradePrompt from '../components/UpgradePrompt'
 import { useAuth } from '../contexts/AuthContext'
 
 function Home() {
@@ -12,6 +13,7 @@ function Home() {
   const { user } = useAuth()
   const [error, setError] = useState(null)
   const [showTour, setShowTour] = useState(false)
+  const [upgradePrompt, setUpgradePrompt] = useState(null)
 
   // Check if user has seen the tour
   useEffect(() => {
@@ -68,6 +70,14 @@ function Home() {
   const handleError = (errorMessage) => {
     setError(errorMessage)
     setTimeout(() => setError(null), 5000)
+  }
+
+  const handleUpgradeRequired = (upgradeData) => {
+    setUpgradePrompt(upgradeData)
+  }
+
+  const handleCloseUpgradePrompt = () => {
+    setUpgradePrompt(null)
   }
 
   return (
@@ -212,7 +222,7 @@ function Home() {
       {/* Upload Section */}
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 pb-16">
         {error && (
-          <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4 text-red-700 animate-slide-up">
+          <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4 text-red-700 animate-slide-up text-sm sm:text-base whitespace-pre-line break-words">
             {error}
           </div>
         )}
@@ -222,7 +232,11 @@ function Home() {
             <h2 className="text-2xl font-semibold text-gray-900 mb-6 text-center">
               Upload Your Data
             </h2>
-            <FileUploader onUploadSuccess={handleUploadSuccess} onError={handleError} />
+            <FileUploader 
+              onUploadSuccess={handleUploadSuccess} 
+              onError={handleError}
+              onUpgradeRequired={handleUpgradeRequired}
+            />
           </div>
 
           <div className="bg-white rounded-xl shadow-lg p-8 animate-slide-up example-data-section">
@@ -234,6 +248,19 @@ function Home() {
         </div>
       </div>
       <Footer />
+
+      {/* Upgrade Prompt Modal */}
+      {upgradePrompt && (
+        <UpgradePrompt
+          error={upgradePrompt.error}
+          message={upgradePrompt.message}
+          currentPlan={upgradePrompt.currentPlan}
+          limit={upgradePrompt.limit}
+          fileSize={upgradePrompt.fileSize}
+          limitType={upgradePrompt.limitType}
+          onClose={handleCloseUpgradePrompt}
+        />
+      )}
     </div>
   )
 }

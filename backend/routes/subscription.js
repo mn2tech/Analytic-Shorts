@@ -69,6 +69,30 @@ const getUserFromToken = async (req, res, next) => {
 // Get current user's subscription
 router.get('/', getUserFromToken, async (req, res) => {
   try {
+    // Check if user is admin/demo first
+    const usageLimits = require('../middleware/usageLimits')
+    const isAdmin = await usageLimits.isAdminOrDemo(req.user.id, req.user.email)
+    
+    if (isAdmin) {
+      // Check if admin/demo plan exists in database
+      const { data } = await supabase
+        .from('shorts_subscriptions')
+        .select('*')
+        .eq('user_id', req.user.id)
+        .single()
+      
+      if (data && (data.plan === 'admin' || data.plan === 'demo')) {
+        return res.json(data)
+      }
+      
+      // Return admin plan if email is admin but no DB record
+      return res.json({
+        plan: 'admin',
+        status: 'active',
+        user_id: req.user.id
+      })
+    }
+    
     const { data, error } = await supabase
       .from('shorts_subscriptions')
       .select('*')
