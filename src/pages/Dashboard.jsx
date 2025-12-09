@@ -301,8 +301,16 @@ function Dashboard() {
       : filteredData
 
       const values = sampledData
-        .map((row) => parseNumericValue(row[selectedNumeric]))
-        .filter((val) => val !== 0 || row[selectedNumeric] === '0' || row[selectedNumeric] === '$0') // Keep zeros if they're valid
+        .map((row) => {
+          const value = parseNumericValue(row[selectedNumeric])
+          const originalValue = row[selectedNumeric]
+          return { value, originalValue }
+        })
+        .filter(({ value, originalValue }) => {
+          // Keep zeros if they're valid (original value was '0' or '$0')
+          return !isNaN(value) && isFinite(value) && (value !== 0 || originalValue === '0' || originalValue === '$0')
+        })
+        .map(({ value }) => value) // Extract just the numeric values
 
     if (values.length === 0) return null
 
