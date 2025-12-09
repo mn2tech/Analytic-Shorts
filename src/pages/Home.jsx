@@ -58,27 +58,22 @@ function Home() {
 
   const handleUploadSuccess = (data) => {
     try {
-      // Try to store data in sessionStorage for dashboard
-      const dataString = JSON.stringify(data)
-      const dataSize = new Blob([dataString]).size
+      // Estimate data size before stringifying (rough estimate)
+      const estimatedSize = JSON.stringify(data).length
+      const sizeInMB = estimatedSize / (1024 * 1024)
       
       // Check if data is too large for sessionStorage (usually 5-10MB limit)
-      // If larger than 4MB, use IndexedDB or pass via navigation state
-      if (dataSize > 4 * 1024 * 1024) {
-        // Data too large for sessionStorage - use IndexedDB or pass via state
-        console.warn('Data too large for sessionStorage, using alternative storage')
-        // For now, try to store anyway but catch the error
-        try {
-          sessionStorage.setItem('analyticsData', dataString)
-        } catch (storageError) {
-          // If storage fails, pass data via navigation state
-          console.warn('sessionStorage failed, passing data via navigation state')
-          navigate('/dashboard', { state: { analyticsData: data } })
-          return
-        }
-      } else {
-        sessionStorage.setItem('analyticsData', dataString)
+      // Use 3MB as safe threshold to avoid quota issues
+      if (sizeInMB > 3) {
+        // Data too large - pass via navigation state instead
+        console.warn(`Data size (${sizeInMB.toFixed(2)}MB) too large for sessionStorage, using navigation state`)
+        navigate('/dashboard', { state: { analyticsData: data } })
+        return
       }
+      
+      // Try to store in sessionStorage for smaller files
+      const dataString = JSON.stringify(data)
+      sessionStorage.setItem('analyticsData', dataString)
       navigate('/dashboard')
     } catch (error) {
       // If storage fails (quota exceeded), pass data via navigation state
@@ -89,23 +84,21 @@ function Home() {
 
   const handleDatasetLoad = (data) => {
     try {
-      // Try to store data in sessionStorage for dashboard
-      const dataString = JSON.stringify(data)
-      const dataSize = new Blob([dataString]).size
+      // Estimate data size before stringifying
+      const estimatedSize = JSON.stringify(data).length
+      const sizeInMB = estimatedSize / (1024 * 1024)
       
       // Check if data is too large for sessionStorage
-      if (dataSize > 4 * 1024 * 1024) {
-        console.warn('Data too large for sessionStorage, using alternative storage')
-        try {
-          sessionStorage.setItem('analyticsData', dataString)
-        } catch (storageError) {
-          console.warn('sessionStorage failed, passing data via navigation state')
-          navigate('/dashboard', { state: { analyticsData: data } })
-          return
-        }
-      } else {
-        sessionStorage.setItem('analyticsData', dataString)
+      // Use 3MB as safe threshold
+      if (sizeInMB > 3) {
+        console.warn(`Data size (${sizeInMB.toFixed(2)}MB) too large for sessionStorage, using navigation state`)
+        navigate('/dashboard', { state: { analyticsData: data } })
+        return
       }
+      
+      // Try to store in sessionStorage for smaller files
+      const dataString = JSON.stringify(data)
+      sessionStorage.setItem('analyticsData', dataString)
       navigate('/dashboard')
     } catch (error) {
       // If storage fails, pass data via navigation state
