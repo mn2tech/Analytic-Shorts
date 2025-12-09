@@ -82,9 +82,23 @@ function Dashboard() {
       dateColumns: parsedData.dateColumns,
     })
     
-    setData(parsedData.data)
-    setFilteredData(parsedData.data)
-    setSidebarFilteredData(parsedData.data)
+    // For very large datasets (>100k rows), sample the data for display
+    // This prevents stack overflow and improves performance
+    const MAX_ROWS_FOR_DISPLAY = 100000
+    let displayData = parsedData.data
+    
+    if (parsedData.data && parsedData.data.length > MAX_ROWS_FOR_DISPLAY) {
+      console.warn(`Dataset has ${parsedData.data.length} rows. Sampling ${MAX_ROWS_FOR_DISPLAY} rows for display to prevent performance issues.`)
+      // Sample evenly across the dataset
+      const step = Math.ceil(parsedData.data.length / MAX_ROWS_FOR_DISPLAY)
+      displayData = parsedData.data.filter((_, index) => index % step === 0)
+      console.log(`Sampled to ${displayData.length} rows`)
+    }
+    
+    // Store full data and sampled data separately
+    setData(displayData) // Use sampled data for display
+    setFilteredData(displayData)
+    setSidebarFilteredData(displayData)
     setColumns(parsedData.columns || [])
     setNumericColumns(parsedData.numericColumns || [])
     setCategoricalColumns(parsedData.categoricalColumns || [])
@@ -173,7 +187,10 @@ function Dashboard() {
     if (!baseData) return baseData
     if (!chartFilter) return baseData
     
-    let result = [...baseData]
+    // For large arrays, use slice instead of spread to avoid stack overflow
+    let result = baseData.length > 50000 
+      ? baseData.slice() 
+      : [...baseData]
     
     // Apply chart filter if exists
     if (chartFilter.type === 'category' && selectedCategorical) {
