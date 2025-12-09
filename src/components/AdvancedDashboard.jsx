@@ -1,10 +1,22 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import SunburstChart from './SunburstChart'
 import ForecastChart from './ForecastChart'
 import ChartInsights from './ChartInsights'
 
 const COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444', '#6366f1', '#14b8a6', '#f97316', '#06b6d4']
+
+// Sample data efficiently for charts (max 5000 rows to prevent performance issues)
+const sampleDataForCharts = (data, maxRows = 5000) => {
+  if (!data || data.length <= maxRows) return data
+  // Sample evenly across the dataset
+  const step = Math.ceil(data.length / maxRows)
+  const sampled = []
+  for (let i = 0; i < data.length; i += step) {
+    sampled.push(data[i])
+  }
+  return sampled
+}
 
 function AdvancedDashboard({ data, filteredData, selectedNumeric, selectedCategorical, selectedDate, onChartFilter, chartFilter, categoricalColumns }) {
   const [chartInsights, setChartInsights] = useState(null)
@@ -13,11 +25,14 @@ function AdvancedDashboard({ data, filteredData, selectedNumeric, selectedCatego
     ? categoricalColumns.find(col => col !== selectedCategorical) || categoricalColumns[1]
     : null
 
-  const prepareLineData = () => {
-    if (!filteredData || !selectedNumeric || !selectedDate) return []
+  // Sample filtered data for chart processing
+  const sampledFilteredData = useMemo(() => sampleDataForCharts(filteredData, 5000), [filteredData])
+
+  const prepareLineData = useMemo(() => {
+    if (!sampledFilteredData || !selectedNumeric || !selectedDate) return []
     
     const grouped = {}
-    filteredData.forEach((row) => {
+    sampledFilteredData.forEach((row) => {
       const date = row[selectedDate] || ''
       const value = parseFloat(row[selectedNumeric]) || 0
       if (date) {
@@ -29,13 +44,13 @@ function AdvancedDashboard({ data, filteredData, selectedNumeric, selectedCatego
       .map(([date, value]) => ({ date, value }))
       .sort((a, b) => new Date(a.date) - new Date(b.date))
       .slice(0, 20)
-  }
+  }, [sampledFilteredData, selectedNumeric, selectedDate])
 
-  const prepareBarData = () => {
-    if (!filteredData || !selectedCategorical || !selectedNumeric) return []
+  const prepareBarData = useMemo(() => {
+    if (!sampledFilteredData || !selectedCategorical || !selectedNumeric) return []
     
     const grouped = {}
-    filteredData.forEach((row) => {
+    sampledFilteredData.forEach((row) => {
       const key = row[selectedCategorical] || 'Unknown'
       const value = parseFloat(row[selectedNumeric]) || 0
       grouped[key] = (grouped[key] || 0) + value
@@ -45,13 +60,13 @@ function AdvancedDashboard({ data, filteredData, selectedNumeric, selectedCatego
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 10)
-  }
+  }, [sampledFilteredData, selectedCategorical, selectedNumeric])
 
-  const prepareDonutData = () => {
-    if (!filteredData || !selectedCategorical || !selectedNumeric) return []
+  const prepareDonutData = useMemo(() => {
+    if (!sampledFilteredData || !selectedCategorical || !selectedNumeric) return []
     
     const grouped = {}
-    filteredData.forEach((row) => {
+    sampledFilteredData.forEach((row) => {
       const key = row[selectedCategorical] || 'Unknown'
       const value = parseFloat(row[selectedNumeric]) || 0
       grouped[key] = (grouped[key] || 0) + value
@@ -61,12 +76,12 @@ function AdvancedDashboard({ data, filteredData, selectedNumeric, selectedCatego
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 5)
-  }
+  }, [sampledFilteredData, selectedCategorical, selectedNumeric])
 
-  const lineData = prepareLineData()
-  const barData = prepareBarData()
-  const donutData = prepareDonutData()
-  const donutTotal = donutData.reduce((sum, item) => sum + item.value, 0)
+  const lineData = prepareLineData
+  const barData = prepareBarData
+  const donutData = prepareDonutData
+  const donutTotal = useMemo(() => donutData.reduce((sum, item) => sum + item.value, 0), [donutData])
 
   const formatDate = (dateStr) => {
     if (!dateStr) return ''

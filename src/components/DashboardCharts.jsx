@@ -1,8 +1,20 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import ChartInsights from './ChartInsights'
 
 const COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444', '#6366f1', '#14b8a6']
+
+// Sample data efficiently for charts (max 5000 rows to prevent performance issues)
+const sampleDataForCharts = (data, maxRows = 5000) => {
+  if (!data || data.length <= maxRows) return data
+  // Sample evenly across the dataset
+  const step = Math.ceil(data.length / maxRows)
+  const sampled = []
+  for (let i = 0; i < data.length; i += step) {
+    sampled.push(data[i])
+  }
+  return sampled
+}
 
 function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategorical, selectedDate, onChartFilter, chartFilter }) {
   const [hoveredSegment, setHoveredSegment] = useState(null)
@@ -10,36 +22,46 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
   
   // Use filteredData for display, but data for pie chart calculations (to show all categories)
   const displayData = filteredData || data
-  const prepareLineChartData = () => {
-    if (!displayData || displayData.length === 0 || !selectedNumeric) return []
+  
+  // Sample data for charts to improve performance
+  const sampledDisplayData = useMemo(() => sampleDataForCharts(displayData, 5000), [displayData])
+  const sampledFullData = useMemo(() => sampleDataForCharts(data, 10000), [data])
+  
+  const prepareLineChartData = useMemo(() => {
+    if (!sampledDisplayData || sampledDisplayData.length === 0 || !selectedNumeric) return []
 
     if (selectedDate && selectedNumeric) {
-      return displayData
+      // Sample first, then process
+      const step = Math.max(1, Math.floor(sampledDisplayData.length / 30))
+      return sampledDisplayData
+        .filter((_, i) => i % step === 0)
         .map((row) => ({
           date: row[selectedDate] || '',
           value: parseFloat(row[selectedNumeric]) || 0,
-          originalRow: row, // Keep reference for filtering
+          originalRow: row,
         }))
         .filter((item) => item.date)
         .slice(0, 30)
         .sort((a, b) => new Date(a.date) - new Date(b.date))
     }
 
-    return displayData
+    return sampledDisplayData
+      .filter((_, i) => i % Math.max(1, Math.floor(sampledDisplayData.length / 30)) === 0)
       .slice(0, 30)
       .map((row, index) => ({
         name: `Item ${index + 1}`,
         value: parseFloat(row[selectedNumeric]) || 0,
         originalRow: row,
       }))
-  }
+  }, [sampledDisplayData, selectedNumeric, selectedDate])
 
-  const preparePieChartData = () => {
-    if (!data || data.length === 0) return []
+  const preparePieChartData = useMemo(() => {
+    if (!sampledFullData || sampledFullData.length === 0) return []
 
     if (selectedCategorical && selectedNumeric) {
       const grouped = {}
-      data.forEach((row) => {
+      // Process sampled data instead of full dataset
+      sampledFullData.forEach((row) => {
         const key = row[selectedCategorical] || 'Unknown'
         const value = parseFloat(row[selectedNumeric]) || 0
         grouped[key] = (grouped[key] || 0) + value
@@ -51,7 +73,7 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
     }
 
     return []
-  }
+  }, [sampledFullData, selectedCategorical, selectedNumeric])
 
   const handlePieClick = (data, index) => {
     if (selectedCategorical && data && data.name) {
@@ -75,9 +97,9 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
     }
   }
 
-  const lineData = prepareLineChartData()
-  const pieData = preparePieChartData()
-  const totalValue = pieData.reduce((sum, item) => sum + item.value, 0)
+  const lineData = prepareLineChartData
+  const pieData = preparePieChartData
+  const totalValue = useMemo(() => pieData.reduce((sum, item) => sum + item.value, 0), [pieData])
 
   const handleChartClick = (chartType, chartData, chartTitle) => {
     // Convert chart data back to original row format for insights
