@@ -68,9 +68,16 @@ function Dashboard() {
     try {
       hasInitialized.current = true
       const parsed = JSON.parse(storedData)
+      if (!parsed || !parsed.data) {
+        console.error('Invalid data in sessionStorage:', parsed)
+        sessionStorage.removeItem('analyticsData')
+        navigate('/')
+        return
+      }
       initializeData(parsed)
     } catch (error) {
       console.error('Error parsing stored data:', error)
+      sessionStorage.removeItem('analyticsData')
       navigate('/')
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
