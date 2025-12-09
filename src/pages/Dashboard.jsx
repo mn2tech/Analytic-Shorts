@@ -44,6 +44,7 @@ function Dashboard() {
   const [saveSuccess, setSaveSuccess] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
   const hasInitialized = useRef(false)
+  const isUpdatingMetadata = useRef(false)
 
   useEffect(() => {
     // Prevent multiple initializations
@@ -468,12 +469,19 @@ function Dashboard() {
 
   const handleMetadataUpdate = (newMetadata) => {
     try {
+      // Set flag to prevent data loss during update
+      isUpdatingMetadata.current = true
+      
       // Validate new metadata
       if (!newMetadata || !newMetadata.numericColumns || !newMetadata.categoricalColumns || !newMetadata.dateColumns) {
         console.error('Invalid metadata update:', newMetadata)
+        isUpdatingMetadata.current = false
         alert('Error: Invalid metadata format. Please try again.')
         return
       }
+
+      // CRITICAL: Ensure data is preserved - never clear it during metadata updates
+      console.log('Metadata update: Preserving data. Current data length:', data?.length)
 
       // Update column type arrays
       setNumericColumns(newMetadata.numericColumns || [])
@@ -533,12 +541,19 @@ function Dashboard() {
       setSelectedDate(newSelectedDate)
       setSelectedCategorical(newSelectedCategorical)
       
+      // Clear the flag after state updates complete
+      setTimeout(() => {
+        isUpdatingMetadata.current = false
+        console.log('Metadata update complete. Data preserved:', data?.length)
+      }, 500)
+      
       // Show success message (use setTimeout to prevent blocking)
       setTimeout(() => {
         alert('Metadata updated successfully! Charts will now use the new column types.')
       }, 100)
     } catch (error) {
       console.error('Error updating metadata:', error)
+      isUpdatingMetadata.current = false
       setTimeout(() => {
         alert('Error updating metadata. Please try again.')
       }, 100)
@@ -574,7 +589,18 @@ function Dashboard() {
   
   // Check if data exists - but don't redirect if we're in the middle of a metadata update
   if (!data || data.length === 0) {
-    console.warn('Dashboard: No data available. Data:', data, 'Loading:', loading, 'Has initialized:', hasInitialized.current)
+    console.warn('Dashboard: No data available. Data:', data, 'Loading:', loading, 'Has initialized:', hasInitialized.current, 'Updating metadata:', isUpdatingMetadata.current)
+    
+    // CRITICAL: Never redirect during metadata updates - data might be temporarily unavailable during state updates
+    if (isUpdatingMetadata.current) {
+      console.log('Metadata update in progress - showing loading state to prevent blank page')
+      return (
+        <div className="min-h-screen bg-gray-50">
+          <Navbar />
+          <Loader />
+        </div>
+      )
+    }
     
     // Only redirect if we've actually initialized and there's truly no data
     // This prevents blank page during metadata updates
