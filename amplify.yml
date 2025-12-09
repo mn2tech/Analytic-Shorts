@@ -16,7 +16,7 @@ frontend:
     
     # Production Price IDs
     VITE_STRIPE_PRO_PRICE_ID: price_1Sak7ICAL4InIKRQecSqTjLb
-    VITE_STRIPE_ENTERPRISE_PRICE_ID: price_1Sb3CtCAL4InIKRQrlhBex3j
+    VITE_STRIPE_ENTERPRISE_PRICE_ID: price_1ScFgsCAL4InIKRQyL2PJ5Q4
   artifacts:
     baseDirectory: dist
     files:

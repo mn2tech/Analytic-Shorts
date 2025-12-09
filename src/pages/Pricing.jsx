@@ -56,16 +56,27 @@ function Pricing() {
       window.location.href = url
     } catch (error) {
       console.error('Error creating checkout session:', error)
+      console.error('Full error response:', error.response?.data)
       
       // Show more helpful error message
       let errorMessage = 'Failed to start checkout. Please try again.'
       if (error.response?.data?.message) {
         errorMessage = error.response.data.message
+      } else if (error.response?.data?.error) {
+        errorMessage = error.response.data.error
       } else if (error.message) {
         errorMessage = error.message
       }
       
-      alert(`Checkout Error: ${errorMessage}\n\nPlease check:\n1. Backend is running\n2. Stripe is configured\n3. Products are created in Stripe Dashboard`)
+      // Show detailed error in alert
+      const details = error.response?.data?.details 
+        ? `\n\nDetails: ${error.response.data.details}`
+        : ''
+      const priceIdInfo = error.response?.data?.priceId
+        ? `\n\nPrice ID used: ${error.response.data.priceId}`
+        : ''
+      
+      alert(`Checkout Error: ${errorMessage}${details}${priceIdInfo}\n\nPlease check:\n1. Backend is running\n2. Stripe is configured\n3. Products are created in Stripe Dashboard\n4. Check backend console for detailed error`)
       setLoading({ [planId]: false })
     }
   }
@@ -125,6 +136,13 @@ function Pricing() {
                   </span>
                 </div>
               )}
+              {plan.id === 'enterprise' && (
+                <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
+                  <span className="bg-purple-500 text-white px-4 py-1 rounded-full text-sm font-semibold">
+                    Early Access
+                  </span>
+                </div>
+              )}
 
               <div className="text-center mb-6">
                 <h3 className="text-2xl font-bold text-gray-900 mb-2">
@@ -136,6 +154,12 @@ function Pricing() {
                   </span>
                   {plan.price > 0 && (
                     <span className="text-gray-600">/{plan.interval}</span>
+                  )}
+                  {plan.id === 'enterprise' && (
+                    <div className="mt-2">
+                      <span className="text-sm text-gray-500 line-through">$99</span>
+                      <span className="text-sm text-green-600 font-semibold ml-2">50% off</span>
+                    </div>
                   )}
                 </div>
                 <p className="text-gray-600 text-sm">{plan.description}</p>

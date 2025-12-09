@@ -54,10 +54,10 @@ export const PLANS = {
   enterprise: {
     id: 'enterprise',
     name: 'Enterprise',
-    price: 99,
+    price: 49,
     priceId: import.meta.env.VITE_STRIPE_ENTERPRISE_PRICE_ID || 'price_enterprise_monthly',
     interval: 'month',
-    description: 'For teams and organizations',
+    description: 'For teams and organizations (Early Access)',
     image: import.meta.env.VITE_ENTERPRISE_PLAN_IMAGE || '/images/enterprise-plan.jpg', // Plan image URL (local or external)
     features: [
       'Everything in Pro',
