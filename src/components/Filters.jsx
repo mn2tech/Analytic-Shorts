@@ -114,19 +114,30 @@ function Filters({
     return filtered
   }, [data, filters, selectedNumeric, selectedCategorical, selectedDate])
 
-  // Debounced filter application
+  // Debounced filter application with more aggressive debouncing for large datasets
   useEffect(() => {
     // Clear previous timer
     if (debounceTimer.current) {
       clearTimeout(debounceTimer.current)
     }
     
-    // Debounce filter application for large datasets
-    const delay = data && data.length > 10000 ? 300 : 0
+    // More aggressive debouncing for large datasets to ensure smooth UX
+    const delay = data && data.length > 5000 ? 500 : data && data.length > 1000 ? 300 : 100
     
     debounceTimer.current = setTimeout(() => {
-      const filtered = getFilteredData()
-      onFilterChange(filters, filtered)
+      // Use requestIdleCallback if available for non-blocking processing
+      if (window.requestIdleCallback) {
+        window.requestIdleCallback(() => {
+          const filtered = getFilteredData()
+          onFilterChange(filters, filtered)
+        }, { timeout: 1000 })
+      } else {
+        // Fallback to setTimeout for browsers without requestIdleCallback
+        setTimeout(() => {
+          const filtered = getFilteredData()
+          onFilterChange(filters, filtered)
+        }, 0)
+      }
     }, delay)
     
     return () => {

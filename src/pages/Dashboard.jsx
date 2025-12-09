@@ -91,17 +91,17 @@ function Dashboard() {
       dateColumns: parsedData.dateColumns,
     })
     
-    // For very large datasets (>100k rows), sample the data for display
-    // This prevents stack overflow and improves performance
-    const MAX_ROWS_FOR_DISPLAY = 100000
+    // For large datasets, aggressively sample the data for display
+    // This ensures smooth performance and responsive UI
+    const MAX_ROWS_FOR_DISPLAY = 10000 // Reduced from 100k for better performance
     let displayData = parsedData.data
     
     if (parsedData.data && parsedData.data.length > MAX_ROWS_FOR_DISPLAY) {
-      console.warn(`Dataset has ${parsedData.data.length} rows. Sampling ${MAX_ROWS_FOR_DISPLAY} rows for display to prevent performance issues.`)
+      console.warn(`Dataset has ${parsedData.data.length} rows. Sampling ${MAX_ROWS_FOR_DISPLAY} rows for display to ensure smooth performance.`)
       // Sample evenly across the dataset
       const step = Math.ceil(parsedData.data.length / MAX_ROWS_FOR_DISPLAY)
       displayData = parsedData.data.filter((_, index) => index % step === 0)
-      console.log(`Sampled to ${displayData.length} rows`)
+      console.log(`Sampled to ${displayData.length} rows for optimal performance`)
     }
     
     // Store full data and sampled data separately
@@ -216,13 +216,21 @@ function Dashboard() {
   }
 
   const handleFilterChange = (filters, filtered) => {
-    // Store sidebar-filtered data
-    const sidebarFiltered = filtered || data
-    setSidebarFilteredData(sidebarFiltered)
+    // Use requestAnimationFrame to make filtering non-blocking
+    setIsFiltering(true)
     
-    // Apply chart filter on top of sidebar filters
-    const result = applyChartFilter(sidebarFiltered)
-    setFilteredData(result)
+    requestAnimationFrame(() => {
+      // Store sidebar-filtered data
+      const sidebarFiltered = filtered || data
+      setSidebarFilteredData(sidebarFiltered)
+      
+      // Apply chart filter on top of sidebar filters
+      requestAnimationFrame(() => {
+        const result = applyChartFilter(sidebarFiltered)
+        setFilteredData(result)
+        setIsFiltering(false)
+      })
+    })
   }
 
   const handleChartFilter = (filter) => {
@@ -564,6 +572,16 @@ function Dashboard() {
 
         {/* Fullscreen Content */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          {/* Filtering Loading Indicator */}
+          {isFiltering && (
+            <div className="mb-4 flex items-center justify-center bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <div className="flex items-center space-x-2">
+                <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                <span className="text-sm font-medium text-blue-900">Applying filters...</span>
+              </div>
+            </div>
+          )}
+          
           {/* Active Filter Indicator */}
           {chartFilter && (
             <div className="mb-4 flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg p-3">
@@ -631,6 +649,16 @@ function Dashboard() {
       <Navbar />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {/* Filtering Loading Indicator */}
+        {isFiltering && (
+          <div className="mb-4 flex items-center justify-center bg-blue-50 border border-blue-200 rounded-lg p-3">
+            <div className="flex items-center space-x-2">
+              <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+              <span className="text-sm font-medium text-blue-900">Applying filters...</span>
+            </div>
+          </div>
+        )}
+        
         {/* Header */}
         <div className="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center animate-fade-in">
           <div>
