@@ -145,5 +145,6 @@ function MetricCards({ data, numericColumns, selectedNumeric, stats }) {
   )
 }
 
-export default MetricCards
+// Memoize component to prevent unnecessary re-renders
+export default memo(MetricCards)
 

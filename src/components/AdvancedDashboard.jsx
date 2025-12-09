@@ -492,5 +492,6 @@ function AdvancedDashboard({ data, filteredData, selectedNumeric, selectedCatego
   )
 }
 
-export default AdvancedDashboard
+// Memoize component to prevent unnecessary re-renders
+export default memo(AdvancedDashboard)
 
