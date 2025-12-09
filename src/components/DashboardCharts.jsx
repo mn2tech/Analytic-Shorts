@@ -265,11 +265,11 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
       <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200 hover:shadow-md transition-shadow relative group">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-semibold text-gray-900">
-            {selectedCategorical || 'Distribution'}
+            {selectedCategorical || selectedDate || 'Distribution'}
           </h3>
           {pieData.length > 0 && (
             <button
-              onClick={() => handleChartClick('pie', pieData, `Distribution by ${selectedCategorical || 'Category'}`)}
+              onClick={() => handleChartClick('pie', pieData, `Distribution by ${selectedCategorical || selectedDate || 'Category'}`)}
               className="opacity-0 group-hover:opacity-100 transition-opacity p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg"
               title="Get AI insights for this chart"
             >
