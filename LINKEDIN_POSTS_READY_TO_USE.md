@@ -1,5 +1,8 @@
 # 📱 Ready-to-Use LinkedIn Posts
 
+## 🆕 Latest: Problem-Solving Post
+See `LINKEDIN_POST_PROBLEM_SOLVING.md` for 5 ready-to-use problem-solving posts!
+
 ## 🚀 Copy, Paste, and Post!
 
 **All posts are ready to use - just copy and paste!**
