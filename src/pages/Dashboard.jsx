@@ -176,41 +176,46 @@ function Dashboard() {
         return 'Financial Data'
       }
       
-      return null
-    }
-    
-    const domain = detectDomain(allColumns)
-    
-    if (domain) {
-      setDashboardTitle(`${domain} Analytics`)
-    } else if (parsedData.categoricalColumns && parsedData.categoricalColumns.length > 0) {
-      // Use first categorical column as fallback
-      const firstCategory = parsedData.categoricalColumns[0]
-      const formattedTitle = firstCategory
-        .split(/[\s_]+/)
-        .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-        .join(' ')
-      setDashboardTitle(`${formattedTitle} Analytics`)
-    } else {
-      setDashboardTitle('Analytics Dashboard')
-    }
+        return null
+      }
+      
+      const domain = detectDomain(allColumns)
+      
+      if (domain) {
+        setDashboardTitle(`${domain} Analytics`)
+      } else if (parsedData.categoricalColumns && parsedData.categoricalColumns.length > 0) {
+        // Use first categorical column as fallback
+        const firstCategory = parsedData.categoricalColumns[0]
+        const formattedTitle = firstCategory
+          .split(/[\s_]+/)
+          .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+          .join(' ')
+        setDashboardTitle(`${formattedTitle} Analytics`)
+      } else {
+        setDashboardTitle('Analytics Dashboard')
+      }
 
+      // Auto-select first columns
+      if (parsedData.numericColumns && parsedData.numericColumns.length > 0) {
+        setSelectedNumeric(parsedData.numericColumns[0])
+      }
+      if (parsedData.categoricalColumns && parsedData.categoricalColumns.length > 0) {
+        setSelectedCategorical(parsedData.categoricalColumns[0])
+      }
+      if (parsedData.dateColumns && parsedData.dateColumns.length > 0) {
+        setSelectedDate(parsedData.dateColumns[0])
+      }
 
-    // Auto-select first columns
-    if (parsedData.numericColumns && parsedData.numericColumns.length > 0) {
-      setSelectedNumeric(parsedData.numericColumns[0])
+      // Ensure loading is set to false after initialization
+      console.log('Setting loading to false. Display data length:', displayData?.length)
+      setLoading(false)
+      console.log('Data initialization complete. Data length:', displayData?.length, 'Columns:', parsedData.columns?.length, 'Numeric columns:', parsedData.numericColumns?.length)
+    } catch (error) {
+      console.error('Error initializing data:', error)
+      setLoading(false)
+      // Show error message to user
+      alert(`Error loading data: ${error.message}. Please try uploading again.`)
     }
-    if (parsedData.categoricalColumns && parsedData.categoricalColumns.length > 0) {
-      setSelectedCategorical(parsedData.categoricalColumns[0])
-    }
-    if (parsedData.dateColumns && parsedData.dateColumns.length > 0) {
-      setSelectedDate(parsedData.dateColumns[0])
-    }
-
-    // Ensure loading is set to false after initialization
-    console.log('Setting loading to false. Display data length:', displayData?.length)
-    setLoading(false)
-    console.log('Data initialization complete. Data length:', displayData?.length, 'Columns:', parsedData.columns?.length, 'Numeric columns:', parsedData.numericColumns?.length)
   }
 
   const applyChartFilter = (baseData) => {
