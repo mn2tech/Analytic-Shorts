@@ -145,18 +145,23 @@ const checkUploadLimitWithTimeout = (req, res, next) => {
   }
   
   // Call the async middleware and handle errors
-  Promise.resolve(checkUploadLimit(req, res, wrappedNext)).catch((err) => {
-    if (!timeoutFired) {
-      clearTimeout(timeout)
-      console.error('Upload limit check error:', err)
-      if (!res.headersSent) {
-        return res.status(500).json({ 
-          error: 'Failed to check upload limits',
-          message: 'Please try again in a moment'
-        })
+  // Use async/await pattern to properly handle the async middleware
+  ;(async () => {
+    try {
+      await checkUploadLimit(req, res, wrappedNext)
+    } catch (err) {
+      if (!timeoutFired) {
+        clearTimeout(timeout)
+        console.error('Upload limit check error:', err)
+        if (!res.headersSent) {
+          return res.status(500).json({ 
+            error: 'Failed to check upload limits',
+            message: 'Please try again in a moment'
+          })
+        }
       }
     }
-  })
+  })()
 }
 
 // Upload route with optional auth and usage limits
