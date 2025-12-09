@@ -30,6 +30,11 @@ function ExampleDatasetButton({ onDatasetLoad, onError }) {
       description: 'Charity donations by category',
       endpoint: '/api/example/donations',
     },
+    {
+      name: 'Yearly Income',
+      description: 'Year-over-year income growth (2020-2025)',
+      endpoint: '/api/example/yearly-income',
+    },
   ]
 
   const loadExample = async (endpoint, datasetName) => {

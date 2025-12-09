@@ -199,6 +199,16 @@ const exampleDatasets = {
       { Date: '2024-02-29', 'Account': 'Business Checking', 'Transaction Type': 'Revenue', Category: 'Sales', Description: 'Recurring Subscription Revenue', Amount: 3200, Balance: 93189.87, Status: 'Completed' },
     ],
   },
+  yearlyIncome: {
+    data: [
+      { Year: '2020', Income: '$0' },
+      { Year: '2021', Income: '$1,200' },
+      { Year: '2022', Income: '$5,600' },
+      { Year: '2023', Income: '$63,000' },
+      { Year: '2024', Income: '$554,000' },
+      { Year: '2025', Income: '$930,000' },
+    ],
+  },
 }
 
 router.get('/sales', (req, res) => {
@@ -267,6 +277,22 @@ router.get('/medical', (req, res) => {
 
 router.get('/banking', (req, res) => {
   const dataset = exampleDatasets.banking
+  const columns = Object.keys(dataset.data[0])
+  const { numericColumns, categoricalColumns, dateColumns } = detectColumnTypes(dataset.data, columns)
+  const processedData = processData(dataset.data)
+
+  res.json({
+    data: processedData,
+    columns,
+    numericColumns,
+    categoricalColumns,
+    dateColumns,
+    rowCount: processedData.length,
+  })
+})
+
+router.get('/yearly-income', (req, res) => {
+  const dataset = exampleDatasets.yearlyIncome
   const columns = Object.keys(dataset.data[0])
   const { numericColumns, categoricalColumns, dateColumns } = detectColumnTypes(dataset.data, columns)
   const processedData = processData(dataset.data)
