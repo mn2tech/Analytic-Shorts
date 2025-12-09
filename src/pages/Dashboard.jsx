@@ -10,6 +10,7 @@ import Filters from '../components/Filters'
 import AIInsights from '../components/AIInsights'
 import ForecastChart from '../components/ForecastChart'
 import DataMetadataEditor from '../components/DataMetadataEditor'
+import TimeSeriesReport from '../components/TimeSeriesReport'
 import { saveAs } from 'file-saver'
 import { generateShareId, saveSharedDashboard, getShareableUrl, copyToClipboard } from '../utils/shareUtils'
 import { saveDashboard, updateDashboard } from '../services/dashboardService'
@@ -33,7 +34,7 @@ function Dashboard() {
   const [chartFilter, setChartFilter] = useState(null) // { type: 'category' | 'date', value: string }
   const [shareId, setShareId] = useState(null)
   const [shareLinkCopied, setShareLinkCopied] = useState(false)
-  const [dashboardView, setDashboardView] = useState('advanced') // 'advanced', 'simple', or 'data'
+  const [dashboardView, setDashboardView] = useState('advanced') // 'advanced', 'simple', 'data', or 'timeseries'
   const [dashboardTitle, setDashboardTitle] = useState('Analytics Dashboard')
   // Store the sidebar-filtered data separately
   const [sidebarFilteredData, setSidebarFilteredData] = useState(null)
