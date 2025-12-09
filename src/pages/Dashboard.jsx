@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import Navbar from '../components/Navbar'
 import Loader from '../components/Loader'
@@ -40,11 +40,18 @@ function Dashboard() {
   const [saving, setSaving] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
+  const hasInitialized = useRef(false)
 
   useEffect(() => {
+    // Prevent multiple initializations
+    if (hasInitialized.current) return
+    
     // First check if data was passed via navigation state (for large files that exceed storage quota)
     if (location.state?.analyticsData) {
+      hasInitialized.current = true
       initializeData(location.state.analyticsData)
+      // Clear navigation state to prevent re-initialization on re-renders
+      navigate(location.pathname, { replace: true, state: {} })
       return
     }
 
@@ -56,13 +63,15 @@ function Dashboard() {
     }
 
     try {
+      hasInitialized.current = true
       const parsed = JSON.parse(storedData)
       initializeData(parsed)
     } catch (error) {
       console.error('Error parsing stored data:', error)
       navigate('/')
     }
-  }, [location.state])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // Only run once on mount - location.state is checked but not in deps to prevent re-runs
 
   // Re-apply chart filter when it changes
   useEffect(() => {
