@@ -22,22 +22,10 @@ function AdminAnalytics() {
       setLoading(true)
       setError(null)
 
-      const token = localStorage.getItem('supabase.auth.token')
-      if (!token) {
-        throw new Error('Not authenticated')
-      }
-
+      // apiClient automatically adds auth token via interceptor
       const [visitorsRes, usageRes] = await Promise.all([
-        apiClient.get(`/api/analytics/visitors?days=${days}`, {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
-        }),
-        apiClient.get('/api/analytics/usage', {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
-        })
+        apiClient.get(`/api/analytics/visitors?days=${days}`),
+        apiClient.get('/api/analytics/usage')
       ])
 
       setVisitorStats(visitorsRes.data)
