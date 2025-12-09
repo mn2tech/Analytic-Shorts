@@ -465,6 +465,27 @@ function Dashboard() {
 
   const stats = calculateStats
 
+  const handleMetadataUpdate = (newMetadata) => {
+    // Update column type arrays
+    setNumericColumns(newMetadata.numericColumns || [])
+    setCategoricalColumns(newMetadata.categoricalColumns || [])
+    setDateColumns(newMetadata.dateColumns || [])
+    
+    // Auto-select columns if they were previously selected
+    if (selectedNumeric && !newMetadata.numericColumns.includes(selectedNumeric)) {
+      setSelectedNumeric(newMetadata.numericColumns[0] || '')
+    }
+    if (selectedDate && !newMetadata.dateColumns.includes(selectedDate)) {
+      setSelectedDate(newMetadata.dateColumns[0] || '')
+    }
+    if (selectedCategorical && !newMetadata.categoricalColumns.includes(selectedCategorical)) {
+      setSelectedCategorical(newMetadata.categoricalColumns[0] || '')
+    }
+    
+    // Show success message
+    alert('Metadata updated successfully! Charts will now use the new column types.')
+  }
+
   const toggleFullscreen = () => {
     setIsFullscreen(!isFullscreen)
   }
@@ -593,12 +614,28 @@ function Dashboard() {
                   )}
                 </div>
                 
-                <button
-                  onClick={() => setDashboardView(dashboardView === 'advanced' ? 'simple' : 'advanced')}
-                  className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50 transition-colors"
-                >
-                  {dashboardView === 'advanced' ? 'Simple View' : 'Advanced View'}
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setDashboardView('advanced')}
+                    className={`px-3 py-1.5 text-sm border rounded-lg transition-colors ${
+                      dashboardView === 'advanced'
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-white border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    Charts
+                  </button>
+                  <button
+                    onClick={() => setDashboardView('data')}
+                    className={`px-3 py-1.5 text-sm border rounded-lg transition-colors ${
+                      dashboardView === 'data'
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-white border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    Data & Metadata
+                  </button>
+                </div>
                 <button
                   onClick={toggleFullscreen}
                   className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors font-medium text-sm flex items-center gap-2"
@@ -637,7 +674,16 @@ function Dashboard() {
           )}
 
           {/* Charts Section */}
-          {dashboardView === 'advanced' ? (
+          {dashboardView === 'data' ? (
+            <DataMetadataEditor
+              data={data}
+              columns={columns}
+              numericColumns={numericColumns}
+              categoricalColumns={categoricalColumns}
+              dateColumns={dateColumns}
+              onMetadataUpdate={handleMetadataUpdate}
+            />
+          ) : dashboardView === 'advanced' ? (
             <AdvancedDashboard
               data={data}
               filteredData={filteredData}
@@ -762,12 +808,28 @@ function Dashboard() {
               </svg>
               Fullscreen
             </button>
-            <button
-              onClick={() => setDashboardView(dashboardView === 'advanced' ? 'simple' : 'advanced')}
-              className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50 transition-colors"
-            >
-              {dashboardView === 'advanced' ? 'Simple View' : 'Advanced View'}
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setDashboardView('advanced')}
+                className={`px-3 py-1.5 text-sm border rounded-lg transition-colors ${
+                  dashboardView === 'advanced'
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                Charts
+              </button>
+              <button
+                onClick={() => setDashboardView('data')}
+                className={`px-3 py-1.5 text-sm border rounded-lg transition-colors ${
+                  dashboardView === 'data'
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                Data & Metadata
+              </button>
+            </div>
           </div>
         </div>
 
@@ -872,7 +934,16 @@ function Dashboard() {
         )}
 
         {/* Charts Section */}
-        {dashboardView === 'advanced' ? (
+        {dashboardView === 'data' ? (
+          <DataMetadataEditor
+            data={data}
+            columns={columns}
+            numericColumns={numericColumns}
+            categoricalColumns={categoricalColumns}
+            dateColumns={dateColumns}
+            onMetadataUpdate={handleMetadataUpdate}
+          />
+        ) : dashboardView === 'advanced' ? (
           <AdvancedDashboard
             data={data}
             filteredData={filteredData}
