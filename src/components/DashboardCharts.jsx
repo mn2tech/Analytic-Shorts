@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, memo } from 'react'
 import { LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import ChartInsights from './ChartInsights'
 
@@ -389,5 +389,6 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
   )
 }
 
-export default DashboardCharts
+// Memoize component to prevent unnecessary re-renders
+export default memo(DashboardCharts)
 

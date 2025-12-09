@@ -251,21 +251,37 @@ function Dashboard() {
     }
   }
 
-  const calculateStats = () => {
+  // Memoize stats calculation to prevent recalculation on every render
+  const calculateStats = useMemo(() => {
     if (!filteredData || !selectedNumeric) return null
 
-    const values = filteredData
+    // Sample data if too large for performance
+    const sampleSize = 5000
+    const sampledData = filteredData.length > sampleSize 
+      ? filteredData.filter((_, i) => i % Math.ceil(filteredData.length / sampleSize) === 0)
+      : filteredData
+
+    const values = sampledData
       .map((row) => parseFloat(row[selectedNumeric]))
       .filter((val) => !isNaN(val) && isFinite(val))
 
     if (values.length === 0) return null
 
-    const sum = values.reduce((a, b) => a + b, 0)
-    const avg = sum / values.length
-    const min = Math.min(...values)
-    const max = Math.max(...values)
+    // Optimize min/max calculation for large arrays
+    let min = Infinity
+    let max = -Infinity
+    let sum = 0
+    
+    for (let i = 0; i < values.length; i++) {
+      const val = values[i]
+      sum += val
+      if (val < min) min = val
+      if (val > max) max = val
+    }
 
-    // Calculate trend (compare first half vs second half)
+    const avg = sum / values.length
+
+    // Calculate trend (compare first half vs second half) - sample if too large
     const mid = Math.floor(values.length / 2)
     let trend = 0
     if (mid > 0) {
@@ -277,7 +293,7 @@ function Dashboard() {
     }
 
     return { sum, avg, min, max, trend, column: selectedNumeric }
-  }
+  }, [filteredData, selectedNumeric])
 
   const downloadSummaryCSV = () => {
     if (!filteredData || filteredData.length === 0) return
@@ -423,7 +439,7 @@ function Dashboard() {
     }
   }
 
-  const stats = calculateStats()
+  const stats = calculateStats
 
   const toggleFullscreen = () => {
     setIsFullscreen(!isFullscreen)

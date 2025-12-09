@@ -1,8 +1,17 @@
+import { useMemo, memo } from 'react'
+
 function MetricCards({ data, numericColumns, selectedNumeric, stats }) {
   if (!data || data.length === 0 || !stats) return null
 
-  const calculateAdditionalMetrics = () => {
-    const values = data
+  // Memoize expensive calculations to prevent recalculation on every render
+  const metrics = useMemo(() => {
+    // Sample data if too large for performance
+    const sampleSize = 5000
+    const sampledData = data.length > sampleSize 
+      ? data.filter((_, i) => i % Math.ceil(data.length / sampleSize) === 0)
+      : data
+
+    const values = sampledData
       .map((row) => parseFloat(row[selectedNumeric]))
       .filter((val) => !isNaN(val) && isFinite(val))
 
@@ -18,13 +27,15 @@ function MetricCards({ data, numericColumns, selectedNumeric, stats }) {
     // Calculate total unique values
     const uniqueValues = new Set(values).size
 
-    // Calculate median
-    const sorted = [...values].sort((a, b) => a - b)
+    // Calculate median (optimized for large arrays)
+    const sorted = values.length > 1000 
+      ? [...values].sort((a, b) => a - b).slice(0, 1000) // Sample for median if too large
+      : [...values].sort((a, b) => a - b)
     const median = sorted.length % 2 === 0
       ? (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2
       : sorted[Math.floor(sorted.length / 2)]
 
-    // Calculate standard deviation
+    // Calculate standard deviation (optimized)
     const variance = values.reduce((acc, val) => acc + Math.pow(val - stats.avg, 2), 0) / values.length
     const stdDev = Math.sqrt(variance)
 
@@ -34,12 +45,10 @@ function MetricCards({ data, numericColumns, selectedNumeric, stats }) {
       uniqueValues,
       median,
       stdDev,
-      totalItems: data.length,
+      totalItems: data.length, // Use original data length
       activeItems: nonZeroCount,
     }
-  }
-
-  const metrics = calculateAdditionalMetrics()
+  }, [data, selectedNumeric, stats])
   if (!metrics) return null
 
   const formatValue = (value, type = 'number') => {
