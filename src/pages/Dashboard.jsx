@@ -697,6 +697,16 @@ function Dashboard() {
                     Charts
                   </button>
                   <button
+                    onClick={() => setDashboardView('timeseries')}
+                    className={`px-3 py-1.5 text-sm border rounded-lg transition-colors ${
+                      dashboardView === 'timeseries'
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-white border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    Time Series
+                  </button>
+                  <button
                     onClick={() => setDashboardView('data')}
                     className={`px-3 py-1.5 text-sm border rounded-lg transition-colors ${
                       dashboardView === 'data'
