@@ -84,9 +84,28 @@ function Home() {
 
   const handleDatasetLoad = (data) => {
     try {
+      console.log('Dataset loaded:', {
+        hasData: !!data,
+        hasDataArray: !!(data && data.data),
+        dataLength: data?.data?.length,
+        columns: data?.columns,
+        numericColumns: data?.numericColumns,
+        dateColumns: data?.dateColumns,
+        categoricalColumns: data?.categoricalColumns
+      })
+      
+      // Validate data structure
+      if (!data || !data.data || !Array.isArray(data.data)) {
+        console.error('Invalid dataset format:', data)
+        alert('Error: Invalid dataset format. Please try again.')
+        return
+      }
+      
       // Estimate data size before stringifying
       const estimatedSize = JSON.stringify(data).length
       const sizeInMB = estimatedSize / (1024 * 1024)
+      
+      console.log(`Dataset size: ${sizeInMB.toFixed(2)}MB`)
       
       // Check if data is too large for sessionStorage
       // Use 3MB as safe threshold
@@ -99,9 +118,11 @@ function Home() {
       // Try to store in sessionStorage for smaller files
       const dataString = JSON.stringify(data)
       sessionStorage.setItem('analyticsData', dataString)
+      console.log('Data stored in sessionStorage, navigating to dashboard')
       navigate('/dashboard')
     } catch (error) {
       // If storage fails, pass data via navigation state
+      console.error('Error handling dataset load:', error)
       console.warn('Storage quota exceeded, passing data via navigation state:', error)
       navigate('/dashboard', { state: { analyticsData: data } })
     }

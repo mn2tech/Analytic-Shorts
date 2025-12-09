@@ -48,10 +48,16 @@ function Dashboard() {
 
   useEffect(() => {
     // Prevent multiple initializations
-    if (hasInitialized.current) return
+    if (hasInitialized.current) {
+      console.log('Dashboard: Already initialized, skipping')
+      return
+    }
+    
+    console.log('Dashboard: Starting initialization. Location state:', !!location.state?.analyticsData)
     
     // First check if data was passed via navigation state (for large files that exceed storage quota)
     if (location.state?.analyticsData) {
+      console.log('Dashboard: Found data in location.state, initializing')
       hasInitialized.current = true
       const analyticsData = location.state.analyticsData
       // Clear navigation state AFTER capturing the data
@@ -64,14 +70,21 @@ function Dashboard() {
     // Otherwise, try to get from sessionStorage
     const storedData = sessionStorage.getItem('analyticsData')
     if (!storedData) {
+      console.log('Dashboard: No data in sessionStorage or location.state, redirecting to home')
       navigate('/')
       return
     }
 
     try {
+      console.log('Dashboard: Found data in sessionStorage, parsing...')
       hasInitialized.current = true
       const parsed = JSON.parse(storedData)
-      if (!parsed || !parsed.data) {
+      console.log('Dashboard: Parsed data:', {
+        hasData: !!parsed?.data,
+        dataLength: parsed?.data?.length,
+        columns: parsed?.columns?.length
+      })
+      if (!parsed || !parsed.data || !Array.isArray(parsed.data)) {
         console.error('Invalid data in sessionStorage:', parsed)
         sessionStorage.removeItem('analyticsData')
         navigate('/')
