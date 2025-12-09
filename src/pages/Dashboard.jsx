@@ -40,6 +40,7 @@ function Dashboard() {
   const [saving, setSaving] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
+  const [isFiltering, setIsFiltering] = useState(false)
   const hasInitialized = useRef(false)
 
   useEffect(() => {
