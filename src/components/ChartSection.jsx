@@ -2,6 +2,7 @@ import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, Cart
 import { useRef } from 'react'
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
+import { parseNumericValue } from '../utils/numberUtils'
 
 const COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444']
 
@@ -67,7 +68,7 @@ function ChartSection({ data, numericColumns, categoricalColumns, dateColumns, s
       return data
         .map((row) => ({
           date: row[selectedDate] || '',
-          value: parseFloat(row[selectedNumeric]) || 0,
+          value: parseNumericValue(row[selectedNumeric]),
         }))
         .filter((item) => item.date)
         .slice(0, 50) // Limit to 50 points for performance
@@ -79,7 +80,7 @@ function ChartSection({ data, numericColumns, categoricalColumns, dateColumns, s
         .slice(0, 20)
         .map((row, index) => ({
           name: `Item ${index + 1}`,
-          value: parseFloat(row[selectedNumeric]) || 0,
+          value: parseNumericValue(row[selectedNumeric]),
         }))
     }
 
