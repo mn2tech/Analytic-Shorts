@@ -193,8 +193,9 @@ function Dashboard() {
     }
 
     // Ensure loading is set to false after initialization
+    console.log('Setting loading to false. Display data length:', displayData?.length)
     setLoading(false)
-    console.log('Data initialization complete. Data length:', displayData?.length, 'Columns:', parsedData.columns?.length)
+    console.log('Data initialization complete. Data length:', displayData?.length, 'Columns:', parsedData.columns?.length, 'Numeric columns:', parsedData.numericColumns?.length)
   }
 
   const applyChartFilter = (baseData) => {
@@ -462,6 +463,7 @@ function Dashboard() {
   }, [isFullscreen])
 
   if (loading) {
+    console.log('Dashboard: Still loading. Data:', data, 'Has initialized:', hasInitialized.current)
     return (
       <div className="min-h-screen bg-gray-50">
         <Navbar />
@@ -469,6 +471,8 @@ function Dashboard() {
       </div>
     )
   }
+  
+  console.log('Dashboard: Rendering. Data length:', data?.length, 'Filtered data length:', filteredData?.length, 'Columns:', columns?.length)
 
   // Check if data exists
   if (!data || data.length === 0) {
