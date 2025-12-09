@@ -34,7 +34,7 @@ function AdvancedDashboard({ data, filteredData, selectedNumeric, selectedCatego
     const grouped = {}
     sampledFilteredData.forEach((row) => {
       const date = row[selectedDate] || ''
-      const value = parseFloat(row[selectedNumeric]) || 0
+      const value = parseNumericValue(row[selectedNumeric])
       if (date) {
         grouped[date] = (grouped[date] || 0) + value
       }
@@ -52,7 +52,7 @@ function AdvancedDashboard({ data, filteredData, selectedNumeric, selectedCatego
     const grouped = {}
     sampledFilteredData.forEach((row) => {
       const key = row[selectedCategorical] || 'Unknown'
-      const value = parseFloat(row[selectedNumeric]) || 0
+      const value = parseNumericValue(row[selectedNumeric])
       grouped[key] = (grouped[key] || 0) + value
     })
     
@@ -68,7 +68,7 @@ function AdvancedDashboard({ data, filteredData, selectedNumeric, selectedCatego
     const grouped = {}
     sampledFilteredData.forEach((row) => {
       const key = row[selectedCategorical] || 'Unknown'
-      const value = parseFloat(row[selectedNumeric]) || 0
+      const value = parseNumericValue(row[selectedNumeric])
       grouped[key] = (grouped[key] || 0) + value
     })
     

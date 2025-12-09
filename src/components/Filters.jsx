@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { parseNumericValue } from '../utils/numberUtils'
 
 function Filters({
   data,
@@ -49,7 +50,7 @@ function Filters({
     const dataLength = data.length
     
     for (let i = 0; i < dataLength; i++) {
-      const value = parseFloat(data[i][selectedNumeric])
+      const value = parseNumericValue(data[i][selectedNumeric])
       if (!isNaN(value) && isFinite(value)) {
         if (value < min) min = value
         if (value > max) max = value
@@ -96,7 +97,7 @@ function Filters({
       const min = filters.numericRange.min
       const max = filters.numericRange.max
       filtered = filtered.filter((row) => {
-        const value = parseFloat(row[selectedNumeric])
+        const value = parseNumericValue(row[selectedNumeric])
         return !isNaN(value) && value >= min && value <= max
       })
     }

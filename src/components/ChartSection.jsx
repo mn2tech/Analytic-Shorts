@@ -56,7 +56,7 @@ function ChartSection({ data, numericColumns, categoricalColumns, dateColumns, s
       const grouped = {}
       data.forEach((row) => {
         const key = row[selectedCategorical] || 'Unknown'
-        const value = parseFloat(row[selectedNumeric]) || 0
+        const value = parseNumericValue(row[selectedNumeric])
         grouped[key] = (grouped[key] || 0) + value
       })
       return Object.entries(grouped).map(([name, value]) => ({ name, value }))

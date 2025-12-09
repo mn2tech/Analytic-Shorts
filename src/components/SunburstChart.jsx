@@ -15,7 +15,7 @@ function SunburstChart({ data, selectedCategorical, selectedNumeric, secondaryCa
   const primaryGrouped = {}
   data.forEach((row) => {
     const primaryKey = row[selectedCategorical] || 'Unknown'
-    const value = parseFloat(row[selectedNumeric]) || 0
+    const value = parseNumericValue(row[selectedNumeric])
     
     if (!primaryGrouped[primaryKey]) {
       primaryGrouped[primaryKey] = { total: 0, children: {} }

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
+import { parseNumericValue } from '../utils/numberUtils'
 import Navbar from '../components/Navbar'
 import Loader from '../components/Loader'
 import DashboardCharts from '../components/DashboardCharts'
@@ -263,9 +264,9 @@ function Dashboard() {
       ? filteredData.filter((_, i) => i % Math.ceil(filteredData.length / sampleSize) === 0)
       : filteredData
 
-    const values = sampledData
-      .map((row) => parseFloat(row[selectedNumeric]))
-      .filter((val) => !isNaN(val) && isFinite(val))
+      const values = sampledData
+        .map((row) => parseNumericValue(row[selectedNumeric]))
+        .filter((val) => val !== 0 || row[selectedNumeric] === '0' || row[selectedNumeric] === '$0') // Keep zeros if they're valid
 
     if (values.length === 0) return null
 

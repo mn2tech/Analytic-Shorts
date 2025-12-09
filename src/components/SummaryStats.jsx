@@ -7,7 +7,7 @@ function SummaryStats({ data, numericColumns, selectedNumeric }) {
     if (!column) return null
 
     const values = data
-      .map((row) => parseFloat(row[column]))
+      .map((row) => parseNumericValue(row[column]))
       .filter((val) => !isNaN(val))
 
     if (values.length === 0) return null

@@ -1,4 +1,5 @@
 import { useMemo, memo } from 'react'
+import { parseNumericValue } from '../utils/numberUtils'
 
 function MetricCards({ data, numericColumns, selectedNumeric, stats }) {
   if (!data || data.length === 0 || !stats) return null
@@ -12,8 +13,8 @@ function MetricCards({ data, numericColumns, selectedNumeric, stats }) {
       : data
 
     const values = sampledData
-      .map((row) => parseFloat(row[selectedNumeric]))
-      .filter((val) => !isNaN(val) && isFinite(val))
+      .map((row) => parseNumericValue(row[selectedNumeric]))
+      .filter((val) => val !== 0 || row[selectedNumeric] === '0' || row[selectedNumeric] === '$0') // Keep zeros if they're valid
 
     if (values.length === 0) return null
 
@@ -66,8 +67,8 @@ function MetricCards({ data, numericColumns, selectedNumeric, stats }) {
 
   // Calculate more meaningful metrics
   const values = data
-    .map((row) => parseFloat(row[selectedNumeric]))
-    .filter((val) => !isNaN(val) && isFinite(val))
+    .map((row) => parseNumericValue(row[selectedNumeric]))
+    .filter((val) => val !== 0 || row[selectedNumeric] === '0' || row[selectedNumeric] === '$0') // Keep zeros if they're valid
 
   if (values.length === 0) return null
 

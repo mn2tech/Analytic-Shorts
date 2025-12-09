@@ -1,6 +1,7 @@
 import { useState, useMemo, memo } from 'react'
 import { LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import ChartInsights from './ChartInsights'
+import { parseNumericValue } from '../utils/numberUtils'
 
 const COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444', '#6366f1', '#14b8a6']
 
@@ -37,7 +38,7 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
         .filter((_, i) => i % step === 0)
         .map((row) => ({
           date: row[selectedDate] || '',
-          value: parseFloat(row[selectedNumeric]) || 0,
+          value: parseNumericValue(row[selectedNumeric]),
           originalRow: row,
         }))
         .filter((item) => item.date)
@@ -50,7 +51,7 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
       .slice(0, 30)
       .map((row, index) => ({
         name: `Item ${index + 1}`,
-        value: parseFloat(row[selectedNumeric]) || 0,
+        value: parseNumericValue(row[selectedNumeric]),
         originalRow: row,
       }))
   }, [sampledDisplayData, selectedNumeric, selectedDate])
@@ -63,7 +64,7 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
       // Process sampled data instead of full dataset
       sampledFullData.forEach((row) => {
         const key = row[selectedCategorical] || 'Unknown'
-        const value = parseFloat(row[selectedNumeric]) || 0
+        const value = parseNumericValue(row[selectedNumeric])
         grouped[key] = (grouped[key] || 0) + value
       })
       return Object.entries(grouped)

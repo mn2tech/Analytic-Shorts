@@ -11,7 +11,7 @@ function TreemapChart({ data, selectedCategorical, selectedNumeric }) {
   const grouped = {}
   data.forEach((row) => {
     const key = row[selectedCategorical] || 'Unknown'
-    const value = parseFloat(row[selectedNumeric]) || 0
+    const value = parseNumericValue(row[selectedNumeric])
     grouped[key] = (grouped[key] || 0) + value
   })
 

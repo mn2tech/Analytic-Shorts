@@ -22,7 +22,7 @@ function ForecastChart({ data, selectedNumeric, selectedDate, forecastPeriods = 
   const historicalData = data
     .map((row) => ({
       date: row[selectedDate] || '',
-      value: parseFloat(row[selectedNumeric]) || 0,
+      value: parseNumericValue(row[selectedNumeric]),
     }))
     .filter((item) => item.date)
     .sort((a, b) => new Date(a.date) - new Date(b.date))
