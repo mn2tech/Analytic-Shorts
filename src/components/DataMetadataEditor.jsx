@@ -115,28 +115,60 @@ function DataMetadataEditor({
   }
 
   const handleApplyChanges = () => {
-    // Recalculate column types based on metadata
-    const newNumericColumns = []
-    const newCategoricalColumns = []
-    const newDateColumns = []
+    try {
+      // Recalculate column types based on metadata
+      const newNumericColumns = []
+      const newCategoricalColumns = []
+      const newDateColumns = []
 
-    Object.entries(columnMetadata).forEach(([col, meta]) => {
-      if (meta.type === 'numeric') {
-        newNumericColumns.push(col)
-      } else if (meta.type === 'date') {
-        newDateColumns.push(col)
-      } else {
-        newCategoricalColumns.push(col)
+      if (!columns || columns.length === 0) {
+        alert('Error: No columns available. Please refresh the page.')
+        return
       }
-    })
 
-    // Call parent callback to update metadata
-    if (onMetadataUpdate) {
-      onMetadataUpdate({
-        numericColumns: newNumericColumns,
-        categoricalColumns: newCategoricalColumns,
-        dateColumns: newDateColumns
+      Object.entries(columnMetadata).forEach(([col, meta]) => {
+        if (!meta || !meta.type) {
+          // Default to categorical if type is missing
+          newCategoricalColumns.push(col)
+          return
+        }
+        
+        if (meta.type === 'numeric') {
+          newNumericColumns.push(col)
+        } else if (meta.type === 'date') {
+          newDateColumns.push(col)
+        } else {
+          newCategoricalColumns.push(col)
+        }
       })
+
+      // Ensure all columns are assigned to a type
+      columns.forEach(col => {
+        if (!newNumericColumns.includes(col) && 
+            !newCategoricalColumns.includes(col) && 
+            !newDateColumns.includes(col)) {
+          // If column is missing, add it to categorical as default
+          newCategoricalColumns.push(col)
+        }
+      })
+
+      // Validate that we have at least some columns
+      if (newNumericColumns.length === 0 && newCategoricalColumns.length === 0 && newDateColumns.length === 0) {
+        alert('Error: No columns found. Please refresh the page.')
+        return
+      }
+
+      // Call parent callback to update metadata
+      if (onMetadataUpdate) {
+        onMetadataUpdate({
+          numericColumns: newNumericColumns,
+          categoricalColumns: newCategoricalColumns,
+          dateColumns: newDateColumns
+        })
+      }
+    } catch (error) {
+      console.error('Error applying metadata changes:', error)
+      alert('Error applying changes. Please try again.')
     }
   }
 
@@ -166,6 +198,15 @@ function DataMetadataEditor({
   }, [data, currentPage, rowsPerPage])
 
   const totalPages = Math.ceil((data?.length || 0) / rowsPerPage)
+
+  // Safety check: if no data or columns, show message
+  if (!data || !columns || columns.length === 0) {
+    return (
+      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6">
+        <p className="text-yellow-800">No data available. Please upload a file first.</p>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
