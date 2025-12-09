@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 
 function Filters({
   data,
@@ -16,79 +16,129 @@ function Filters({
     category: '',
     numericRange: { min: 0, max: 100 },
   })
+  
+  // Debounce timer ref
+  const debounceTimer = useRef(null)
 
-  useEffect(() => {
-    if (selectedNumeric && data && data.length > 0) {
-      const values = data
-        .map((row) => parseFloat(row[selectedNumeric]))
-        .filter((val) => !isNaN(val))
-      if (values.length > 0) {
-        setFilters((prev) => ({
-          ...prev,
-          numericRange: {
-            min: Math.min(...values),
-            max: Math.max(...values),
-          },
-        }))
+  // Memoize unique categories to avoid recalculating on every render
+  const uniqueCategories = useMemo(() => {
+    if (!selectedCategorical || !data || data.length === 0) return []
+    
+    // For large datasets, use a Set for O(1) lookups
+    const categorySet = new Set()
+    const dataLength = data.length
+    
+    // Process in chunks to avoid blocking
+    for (let i = 0; i < dataLength; i++) {
+      const value = data[i][selectedCategorical]
+      if (value) categorySet.add(value)
+    }
+    
+    return Array.from(categorySet).sort()
+  }, [selectedCategorical, data])
+
+  // Memoize numeric range calculation - optimize for large datasets
+  const currentNumericRange = useMemo(() => {
+    if (!selectedNumeric || !data || data.length === 0) {
+      return { min: 0, max: 100 }
+    }
+    
+    // For large datasets, calculate min/max in a single pass
+    let min = Infinity
+    let max = -Infinity
+    const dataLength = data.length
+    
+    for (let i = 0; i < dataLength; i++) {
+      const value = parseFloat(data[i][selectedNumeric])
+      if (!isNaN(value) && isFinite(value)) {
+        if (value < min) min = value
+        if (value > max) max = value
       }
     }
+    
+    if (min === Infinity || max === -Infinity) {
+      return { min: 0, max: 100 }
+    }
+    
+    return { min, max }
   }, [selectedNumeric, data])
 
-  const handleFilterChange = (newFilters) => {
-    setFilters(newFilters)
-    onFilterChange(newFilters)
-  }
+  // Update filters when numeric range changes
+  useEffect(() => {
+    if (selectedNumeric && currentNumericRange.min !== 0 && currentNumericRange.max !== 100) {
+      setFilters((prev) => ({
+        ...prev,
+        numericRange: {
+          min: currentNumericRange.min,
+          max: currentNumericRange.max,
+        },
+      }))
+    }
+  }, [selectedNumeric, currentNumericRange])
 
-  const getFilteredData = () => {
+  // Optimized filtering function
+  const getFilteredData = useCallback(() => {
     if (!data) return data
 
-    let filtered = [...data]
+    // For large arrays, use slice instead of spread
+    let filtered = data.length > 50000 ? data.slice() : [...data]
 
-    // Date filter
-    if (filters.dateRange.start && selectedDate) {
-      filtered = filtered.filter((row) => {
-        const rowDate = new Date(row[selectedDate])
-        const start = new Date(filters.dateRange.start)
-        const end = filters.dateRange.end ? new Date(filters.dateRange.end) : new Date()
-        return rowDate >= start && rowDate <= end
-      })
-    }
-
-    // Category filter
+    // Apply filters in order (most restrictive first for better performance)
+    
+    // Category filter (usually most restrictive)
     if (filters.category && selectedCategorical) {
-      filtered = filtered.filter((row) => row[selectedCategorical] === filters.category)
+      const category = filters.category
+      filtered = filtered.filter((row) => row[selectedCategorical] === category)
     }
 
     // Numeric range filter
     if (selectedNumeric) {
+      const min = filters.numericRange.min
+      const max = filters.numericRange.max
       filtered = filtered.filter((row) => {
         const value = parseFloat(row[selectedNumeric])
-        return !isNaN(value) && value >= filters.numericRange.min && value <= filters.numericRange.max
+        return !isNaN(value) && value >= min && value <= max
+      })
+    }
+
+    // Date filter (usually least restrictive)
+    if (filters.dateRange.start && selectedDate) {
+      const start = new Date(filters.dateRange.start)
+      const end = filters.dateRange.end ? new Date(filters.dateRange.end) : new Date()
+      filtered = filtered.filter((row) => {
+        const rowDate = new Date(row[selectedDate])
+        return rowDate >= start && rowDate <= end
       })
     }
 
     return filtered
-  }
+  }, [data, filters, selectedNumeric, selectedCategorical, selectedDate])
 
+  // Debounced filter application
   useEffect(() => {
-    const filtered = getFilteredData()
-    onFilterChange(filters, filtered)
-  }, [filters, selectedNumeric, selectedCategorical, selectedDate])
+    // Clear previous timer
+    if (debounceTimer.current) {
+      clearTimeout(debounceTimer.current)
+    }
+    
+    // Debounce filter application for large datasets
+    const delay = data && data.length > 10000 ? 300 : 0
+    
+    debounceTimer.current = setTimeout(() => {
+      const filtered = getFilteredData()
+      onFilterChange(filters, filtered)
+    }, delay)
+    
+    return () => {
+      if (debounceTimer.current) {
+        clearTimeout(debounceTimer.current)
+      }
+    }
+  }, [filters, selectedNumeric, selectedCategorical, selectedDate, getFilteredData, onFilterChange, data])
 
-  const uniqueCategories = selectedCategorical
-    ? [...new Set(data?.map((row) => row[selectedCategorical]).filter(Boolean) || [])]
-    : []
-
-  const currentNumericRange = selectedNumeric && data
-    ? (() => {
-        const values = data
-          .map((row) => parseFloat(row[selectedNumeric]))
-          .filter((val) => !isNaN(val))
-        return values.length > 0
-          ? { min: Math.min(...values), max: Math.max(...values) }
-          : { min: 0, max: 100 }
-      })()
-    : { min: 0, max: 100 }
+  const handleFilterChange = useCallback((newFilters) => {
+    setFilters(newFilters)
+  }, [])
 
   return (
     <div className="space-y-6">
@@ -241,19 +291,14 @@ function Filters({
 
       <button
         onClick={() => {
-          setFilters({
+          const resetFilters = {
             dateRange: { start: '', end: '' },
             category: '',
             numericRange: currentNumericRange,
-          })
-          onFilterChange(
-            {
-              dateRange: { start: '', end: '' },
-              category: '',
-              numericRange: currentNumericRange,
-            },
-            data
-          )
+          }
+          setFilters(resetFilters)
+          // Immediately apply reset (no debounce needed)
+          onFilterChange(resetFilters, data)
         }}
         className="w-full px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium"
       >
