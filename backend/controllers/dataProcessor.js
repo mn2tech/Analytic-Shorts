@@ -15,16 +15,30 @@ function detectColumnTypes(data, columns) {
 
       nonEmptyCount++
 
-      // Check if numeric
-      const numValue = parseFloat(value)
+      // Check if numeric (handle currency symbols, commas, etc.)
+      const cleanedValue = String(value).replace(/[$,\s]/g, '') // Remove $, commas, spaces
+      const numValue = parseFloat(cleanedValue)
       if (!isNaN(numValue) && isFinite(numValue)) {
         numericCount++
       }
 
       // Check if date
-      const dateValue = new Date(value)
-      if (!isNaN(dateValue.getTime()) && String(value).match(/^\d{4}-\d{2}-\d{2}/) || String(value).match(/\d{1,2}\/\d{1,2}\/\d{4}/)) {
-        dateCount++
+      const valueStr = String(value).trim()
+      // Check for standard date formats: YYYY-MM-DD, MM/DD/YYYY, DD/MM/YYYY
+      const isStandardDate = valueStr.match(/^\d{4}-\d{2}-\d{2}/) || 
+                            valueStr.match(/^\d{1,2}\/\d{1,2}\/\d{4}/) ||
+                            valueStr.match(/^\d{4}\/\d{1,2}\/\d{1,2}/)
+      
+      // Check for year-only format (4-digit number between 1900-2100)
+      const isYearOnly = /^\d{4}$/.test(valueStr) && 
+                        parseInt(valueStr) >= 1900 && 
+                        parseInt(valueStr) <= 2100
+      
+      if (isStandardDate || isYearOnly) {
+        const dateValue = new Date(value)
+        if (!isNaN(dateValue.getTime())) {
+          dateCount++
+        }
       }
     }
 
