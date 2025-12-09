@@ -59,11 +59,14 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
   const preparePieChartData = useMemo(() => {
     if (!sampledFullData || sampledFullData.length === 0) return []
 
-    if (selectedCategorical && selectedNumeric) {
+    // Pie charts can work with categorical OR date columns (treating dates as categories)
+    const categoryColumn = selectedCategorical || selectedDate
+    if (categoryColumn && selectedNumeric) {
       const grouped = {}
       // Process sampled data instead of full dataset
       sampledFullData.forEach((row) => {
-        const key = row[selectedCategorical] || 'Unknown'
+        // Use the category column (categorical or date)
+        const key = row[categoryColumn] || 'Unknown'
         const value = parseNumericValue(row[selectedNumeric])
         grouped[key] = (grouped[key] || 0) + value
       })
@@ -74,7 +77,7 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
     }
 
     return []
-  }, [sampledFullData, selectedCategorical, selectedNumeric])
+  }, [sampledFullData, selectedCategorical, selectedDate, selectedNumeric])
 
   const handlePieClick = (data, index) => {
     if (selectedCategorical && data && data.name) {

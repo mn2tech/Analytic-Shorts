@@ -64,11 +64,13 @@ function AdvancedDashboard({ data, filteredData, selectedNumeric, selectedCatego
   }, [sampledFilteredData, selectedCategorical, selectedNumeric])
 
   const prepareDonutData = useMemo(() => {
-    if (!sampledFilteredData || !selectedCategorical || !selectedNumeric) return []
+    // Donut charts can work with categorical OR date columns (treating dates as categories)
+    const categoryColumn = selectedCategorical || selectedDate
+    if (!sampledFilteredData || !categoryColumn || !selectedNumeric) return []
     
     const grouped = {}
     sampledFilteredData.forEach((row) => {
-      const key = row[selectedCategorical] || 'Unknown'
+      const key = row[categoryColumn] || 'Unknown'
       const value = parseNumericValue(row[selectedNumeric])
       grouped[key] = (grouped[key] || 0) + value
     })
@@ -77,7 +79,7 @@ function AdvancedDashboard({ data, filteredData, selectedNumeric, selectedCatego
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 5)
-  }, [sampledFilteredData, selectedCategorical, selectedNumeric])
+  }, [sampledFilteredData, selectedCategorical, selectedDate, selectedNumeric])
 
   const lineData = prepareLineData
   const barData = prepareBarData
