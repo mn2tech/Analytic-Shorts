@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, Area, AreaChart } from 'recharts'
 import { generateForecast, combineHistoricalAndForecast, analyzeTrend } from '../utils/forecasting'
 import ChartInsights from './ChartInsights'
+import { parseNumericValue } from '../utils/numberUtils'
 
 function ForecastChart({ data, selectedNumeric, selectedDate, forecastPeriods = 6 }) {
   const [showConfidenceInterval, setShowConfidenceInterval] = useState(true)
