@@ -86,35 +86,43 @@ function Dashboard() {
   }, [chartFilter, selectedCategorical, selectedDate, sidebarFilteredData, data])
 
   const initializeData = (parsedData) => {
-    console.log('Initializing data:', {
-      dataLength: parsedData.data?.length,
-      columns: parsedData.columns?.length,
-      numericColumns: parsedData.numericColumns,
-      categoricalColumns: parsedData.categoricalColumns,
-      dateColumns: parsedData.dateColumns,
-    })
-    
-    // For large datasets, aggressively sample the data for display
-    // This ensures smooth performance and responsive UI
-    const MAX_ROWS_FOR_DISPLAY = 10000 // Reduced from 100k for better performance
-    let displayData = parsedData.data
-    
-    if (parsedData.data && parsedData.data.length > MAX_ROWS_FOR_DISPLAY) {
-      console.warn(`Dataset has ${parsedData.data.length} rows. Sampling ${MAX_ROWS_FOR_DISPLAY} rows for display to ensure smooth performance.`)
-      // Sample evenly across the dataset
-      const step = Math.ceil(parsedData.data.length / MAX_ROWS_FOR_DISPLAY)
-      displayData = parsedData.data.filter((_, index) => index % step === 0)
-      console.log(`Sampled to ${displayData.length} rows for optimal performance`)
-    }
-    
-    // Store full data and sampled data separately
-    setData(displayData) // Use sampled data for display
-    setFilteredData(displayData)
-    setSidebarFilteredData(displayData)
-    setColumns(parsedData.columns || [])
-    setNumericColumns(parsedData.numericColumns || [])
-    setCategoricalColumns(parsedData.categoricalColumns || [])
-    setDateColumns(parsedData.dateColumns || [])
+    try {
+      console.log('Initializing data:', {
+        dataLength: parsedData?.data?.length,
+        columns: parsedData?.columns?.length,
+        numericColumns: parsedData?.numericColumns,
+        categoricalColumns: parsedData?.categoricalColumns,
+        dateColumns: parsedData?.dateColumns,
+      })
+      
+      // Validate parsedData
+      if (!parsedData || !parsedData.data || !Array.isArray(parsedData.data)) {
+        console.error('Invalid data format:', parsedData)
+        setLoading(false)
+        return
+      }
+      
+      // For large datasets, aggressively sample the data for display
+      // This ensures smooth performance and responsive UI
+      const MAX_ROWS_FOR_DISPLAY = 10000 // Reduced from 100k for better performance
+      let displayData = parsedData.data
+      
+      if (parsedData.data && parsedData.data.length > MAX_ROWS_FOR_DISPLAY) {
+        console.warn(`Dataset has ${parsedData.data.length} rows. Sampling ${MAX_ROWS_FOR_DISPLAY} rows for display to ensure smooth performance.`)
+        // Sample evenly across the dataset
+        const step = Math.ceil(parsedData.data.length / MAX_ROWS_FOR_DISPLAY)
+        displayData = parsedData.data.filter((_, index) => index % step === 0)
+        console.log(`Sampled to ${displayData.length} rows for optimal performance`)
+      }
+      
+      // Store full data and sampled data separately
+      setData(displayData) // Use sampled data for display
+      setFilteredData(displayData)
+      setSidebarFilteredData(displayData)
+      setColumns(parsedData.columns || [])
+      setNumericColumns(parsedData.numericColumns || [])
+      setCategoricalColumns(parsedData.categoricalColumns || [])
+      setDateColumns(parsedData.dateColumns || [])
 
     // Restore dashboard view if saved (for shared dashboards)
     if (parsedData.dashboardView) {
