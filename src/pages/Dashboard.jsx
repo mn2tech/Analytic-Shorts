@@ -532,11 +532,15 @@ function Dashboard() {
       setSelectedDate(newSelectedDate)
       setSelectedCategorical(newSelectedCategorical)
       
-      // Show success message
-      alert('Metadata updated successfully! Charts will now use the new column types.')
+      // Show success message (use setTimeout to prevent blocking)
+      setTimeout(() => {
+        alert('Metadata updated successfully! Charts will now use the new column types.')
+      }, 100)
     } catch (error) {
       console.error('Error updating metadata:', error)
-      alert('Error updating metadata. Please try again.')
+      setTimeout(() => {
+        alert('Error updating metadata. Please try again.')
+      }, 100)
     }
   }
 

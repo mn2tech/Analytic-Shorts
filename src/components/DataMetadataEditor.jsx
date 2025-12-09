@@ -160,15 +160,20 @@ function DataMetadataEditor({
 
       // Call parent callback to update metadata
       if (onMetadataUpdate) {
-        onMetadataUpdate({
-          numericColumns: newNumericColumns,
-          categoricalColumns: newCategoricalColumns,
-          dateColumns: newDateColumns
-        })
+        // Use setTimeout to ensure state updates are batched and don't cause render issues
+        setTimeout(() => {
+          onMetadataUpdate({
+            numericColumns: newNumericColumns,
+            categoricalColumns: newCategoricalColumns,
+            dateColumns: newDateColumns
+          })
+        }, 0)
       }
     } catch (error) {
       console.error('Error applying metadata changes:', error)
-      alert('Error applying changes. Please try again.')
+      setTimeout(() => {
+        alert('Error applying changes. Please try again.')
+      }, 100)
     }
   }
 
