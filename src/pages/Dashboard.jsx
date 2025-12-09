@@ -472,8 +472,8 @@ function Dashboard() {
     )
   }
   
-  console.log('Dashboard: Rendering. Data length:', data?.length, 'Filtered data length:', filteredData?.length, 'Columns:', columns?.length)
-
+  console.log('Dashboard: Rendering. Data length:', data?.length, 'Filtered data length:', filteredData?.length, 'Columns:', columns?.length, 'Selected numeric:', selectedNumeric, 'Selected categorical:', selectedCategorical)
+  
   // Check if data exists
   if (!data || data.length === 0) {
     console.warn('Dashboard: No data available. Data:', data, 'Loading:', loading, 'Has initialized:', hasInitialized.current)
