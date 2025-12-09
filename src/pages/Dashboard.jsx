@@ -466,24 +466,78 @@ function Dashboard() {
   const stats = calculateStats
 
   const handleMetadataUpdate = (newMetadata) => {
-    // Update column type arrays
-    setNumericColumns(newMetadata.numericColumns || [])
-    setCategoricalColumns(newMetadata.categoricalColumns || [])
-    setDateColumns(newMetadata.dateColumns || [])
-    
-    // Auto-select columns if they were previously selected
-    if (selectedNumeric && !newMetadata.numericColumns.includes(selectedNumeric)) {
-      setSelectedNumeric(newMetadata.numericColumns[0] || '')
+    try {
+      // Validate new metadata
+      if (!newMetadata || !newMetadata.numericColumns || !newMetadata.categoricalColumns || !newMetadata.dateColumns) {
+        console.error('Invalid metadata update:', newMetadata)
+        alert('Error: Invalid metadata format. Please try again.')
+        return
+      }
+
+      // Update column type arrays
+      setNumericColumns(newMetadata.numericColumns || [])
+      setCategoricalColumns(newMetadata.categoricalColumns || [])
+      setDateColumns(newMetadata.dateColumns || [])
+      
+      // Preserve selected columns if they still exist in their new type arrays
+      // If a column was moved to a different type, try to find it in the new arrays
+      let newSelectedNumeric = selectedNumeric
+      let newSelectedDate = selectedDate
+      let newSelectedCategorical = selectedCategorical
+
+      // Check if current selected numeric column is still numeric
+      if (selectedNumeric && !newMetadata.numericColumns.includes(selectedNumeric)) {
+        // Check if it moved to date or categorical
+        if (newMetadata.dateColumns.includes(selectedNumeric)) {
+          newSelectedDate = selectedNumeric
+          newSelectedNumeric = newMetadata.numericColumns[0] || ''
+        } else if (newMetadata.categoricalColumns.includes(selectedNumeric)) {
+          newSelectedCategorical = selectedNumeric
+          newSelectedNumeric = newMetadata.numericColumns[0] || ''
+        } else {
+          newSelectedNumeric = newMetadata.numericColumns[0] || ''
+        }
+      }
+
+      // Check if current selected date column is still date
+      if (selectedDate && !newMetadata.dateColumns.includes(selectedDate)) {
+        // Check if it moved to numeric or categorical
+        if (newMetadata.numericColumns.includes(selectedDate)) {
+          newSelectedNumeric = selectedDate
+          newSelectedDate = newMetadata.dateColumns[0] || ''
+        } else if (newMetadata.categoricalColumns.includes(selectedDate)) {
+          newSelectedCategorical = selectedDate
+          newSelectedDate = newMetadata.dateColumns[0] || ''
+        } else {
+          newSelectedDate = newMetadata.dateColumns[0] || ''
+        }
+      }
+
+      // Check if current selected categorical column is still categorical
+      if (selectedCategorical && !newMetadata.categoricalColumns.includes(selectedCategorical)) {
+        // Check if it moved to numeric or date
+        if (newMetadata.numericColumns.includes(selectedCategorical)) {
+          newSelectedNumeric = selectedCategorical
+          newSelectedCategorical = newMetadata.categoricalColumns[0] || ''
+        } else if (newMetadata.dateColumns.includes(selectedCategorical)) {
+          newSelectedDate = selectedCategorical
+          newSelectedCategorical = newMetadata.categoricalColumns[0] || ''
+        } else {
+          newSelectedCategorical = newMetadata.categoricalColumns[0] || ''
+        }
+      }
+
+      // Update selected columns
+      setSelectedNumeric(newSelectedNumeric)
+      setSelectedDate(newSelectedDate)
+      setSelectedCategorical(newSelectedCategorical)
+      
+      // Show success message
+      alert('Metadata updated successfully! Charts will now use the new column types.')
+    } catch (error) {
+      console.error('Error updating metadata:', error)
+      alert('Error updating metadata. Please try again.')
     }
-    if (selectedDate && !newMetadata.dateColumns.includes(selectedDate)) {
-      setSelectedDate(newMetadata.dateColumns[0] || '')
-    }
-    if (selectedCategorical && !newMetadata.categoricalColumns.includes(selectedCategorical)) {
-      setSelectedCategorical(newMetadata.categoricalColumns[0] || '')
-    }
-    
-    // Show success message
-    alert('Metadata updated successfully! Charts will now use the new column types.')
   }
 
   const toggleFullscreen = () => {

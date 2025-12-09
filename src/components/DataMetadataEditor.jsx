@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 
 function DataMetadataEditor({ 
   data, 
@@ -11,18 +11,50 @@ function DataMetadataEditor({
   const [columnMetadata, setColumnMetadata] = useState(() => {
     // Initialize metadata state from current column types
     const metadata = {}
-    columns.forEach(col => {
-      metadata[col] = {
-        type: numericColumns.includes(col) ? 'numeric' : 
-              dateColumns.includes(col) ? 'date' : 
-              categoricalColumns.includes(col) ? 'categorical' : 'categorical',
-        originalType: numericColumns.includes(col) ? 'numeric' : 
-                     dateColumns.includes(col) ? 'date' : 
-                     categoricalColumns.includes(col) ? 'categorical' : 'categorical'
-      }
-    })
+    if (columns && columns.length > 0) {
+      columns.forEach(col => {
+        metadata[col] = {
+          type: numericColumns?.includes(col) ? 'numeric' : 
+                dateColumns?.includes(col) ? 'date' : 
+                categoricalColumns?.includes(col) ? 'categorical' : 'categorical',
+          originalType: numericColumns?.includes(col) ? 'numeric' : 
+                       dateColumns?.includes(col) ? 'date' : 
+                       categoricalColumns?.includes(col) ? 'categorical' : 'categorical'
+        }
+      })
+    }
     return metadata
   })
+
+  // Update metadata when column types change from parent
+  useEffect(() => {
+    if (columns && columns.length > 0) {
+      setColumnMetadata(prev => {
+        const updated = { ...prev }
+        columns.forEach(col => {
+          if (!updated[col]) {
+            updated[col] = {
+              type: numericColumns?.includes(col) ? 'numeric' : 
+                    dateColumns?.includes(col) ? 'date' : 
+                    categoricalColumns?.includes(col) ? 'categorical' : 'categorical',
+              originalType: numericColumns?.includes(col) ? 'numeric' : 
+                           dateColumns?.includes(col) ? 'date' : 
+                           categoricalColumns?.includes(col) ? 'categorical' : 'categorical'
+            }
+          } else {
+            // Update originalType to match current state
+            updated[col] = {
+              ...updated[col],
+              originalType: numericColumns?.includes(col) ? 'numeric' : 
+                           dateColumns?.includes(col) ? 'date' : 
+                           categoricalColumns?.includes(col) ? 'categorical' : 'categorical'
+            }
+          }
+        })
+        return updated
+      })
+    }
+  }, [columns, numericColumns, categoricalColumns, dateColumns])
 
   const [selectedColumn, setSelectedColumn] = useState(columns[0] || '')
   const [showPreview, setShowPreview] = useState(true)
