@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import Navbar from '../components/Navbar'
 import Loader from '../components/Loader'
 import DashboardCharts from '../components/DashboardCharts'
@@ -17,6 +17,7 @@ import * as XLSX from 'xlsx'
 
 function Dashboard() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [data, setData] = useState(null)
   const [filteredData, setFilteredData] = useState(null)
   const [columns, setColumns] = useState([])
@@ -41,6 +42,13 @@ function Dashboard() {
   const [showFilters, setShowFilters] = useState(false)
 
   useEffect(() => {
+    // First check if data was passed via navigation state (for large files that exceed storage quota)
+    if (location.state?.analyticsData) {
+      initializeData(location.state.analyticsData)
+      return
+    }
+
+    // Otherwise, try to get from sessionStorage
     const storedData = sessionStorage.getItem('analyticsData')
     if (!storedData) {
       navigate('/')
@@ -54,7 +62,7 @@ function Dashboard() {
       console.error('Error parsing stored data:', error)
       navigate('/')
     }
-  }, [])
+  }, [location.state])
 
   // Re-apply chart filter when it changes
   useEffect(() => {

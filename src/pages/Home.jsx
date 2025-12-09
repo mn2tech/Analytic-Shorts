@@ -57,14 +57,61 @@ function Home() {
   ]
 
   const handleUploadSuccess = (data) => {
-    // Store data in sessionStorage for dashboard
-    sessionStorage.setItem('analyticsData', JSON.stringify(data))
-    navigate('/dashboard')
+    try {
+      // Try to store data in sessionStorage for dashboard
+      const dataString = JSON.stringify(data)
+      const dataSize = new Blob([dataString]).size
+      
+      // Check if data is too large for sessionStorage (usually 5-10MB limit)
+      // If larger than 4MB, use IndexedDB or pass via navigation state
+      if (dataSize > 4 * 1024 * 1024) {
+        // Data too large for sessionStorage - use IndexedDB or pass via state
+        console.warn('Data too large for sessionStorage, using alternative storage')
+        // For now, try to store anyway but catch the error
+        try {
+          sessionStorage.setItem('analyticsData', dataString)
+        } catch (storageError) {
+          // If storage fails, pass data via navigation state
+          console.warn('sessionStorage failed, passing data via navigation state')
+          navigate('/dashboard', { state: { analyticsData: data } })
+          return
+        }
+      } else {
+        sessionStorage.setItem('analyticsData', dataString)
+      }
+      navigate('/dashboard')
+    } catch (error) {
+      // If storage fails (quota exceeded), pass data via navigation state
+      console.warn('Storage quota exceeded, passing data via navigation state:', error)
+      navigate('/dashboard', { state: { analyticsData: data } })
+    }
   }
 
   const handleDatasetLoad = (data) => {
-    sessionStorage.setItem('analyticsData', JSON.stringify(data))
-    navigate('/dashboard')
+    try {
+      // Try to store data in sessionStorage for dashboard
+      const dataString = JSON.stringify(data)
+      const dataSize = new Blob([dataString]).size
+      
+      // Check if data is too large for sessionStorage
+      if (dataSize > 4 * 1024 * 1024) {
+        console.warn('Data too large for sessionStorage, using alternative storage')
+        try {
+          sessionStorage.setItem('analyticsData', dataString)
+        } catch (storageError) {
+          console.warn('sessionStorage failed, passing data via navigation state')
+          navigate('/dashboard', { state: { analyticsData: data } })
+          return
+        }
+      } else {
+        sessionStorage.setItem('analyticsData', dataString)
+      }
+      navigate('/dashboard')
+    } catch (error) {
+      // If storage fails, pass data via navigation state
+      console.warn('Storage quota exceeded, passing data via navigation state:', error)
+      navigate('/dashboard', { state: { analyticsData: data } })
+    }
   }
 
   const handleError = (errorMessage) => {
