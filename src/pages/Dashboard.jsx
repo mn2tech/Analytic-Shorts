@@ -40,7 +40,6 @@ function Dashboard() {
   const [saving, setSaving] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
-  const [isFiltering, setIsFiltering] = useState(false)
   const hasInitialized = useRef(false)
 
   useEffect(() => {
@@ -223,8 +222,6 @@ function Dashboard() {
 
   const handleFilterChange = (filters, filtered) => {
     // Use requestAnimationFrame to make filtering non-blocking
-    setIsFiltering(true)
-    
     requestAnimationFrame(() => {
       // Store sidebar-filtered data
       const sidebarFiltered = filtered || data
@@ -234,7 +231,6 @@ function Dashboard() {
       requestAnimationFrame(() => {
         const result = applyChartFilter(sidebarFiltered)
         setFilteredData(result)
-        setIsFiltering(false)
       })
     })
   }
@@ -598,16 +594,6 @@ function Dashboard() {
 
         {/* Fullscreen Content */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          {/* Filtering Loading Indicator */}
-          {isFiltering && (
-            <div className="mb-4 flex items-center justify-center bg-blue-50 border border-blue-200 rounded-lg p-3">
-              <div className="flex items-center space-x-2">
-                <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                <span className="text-sm font-medium text-blue-900">Applying filters...</span>
-              </div>
-            </div>
-          )}
-          
           {/* Active Filter Indicator */}
           {chartFilter && (
             <div className="mb-4 flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg p-3">
@@ -675,16 +661,6 @@ function Dashboard() {
       <Navbar />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {/* Filtering Loading Indicator */}
-        {isFiltering && (
-          <div className="mb-4 flex items-center justify-center bg-blue-50 border border-blue-200 rounded-lg p-3">
-            <div className="flex items-center space-x-2">
-              <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-              <span className="text-sm font-medium text-blue-900">Applying filters...</span>
-            </div>
-          </div>
-        )}
-        
         {/* Header */}
         <div className="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center animate-fade-in">
           <div>
