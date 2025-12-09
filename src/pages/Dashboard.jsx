@@ -9,6 +9,7 @@ import MetricCards from '../components/MetricCards'
 import Filters from '../components/Filters'
 import AIInsights from '../components/AIInsights'
 import ForecastChart from '../components/ForecastChart'
+import DataMetadataEditor from '../components/DataMetadataEditor'
 import { saveAs } from 'file-saver'
 import { generateShareId, saveSharedDashboard, getShareableUrl, copyToClipboard } from '../utils/shareUtils'
 import { saveDashboard, updateDashboard } from '../services/dashboardService'
@@ -32,7 +33,7 @@ function Dashboard() {
   const [chartFilter, setChartFilter] = useState(null) // { type: 'category' | 'date', value: string }
   const [shareId, setShareId] = useState(null)
   const [shareLinkCopied, setShareLinkCopied] = useState(false)
-  const [dashboardView, setDashboardView] = useState('advanced') // 'advanced' or 'simple'
+  const [dashboardView, setDashboardView] = useState('advanced') // 'advanced', 'simple', or 'data'
   const [dashboardTitle, setDashboardTitle] = useState('Analytics Dashboard')
   // Store the sidebar-filtered data separately
   const [sidebarFilteredData, setSidebarFilteredData] = useState(null)
@@ -131,51 +132,51 @@ function Dashboard() {
       setCategoricalColumns(parsedData.categoricalColumns || [])
       setDateColumns(parsedData.dateColumns || [])
 
-    // Restore dashboard view if saved (for shared dashboards)
-    if (parsedData.dashboardView) {
-      setDashboardView(parsedData.dashboardView)
-    }
+      // Restore dashboard view if saved (for shared dashboards)
+      if (parsedData.dashboardView) {
+        setDashboardView(parsedData.dashboardView)
+      }
 
-    // Generate dashboard title based on data context
-    const allColumns = parsedData.columns || []
-    
-    // Detect domain from column names
-    const detectDomain = (columns) => {
-      const lowerColumns = columns.map(col => col.toLowerCase())
+      // Generate dashboard title based on data context
+      const allColumns = parsedData.columns || []
       
-      // Medical/Healthcare indicators
-      if (lowerColumns.some(col => 
-        col.includes('patient') || col.includes('diagnosis') || 
-        col.includes('treatment') || col.includes('medication') ||
-        col.includes('department') && (col.includes('cardiology') || col.includes('orthopedic'))
-      )) {
-        return 'Medical Data'
-      }
-      
-      // Sales indicators
-      if (lowerColumns.some(col => 
-        col.includes('sales') || col.includes('revenue') || 
-        col.includes('product') || col.includes('customer')
-      )) {
-        return 'Sales Data'
-      }
-      
-      // Education indicators
-      if (lowerColumns.some(col => 
-        col.includes('student') || col.includes('school') || 
-        col.includes('grade') || col.includes('attendance')
-      )) {
-        return 'Education Data'
-      }
-      
-      // Financial indicators
-      if (lowerColumns.some(col => 
-        col.includes('donation') || col.includes('fund') || 
-        col.includes('amount') && col.includes('$')
-      )) {
-        return 'Financial Data'
-      }
-      
+      // Detect domain from column names
+      const detectDomain = (columns) => {
+        const lowerColumns = columns.map(col => col.toLowerCase())
+        
+        // Medical/Healthcare indicators
+        if (lowerColumns.some(col => 
+          col.includes('patient') || col.includes('diagnosis') || 
+          col.includes('treatment') || col.includes('medication') ||
+          col.includes('department') && (col.includes('cardiology') || col.includes('orthopedic'))
+        )) {
+          return 'Medical Data'
+        }
+        
+        // Sales indicators
+        if (lowerColumns.some(col => 
+          col.includes('sales') || col.includes('revenue') || 
+          col.includes('product') || col.includes('customer')
+        )) {
+          return 'Sales Data'
+        }
+        
+        // Education indicators
+        if (lowerColumns.some(col => 
+          col.includes('student') || col.includes('school') || 
+          col.includes('grade') || col.includes('attendance')
+        )) {
+          return 'Education Data'
+        }
+        
+        // Financial indicators
+        if (lowerColumns.some(col => 
+          col.includes('donation') || col.includes('fund') || 
+          col.includes('amount') && col.includes('$')
+        )) {
+          return 'Financial Data'
+        }
+        
         return null
       }
       
