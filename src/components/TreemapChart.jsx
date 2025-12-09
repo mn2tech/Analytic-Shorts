@@ -1,3 +1,5 @@
+import { parseNumericValue } from '../utils/numberUtils'
+
 function TreemapChart({ data, selectedCategorical, selectedNumeric }) {
   if (!data || data.length === 0 || !selectedCategorical || !selectedNumeric) {
     return (

@@ -1,3 +1,5 @@
+import { parseNumericValue } from '../utils/numberUtils'
+
 function SummaryStats({ data, numericColumns, selectedNumeric }) {
   if (!data || data.length === 0 || !numericColumns || numericColumns.length === 0) {
     return null

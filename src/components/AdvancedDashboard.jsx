@@ -3,6 +3,7 @@ import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Cart
 import SunburstChart from './SunburstChart'
 import ForecastChart from './ForecastChart'
 import ChartInsights from './ChartInsights'
+import { parseNumericValue } from '../utils/numberUtils'
 
 const COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444', '#6366f1', '#14b8a6', '#f97316', '#06b6d4']
 
