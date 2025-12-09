@@ -571,24 +571,36 @@ function Dashboard() {
   
   console.log('Dashboard: Rendering. Data length:', data?.length, 'Filtered data length:', filteredData?.length, 'Columns:', columns?.length, 'Selected numeric:', selectedNumeric, 'Selected categorical:', selectedCategorical)
   
-  // Check if data exists
+  // Check if data exists - but don't redirect if we're in the middle of a metadata update
   if (!data || data.length === 0) {
     console.warn('Dashboard: No data available. Data:', data, 'Loading:', loading, 'Has initialized:', hasInitialized.current)
+    
+    // Only redirect if we've actually initialized and there's truly no data
+    // This prevents blank page during metadata updates
+    if (hasInitialized.current) {
+      return (
+        <div className="min-h-screen bg-gray-50">
+          <Navbar />
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center">
+              <h2 className="text-xl font-semibold text-yellow-900 mb-2">No Data Available</h2>
+              <p className="text-yellow-700 mb-4">No data was found. Please upload a file or load an example dataset.</p>
+              <button
+                onClick={() => navigate('/')}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Go to Home
+              </button>
+            </div>
+          </div>
+        </div>
+      )
+    }
+    // If not initialized yet, show loading
     return (
       <div className="min-h-screen bg-gray-50">
         <Navbar />
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center">
-            <h2 className="text-xl font-semibold text-yellow-900 mb-2">No Data Available</h2>
-            <p className="text-yellow-700 mb-4">No data was found. Please upload a file or load an example dataset.</p>
-            <button
-              onClick={() => navigate('/')}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              Go to Home
-            </button>
-          </div>
-        </div>
+        <Loader />
       </div>
     )
   }
