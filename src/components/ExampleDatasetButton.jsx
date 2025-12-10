@@ -40,15 +40,39 @@ function ExampleDatasetButton({ onDatasetLoad, onError }) {
   const loadExample = async (endpoint, datasetName) => {
     setLoadingDataset(datasetName)
     try {
-      const response = await apiClient.get(endpoint)
-      if (response.data && response.data.data) {
+      console.log(`Loading example dataset: ${datasetName} from ${endpoint}`)
+      const response = await apiClient.get(endpoint, { timeout: 30000 })
+      console.log('Example dataset response:', {
+        hasData: !!response.data,
+        hasDataArray: !!(response.data && response.data.data),
+        dataLength: response.data?.data?.length,
+        columns: response.data?.columns?.length,
+        numericColumns: response.data?.numericColumns?.length,
+        categoricalColumns: response.data?.categoricalColumns?.length,
+        dateColumns: response.data?.dateColumns?.length
+      })
+      
+      if (response.data && response.data.data && Array.isArray(response.data.data)) {
         onDatasetLoad(response.data)
       } else {
-        onError('Invalid data format received from server')
+        console.error('Invalid response format:', response.data)
+        onError('Invalid data format received from server. Please check the backend server.')
       }
     } catch (error) {
       console.error('Error loading dataset:', error)
-      if (error.code === 'ERR_NETWORK' || error.message?.includes('Network Error') || error.code === 'ECONNREFUSED') {
+      console.error('Error details:', {
+        message: error.message,
+        code: error.code,
+        response: error.response?.data,
+        status: error.response?.status,
+        config: {
+          url: error.config?.url,
+          baseURL: error.config?.baseURL,
+          method: error.config?.method
+        }
+      })
+      
+      if (error.code === 'ERR_NETWORK' || error.message?.includes('Network Error') || error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') {
         const isProduction = import.meta.env.PROD
         const hasApiUrl = import.meta.env.VITE_API_URL
         
