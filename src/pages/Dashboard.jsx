@@ -6,7 +6,6 @@ import Loader from '../components/Loader'
 import DashboardCharts from '../components/DashboardCharts'
 import AdvancedDashboard from '../components/AdvancedDashboard'
 import AdvancedDashboardGrid from '../components/AdvancedDashboardGrid'
-import WidgetPalette from '../components/WidgetPalette'
 import MetricCards from '../components/MetricCards'
 import Filters from '../components/Filters'
 import AIInsights from '../components/AIInsights'
@@ -47,7 +46,6 @@ function Dashboard() {
   const [showFilters, setShowFilters] = useState(false)
   const [dashboardLayouts, setDashboardLayouts] = useState(null) // Store widget layouts for sharing
   const [dashboardWidgetVisibility, setDashboardWidgetVisibility] = useState(null) // Store widget visibility for sharing
-  const [addWidgetFunction, setAddWidgetFunction] = useState(null) // Function to add widgets
   const hasInitialized = useRef(false)
   const isUpdatingMetadata = useRef(false)
 
