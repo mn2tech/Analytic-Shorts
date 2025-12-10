@@ -64,25 +64,10 @@ function AdvancedDashboardGrid({
 
   // Get visible widgets
   const visibleWidgets = useMemo(() => {
-    return DEFAULT_WIDGETS.filter(id => widgetVisibility[id] !== false)
-  }, [widgetVisibility])
-
-  // Filter layouts to only include visible widgets
-  const filterLayoutsForVisibleWidgets = useMemo(() => {
-    return (allLayouts) => {
-      if (!allLayouts || typeof allLayouts !== 'object') {
-        return {}
-      }
-      const filtered = {}
-      Object.keys(allLayouts).forEach(breakpoint => {
-        if (Array.isArray(allLayouts[breakpoint])) {
-          filtered[breakpoint] = allLayouts[breakpoint].filter(item => 
-            item && item.i && widgetVisibility[item.i] !== false
-          )
-        }
-      })
-      return filtered
+    if (!widgetVisibility || Object.keys(widgetVisibility).length === 0) {
+      return DEFAULT_WIDGETS
     }
+    return DEFAULT_WIDGETS.filter(id => widgetVisibility[id] !== false)
   }, [widgetVisibility])
 
   // Handle layout change
@@ -101,21 +86,38 @@ function AdvancedDashboardGrid({
     }))
   }
 
-  // Initialize default layouts if not loaded
+  // Initialize default layouts if not loaded and filter to only include visible widgets
   const currentLayouts = useMemo(() => {
+    // Get base layouts
     let baseLayouts
-    if (Object.keys(layouts).length === 0) {
+    if (!layouts || Object.keys(layouts).length === 0) {
       baseLayouts = getDefaultLayouts()
     } else {
       baseLayouts = layouts
     }
-    // Filter to only include visible widgets
-    // Ensure allLayouts is an object with breakpoint keys
+    
+    // Ensure baseLayouts is valid
     if (!baseLayouts || typeof baseLayouts !== 'object') {
       baseLayouts = getDefaultLayouts()
     }
-    return filterLayoutsForVisibleWidgets(baseLayouts)
-  }, [layouts, widgetVisibility, filterLayoutsForVisibleWidgets])
+    
+    // Filter to only include visible widgets
+    const filtered = {}
+    Object.keys(baseLayouts).forEach(breakpoint => {
+      if (Array.isArray(baseLayouts[breakpoint])) {
+        filtered[breakpoint] = baseLayouts[breakpoint].filter(item => {
+          if (!item || !item.i) return false
+          // If widgetVisibility is not initialized yet, show all widgets
+          if (!widgetVisibility || Object.keys(widgetVisibility).length === 0) {
+            return true
+          }
+          return widgetVisibility[item.i] !== false
+        })
+      }
+    })
+    
+    return filtered
+  }, [layouts, widgetVisibility])
 
   // Grid layout breakpoints (matching Tailwind breakpoints)
   const breakpoints = { lg: 1200, md: 768, sm: 640, xs: 480, xxs: 0 }
