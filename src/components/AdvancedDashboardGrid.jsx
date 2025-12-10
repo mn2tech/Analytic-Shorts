@@ -401,7 +401,7 @@ function AdvancedDashboardGrid({
       console.error('Error calculating currentLayouts:', error)
       return getDefaultLayouts()
     }
-  }, [layouts, widgetVisibility])
+  }, [layouts, widgetVisibility, fixOverlappingWidgets])
 
   // Grid layout breakpoints (matching Tailwind breakpoints)
   const breakpoints = { lg: 1200, md: 768, sm: 640, xs: 480, xxs: 0 }
