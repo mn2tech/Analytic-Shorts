@@ -29,14 +29,14 @@ function AdvancedDashboardGrid({
     // Validate and fix saved layouts
     const validatedLayouts = savedLayouts ? validateAndFixLayouts(savedLayouts) : null
     
-    if (validatedLayouts && Object.keys(validatedLayouts).length > 0) {
+    if (validatedLayouts && typeof validatedLayouts === 'object' && !Array.isArray(validatedLayouts) && Object.keys(validatedLayouts).length > 0) {
       setLayouts(validatedLayouts)
     } else {
       const defaultLayouts = getDefaultLayouts()
       setLayouts(defaultLayouts)
     }
     
-    if (savedVisibility && Object.keys(savedVisibility).length > 0) {
+    if (savedVisibility && typeof savedVisibility === 'object' && !Array.isArray(savedVisibility) && Object.keys(savedVisibility).length > 0) {
       setWidgetVisibility(savedVisibility)
     } else {
       // All widgets visible by default
@@ -162,14 +162,18 @@ function AdvancedDashboardGrid({
         onDragStop={(layout, oldItem, newItem, placeholder, e, element) => {
           setIsDragging(false)
           // Update layouts after drag stops - preserve all breakpoints
-          const allLayouts = { ...currentLayouts }
-          // Update the current breakpoint's layout
-          // React Grid Layout will determine which breakpoint we're on
-          // For now, update all breakpoints with the new layout
-          Object.keys(allLayouts).forEach(bp => {
-            allLayouts[bp] = layout
-          })
-          setLayouts(allLayouts)
+          if (currentLayouts && typeof currentLayouts === 'object' && !Array.isArray(currentLayouts)) {
+            const allLayouts = { ...currentLayouts }
+            // Update the current breakpoint's layout
+            // React Grid Layout will determine which breakpoint we're on
+            // For now, update all breakpoints with the new layout
+            if (allLayouts && typeof allLayouts === 'object') {
+              Object.keys(allLayouts).forEach(bp => {
+                allLayouts[bp] = layout
+              })
+              setLayouts(allLayouts)
+            }
+          }
         }}
         onResizeStart={() => {
           setIsDragging(true)
@@ -180,12 +184,16 @@ function AdvancedDashboardGrid({
         onResizeStop={(layout, oldItem, newItem, placeholder, e, element) => {
           setIsDragging(false)
           // Update layouts after resize stops - preserve all breakpoints
-          const allLayouts = { ...currentLayouts }
-          // Update the current breakpoint's layout
-          Object.keys(allLayouts).forEach(bp => {
-            allLayouts[bp] = layout
-          })
-          setLayouts(allLayouts)
+          if (currentLayouts && typeof currentLayouts === 'object' && !Array.isArray(currentLayouts)) {
+            const allLayouts = { ...currentLayouts }
+            // Update the current breakpoint's layout
+            if (allLayouts && typeof allLayouts === 'object') {
+              Object.keys(allLayouts).forEach(bp => {
+                allLayouts[bp] = layout
+              })
+              setLayouts(allLayouts)
+            }
+          }
         }}
         isDraggable={true}
         isResizable={true}
