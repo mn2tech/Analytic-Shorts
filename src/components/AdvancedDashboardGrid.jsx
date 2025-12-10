@@ -16,8 +16,7 @@ function AdvancedDashboardGrid({
   onChartFilter, 
   chartFilter, 
   categoricalColumns,
-  onLayoutChange: externalOnLayoutChange, // Callback to notify parent of layout changes
-  onAddWidgetReady // Callback to pass addWidget function to parent
+  onLayoutChange: externalOnLayoutChange // Callback to notify parent of layout changes
 }) {
   const [layouts, setLayouts] = useState({})
   const [widgetVisibility, setWidgetVisibility] = useState({})
