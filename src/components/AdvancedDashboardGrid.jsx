@@ -365,18 +365,23 @@ function AdvancedDashboardGrid({
   // Handle layout change - always fix overlaps
   const handleLayoutChange = (currentLayout, allLayouts) => {
     // Only update if not currently dragging (to avoid updates during drag)
-    if (!isDragging) {
+    if (!isDragging && allLayouts && typeof allLayouts === 'object' && !Array.isArray(allLayouts)) {
       // ALWAYS fix overlaps when layout changes
       const fixedLayouts = {}
-      Object.keys(allLayouts).forEach(bp => {
-        if (Array.isArray(allLayouts[bp])) {
-          const cols = bp === 'lg' ? 12 : bp === 'md' ? 10 : 6
-          fixedLayouts[bp] = fixOverlappingWidgets(allLayouts[bp], cols)
-        } else {
-          fixedLayouts[bp] = []
-        }
-      })
-      setLayouts(fixedLayouts)
+      try {
+        const keys = Object.keys(allLayouts)
+        keys.forEach(bp => {
+          if (Array.isArray(allLayouts[bp])) {
+            const cols = bp === 'lg' ? 12 : bp === 'md' ? 10 : 6
+            fixedLayouts[bp] = fixOverlappingWidgets(allLayouts[bp], cols)
+          } else {
+            fixedLayouts[bp] = []
+          }
+        })
+        setLayouts(fixedLayouts)
+      } catch (error) {
+        console.error('Error in handleLayoutChange:', error)
+      }
     }
   }
 
