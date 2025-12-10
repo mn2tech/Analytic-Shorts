@@ -79,3 +79,31 @@ export const resetLayouts = () => {
   }
 }
 
+/**
+ * Validate and fix corrupted layouts
+ */
+export const validateAndFixLayouts = (layouts) => {
+  if (!layouts || typeof layouts !== 'object') {
+    return null
+  }
+  
+  const validBreakpoints = ['lg', 'md', 'sm', 'xs', 'xxs']
+  const fixed = {}
+  
+  validBreakpoints.forEach(bp => {
+    if (Array.isArray(layouts[bp])) {
+      // Filter out invalid items
+      fixed[bp] = layouts[bp].filter(item => 
+        item && 
+        typeof item.i === 'string' && 
+        typeof item.x === 'number' && 
+        typeof item.y === 'number' && 
+        typeof item.w === 'number' && 
+        typeof item.h === 'number'
+      )
+    }
+  })
+  
+  return Object.keys(fixed).length > 0 ? fixed : null
+}
+

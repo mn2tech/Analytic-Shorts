@@ -5,7 +5,7 @@ import 'react-resizable/css/styles.css'
 import DashboardWidget from './DashboardWidget'
 import WidgetRenderer from './widgets/WidgetRenderer'
 import { WIDGET_CONFIGS, DEFAULT_WIDGETS, getDefaultLayouts } from '../config/widgetConfig'
-import { saveLayouts, loadLayouts, saveWidgetVisibility, loadWidgetVisibility } from '../utils/layoutPersistence'
+import { saveLayouts, loadLayouts, saveWidgetVisibility, loadWidgetVisibility, validateAndFixLayouts } from '../utils/layoutPersistence'
 
 function AdvancedDashboardGrid({ 
   data, 
@@ -26,8 +26,11 @@ function AdvancedDashboardGrid({
     const savedLayouts = loadLayouts()
     const savedVisibility = loadWidgetVisibility()
     
-    if (savedLayouts && Object.keys(savedLayouts).length > 0) {
-      setLayouts(savedLayouts)
+    // Validate and fix saved layouts
+    const validatedLayouts = savedLayouts ? validateAndFixLayouts(savedLayouts) : null
+    
+    if (validatedLayouts && Object.keys(validatedLayouts).length > 0) {
+      setLayouts(validatedLayouts)
     } else {
       const defaultLayouts = getDefaultLayouts()
       setLayouts(defaultLayouts)
@@ -45,12 +48,12 @@ function AdvancedDashboardGrid({
     }
   }, [])
 
-  // Save layouts when they change
+  // Save layouts when they change (but not during drag)
   useEffect(() => {
-    if (Object.keys(layouts).length > 0) {
+    if (Object.keys(layouts).length > 0 && !isDragging) {
       saveLayouts(layouts)
     }
-  }, [layouts])
+  }, [layouts, isDragging])
 
   // Save visibility when it changes
   useEffect(() => {
@@ -64,26 +67,28 @@ function AdvancedDashboardGrid({
     return DEFAULT_WIDGETS.filter(id => widgetVisibility[id] !== false)
   }, [widgetVisibility])
 
-  // Handle layout change
-  const handleLayoutChange = (currentLayout, allLayouts) => {
-    setLayouts(allLayouts)
-  }
-
-  // Handle widget delete
-  const handleDeleteWidget = (widgetId) => {
-    setWidgetVisibility(prev => ({
-      ...prev,
-      [widgetId]: false
-    }))
+  // Filter layouts to only include visible widgets
+  const filterLayoutsForVisibleWidgets = (allLayouts) => {
+    const filtered = {}
+    Object.keys(allLayouts).forEach(breakpoint => {
+      filtered[breakpoint] = allLayouts[breakpoint].filter(item => 
+        widgetVisibility[item.i] !== false
+      )
+    })
+    return filtered
   }
 
   // Initialize default layouts if not loaded
   const currentLayouts = useMemo(() => {
+    let baseLayouts
     if (Object.keys(layouts).length === 0) {
-      return getDefaultLayouts()
+      baseLayouts = getDefaultLayouts()
+    } else {
+      baseLayouts = layouts
     }
-    return layouts
-  }, [layouts])
+    // Filter to only include visible widgets
+    return filterLayoutsForVisibleWidgets(baseLayouts)
+  }, [layouts, widgetVisibility])
 
   // Grid layout breakpoints (matching Tailwind breakpoints)
   const breakpoints = { lg: 1200, md: 768, sm: 640, xs: 480, xxs: 0 }
@@ -107,13 +112,35 @@ function AdvancedDashboardGrid({
         cols={cols}
         rowHeight={60}
         onLayoutChange={handleLayoutChange}
-        onDragStart={() => setIsDragging(true)}
-        onDragStop={() => {
-          setIsDragging(false)
+        onDragStart={() => {
+          setIsDragging(true)
         }}
-        onResizeStart={() => setIsDragging(true)}
-        onResizeStop={() => {
+        onDrag={(layout, oldItem, newItem, placeholder, e, element) => {
+          // Keep dragging state active during drag
+        }}
+        onDragStop={(layout, oldItem, newItem, placeholder, e, element) => {
           setIsDragging(false)
+          // Update layouts after drag stops
+          const allLayouts = {}
+          Object.keys(currentLayouts).forEach(bp => {
+            allLayouts[bp] = layout
+          })
+          setLayouts(allLayouts)
+        }}
+        onResizeStart={() => {
+          setIsDragging(true)
+        }}
+        onResize={(layout, oldItem, newItem, placeholder, e, element) => {
+          // Keep dragging state active during resize
+        }}
+        onResizeStop={(layout, oldItem, newItem, placeholder, e, element) => {
+          setIsDragging(false)
+          // Update layouts after resize stops
+          const allLayouts = {}
+          Object.keys(currentLayouts).forEach(bp => {
+            allLayouts[bp] = layout
+          })
+          setLayouts(allLayouts)
         }}
         isDraggable={true}
         isResizable={true}
