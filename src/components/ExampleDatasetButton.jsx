@@ -100,8 +100,12 @@ function ExampleDatasetButton({ onDatasetLoad, onError }) {
         }
         
         onError(errorMessage)
+      } else if (error.response) {
+        // Server responded with error status
+        const errorMsg = error.response.data?.error || error.response.data?.message || `Server error: ${error.response.status}`
+        onError(`Failed to load example dataset: ${errorMsg}`)
       } else {
-        onError(error.response?.data?.error || error.message || 'Failed to load example dataset. Please check if the backend server is running.')
+        onError(error.message || 'Failed to load example dataset. Please check if the backend server is running.')
       }
     } finally {
       setLoadingDataset(null)
