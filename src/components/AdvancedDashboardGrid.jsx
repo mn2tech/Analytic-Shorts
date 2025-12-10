@@ -150,14 +150,38 @@ function AdvancedDashboardGrid({
   }, [widgetVisibility])
 
   // Get visible widgets - include all widgets that are visible, not just DEFAULT_WIDGETS
+  // But only include widgets that have layouts defined
   const visibleWidgets = useMemo(() => {
+    // First, get all widget IDs that should be visible based on visibility state
+    let candidateWidgets = []
+    
     if (!widgetVisibility || typeof widgetVisibility !== 'object' || Object.keys(widgetVisibility).length === 0) {
-      return DEFAULT_WIDGETS
+      // If no visibility state, use defaults
+      candidateWidgets = DEFAULT_WIDGETS
+    } else {
+      // Get all widget IDs that are visible (either true or not set to false)
+      const allWidgetIds = Object.keys(WIDGET_CONFIGS)
+      candidateWidgets = allWidgetIds.filter(id => widgetVisibility[id] !== false)
     }
-    // Get all widget IDs that are visible (either true or not set to false)
-    const allWidgetIds = Object.keys(WIDGET_CONFIGS)
-    return allWidgetIds.filter(id => widgetVisibility[id] !== false)
-  }, [widgetVisibility])
+    
+    // Filter to only include widgets that have layouts in at least one breakpoint
+    // This prevents rendering widgets that don't have layout definitions yet
+    const widgetsWithLayouts = candidateWidgets.filter(widgetId => {
+      if (!layouts || typeof layouts !== 'object') return false
+      
+      // Check if widget exists in any breakpoint layout
+      const breakpoints = ['lg', 'md', 'sm', 'xs', 'xxs']
+      return breakpoints.some(bp => {
+        if (layouts[bp] && Array.isArray(layouts[bp])) {
+          return layouts[bp].some(item => item && item.i === widgetId)
+        }
+        return false
+      })
+    })
+    
+    // If no widgets have layouts yet, return defaults (for initial render)
+    return widgetsWithLayouts.length > 0 ? widgetsWithLayouts : DEFAULT_WIDGETS
+  }, [widgetVisibility, layouts])
 
   // Handle layout change
   const handleLayoutChange = (currentLayout, allLayouts) => {
