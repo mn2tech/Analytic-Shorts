@@ -88,35 +88,47 @@ function AdvancedDashboardGrid({
 
   // Initialize default layouts if not loaded and filter to only include visible widgets
   const currentLayouts = useMemo(() => {
-    // Get base layouts
-    let baseLayouts
-    if (!layouts || Object.keys(layouts).length === 0) {
-      baseLayouts = getDefaultLayouts()
-    } else {
-      baseLayouts = layouts
-    }
-    
-    // Ensure baseLayouts is valid
-    if (!baseLayouts || typeof baseLayouts !== 'object') {
-      baseLayouts = getDefaultLayouts()
-    }
-    
-    // Filter to only include visible widgets
-    const filtered = {}
-    Object.keys(baseLayouts).forEach(breakpoint => {
-      if (Array.isArray(baseLayouts[breakpoint])) {
-        filtered[breakpoint] = baseLayouts[breakpoint].filter(item => {
-          if (!item || !item.i) return false
-          // If widgetVisibility is not initialized yet, show all widgets
-          if (!widgetVisibility || Object.keys(widgetVisibility).length === 0) {
-            return true
+    try {
+      // Get base layouts
+      let baseLayouts
+      if (!layouts || typeof layouts !== 'object' || Object.keys(layouts).length === 0) {
+        baseLayouts = getDefaultLayouts()
+      } else {
+        baseLayouts = layouts
+      }
+      
+      // Ensure baseLayouts is valid
+      if (!baseLayouts || typeof baseLayouts !== 'object' || Array.isArray(baseLayouts)) {
+        baseLayouts = getDefaultLayouts()
+      }
+      
+      // Filter to only include visible widgets
+      const filtered = {}
+      if (baseLayouts && typeof baseLayouts === 'object') {
+        Object.keys(baseLayouts).forEach(breakpoint => {
+          if (Array.isArray(baseLayouts[breakpoint])) {
+            filtered[breakpoint] = baseLayouts[breakpoint].filter(item => {
+              if (!item || !item.i) return false
+              // If widgetVisibility is not initialized yet, show all widgets
+              if (!widgetVisibility || typeof widgetVisibility !== 'object' || Object.keys(widgetVisibility).length === 0) {
+                return true
+              }
+              return widgetVisibility[item.i] !== false
+            })
           }
-          return widgetVisibility[item.i] !== false
         })
       }
-    })
-    
-    return filtered
+      
+      // Ensure we have at least the default layouts
+      if (Object.keys(filtered).length === 0) {
+        return getDefaultLayouts()
+      }
+      
+      return filtered
+    } catch (error) {
+      console.error('Error calculating currentLayouts:', error)
+      return getDefaultLayouts()
+    }
   }, [layouts, widgetVisibility])
 
   // Grid layout breakpoints (matching Tailwind breakpoints)
@@ -124,7 +136,7 @@ function AdvancedDashboardGrid({
   const cols = { lg: 12, md: 10, sm: 6, xs: 6, xxs: 6 }
 
   // Don't render until layouts are initialized
-  if (Object.keys(currentLayouts).length === 0) {
+  if (!currentLayouts || typeof currentLayouts !== 'object' || Object.keys(currentLayouts).length === 0) {
     return (
       <div className="w-full flex items-center justify-center min-h-[400px]">
         <div className="text-gray-500">Loading dashboard layout...</div>
