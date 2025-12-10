@@ -149,12 +149,14 @@ function AdvancedDashboardGrid({
     }
   }, [widgetVisibility])
 
-  // Get visible widgets
+  // Get visible widgets - include all widgets that are visible, not just DEFAULT_WIDGETS
   const visibleWidgets = useMemo(() => {
-    if (!widgetVisibility || Object.keys(widgetVisibility).length === 0) {
+    if (!widgetVisibility || typeof widgetVisibility !== 'object' || Object.keys(widgetVisibility).length === 0) {
       return DEFAULT_WIDGETS
     }
-    return DEFAULT_WIDGETS.filter(id => widgetVisibility[id] !== false)
+    // Get all widget IDs that are visible (either true or not set to false)
+    const allWidgetIds = Object.keys(WIDGET_CONFIGS)
+    return allWidgetIds.filter(id => widgetVisibility[id] !== false)
   }, [widgetVisibility])
 
   // Handle layout change
