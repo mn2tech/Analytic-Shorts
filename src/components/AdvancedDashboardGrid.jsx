@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import GridLayout from 'react-grid-layout'
 import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
@@ -24,7 +24,7 @@ function AdvancedDashboardGrid({
   const [isDragging, setIsDragging] = useState(false)
   
   // Handle adding a new widget
-  const handleAddWidget = (widgetId) => {
+  const handleAddWidget = useCallback((widgetId) => {
     const config = WIDGET_CONFIGS[widgetId]
     if (!config) return
     
@@ -75,7 +75,7 @@ function AdvancedDashboardGrid({
       
       return newLayouts
     })
-  }
+  }, [])
 
   // Initialize layouts and visibility
   useEffect(() => {
