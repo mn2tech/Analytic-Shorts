@@ -1092,38 +1092,23 @@ function Dashboard() {
             onMetadataUpdate={handleMetadataUpdate}
           />
         ) : dashboardView === 'advanced' ? (
-          <div className="flex gap-4">
-            <div className="flex-1">
-              <AdvancedDashboardGrid
-                data={data}
-                filteredData={filteredData}
-                selectedNumeric={selectedNumeric}
-                selectedCategorical={selectedCategorical}
-                selectedDate={selectedDate}
-                onChartFilter={handleChartFilter}
-                chartFilter={chartFilter}
-                categoricalColumns={categoricalColumns}
-                onLayoutChange={(layoutData) => {
-                  // Defer state updates to prevent blocking
-                  setTimeout(() => {
-                    setDashboardLayouts(layoutData.layouts)
-                    setDashboardWidgetVisibility(layoutData.widgetVisibility)
-                  }, 0)
-                }}
-                onAddWidgetReady={(addWidgetFn) => {
-                  setAddWidgetFunction(() => addWidgetFn)
-                }}
-              />
-            </div>
-            <WidgetPalette 
-              onAddWidget={addWidgetFunction}
-              visibleWidgets={
-                dashboardWidgetVisibility 
-                  ? Object.keys(dashboardWidgetVisibility).filter(id => dashboardWidgetVisibility[id] !== false) 
-                  : []
-              }
-            />
-          </div>
+          <AdvancedDashboardGrid
+            data={data}
+            filteredData={filteredData}
+            selectedNumeric={selectedNumeric}
+            selectedCategorical={selectedCategorical}
+            selectedDate={selectedDate}
+            onChartFilter={handleChartFilter}
+            chartFilter={chartFilter}
+            categoricalColumns={categoricalColumns}
+            onLayoutChange={(layoutData) => {
+              // Defer state updates to prevent blocking
+              setTimeout(() => {
+                setDashboardLayouts(layoutData.layouts)
+                setDashboardWidgetVisibility(layoutData.widgetVisibility)
+              }, 0)
+            }}
+          />
         ) : (
           <DashboardCharts
             data={data}
