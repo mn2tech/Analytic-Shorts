@@ -215,6 +215,21 @@ function AdvancedDashboardGrid({
 
   // Initialize layouts and visibility
   useEffect(() => {
+    // Always start with clean default layouts to ensure no overlaps
+    // This ensures a standard canvas layout
+    const defaultLayouts = getDefaultLayouts()
+    
+    // ALWAYS apply overlap fixing to defaults
+    const fixedDefaults = {}
+    Object.keys(defaultLayouts).forEach(bp => {
+      if (Array.isArray(defaultLayouts[bp])) {
+        const cols = bp === 'lg' ? 12 : bp === 'md' ? 10 : 6
+        fixedDefaults[bp] = fixOverlappingWidgets(defaultLayouts[bp], cols)
+      } else {
+        fixedDefaults[bp] = []
+      }
+    })
+    
     // Check if layouts were passed from shared dashboard (via URL params or localStorage)
     const urlParams = new URLSearchParams(window.location.search)
     const pathParts = window.location.pathname.split('/shared/')
@@ -261,17 +276,7 @@ function AdvancedDashboardGrid({
       })
       setLayouts(fixedLayouts)
     } else {
-      // Use clean default layouts and ALWAYS apply overlap fixing
-      const defaultLayouts = getDefaultLayouts()
-      const fixedDefaults = {}
-      Object.keys(defaultLayouts).forEach(bp => {
-        if (Array.isArray(defaultLayouts[bp])) {
-          const cols = bp === 'lg' ? 12 : bp === 'md' ? 10 : 6
-          fixedDefaults[bp] = fixOverlappingWidgets(defaultLayouts[bp], cols)
-        } else {
-          fixedDefaults[bp] = []
-        }
-      })
+      // Use clean default layouts (already fixed for overlaps)
       setLayouts(fixedDefaults)
     }
     
