@@ -89,8 +89,17 @@ function AdvancedDashboardGrid({
   const breakpoints = { lg: 1200, md: 768, sm: 640, xs: 480, xxs: 0 }
   const cols = { lg: 12, md: 10, sm: 6, xs: 6, xxs: 6 }
 
+  // Don't render until layouts are initialized
+  if (Object.keys(currentLayouts).length === 0) {
+    return (
+      <div className="w-full flex items-center justify-center min-h-[400px]">
+        <div className="text-gray-500">Loading dashboard layout...</div>
+      </div>
+    )
+  }
+
   return (
-    <div className="w-full">
+    <div className="w-full" style={{ minHeight: '600px' }}>
       <GridLayout
         className="layout"
         layouts={currentLayouts}
@@ -99,15 +108,20 @@ function AdvancedDashboardGrid({
         rowHeight={60}
         onLayoutChange={handleLayoutChange}
         onDragStart={() => setIsDragging(true)}
-        onDragStop={() => setIsDragging(false)}
+        onDragStop={() => {
+          setIsDragging(false)
+        }}
         onResizeStart={() => setIsDragging(true)}
-        onResizeStop={() => setIsDragging(false)}
+        onResizeStop={() => {
+          setIsDragging(false)
+        }}
         isDraggable={true}
         isResizable={true}
         draggableHandle=".drag-handle"
         compactType="vertical"
-        preventCollision={false}
+        preventCollision={true}
         margin={[16, 16]}
+        containerPadding={[16, 16]}
       >
         {visibleWidgets.map(widgetId => {
           const config = WIDGET_CONFIGS[widgetId]

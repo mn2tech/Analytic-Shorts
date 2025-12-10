@@ -14,9 +14,14 @@ function DashboardWidget({ id, title, children, onDelete, isDragging }) {
   return (
     <div
       className={`bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow ${
-        isDragging ? 'shadow-lg' : ''
+        isDragging ? 'shadow-lg opacity-90' : ''
       }`}
-      style={{ height: '100%', display: 'flex', flexDirection: 'column' }}
+      style={{ 
+        height: '100%', 
+        display: 'flex', 
+        flexDirection: 'column',
+        overflow: 'hidden'
+      }}
     >
       {/* Header with drag handle and delete button */}
       <div

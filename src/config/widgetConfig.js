@@ -79,13 +79,28 @@ export const getDefaultLayouts = () => {
   const widgets = DEFAULT_WIDGETS.map(id => WIDGET_CONFIGS[id])
   
   return {
-    lg: widgets.map(w => ({
-      ...w.defaultLayout,
-      minW: w.minW,
-      minH: w.minH,
-      maxW: w.maxW,
-      maxH: w.maxH
-    })),
+    lg: widgets.map((w, index) => {
+      const layout = { ...w.defaultLayout }
+      // Ensure widgets don't overlap - space them out properly
+      // First row: line-chart (0,0) and donut-chart (6,0)
+      // Second row: distribution-list (0,4), sunburst (4,4), bar-chart (8,4)
+      // Third row: forecast (0,9)
+      // Make sure y positions don't overlap
+      if (index === 0) layout.y = 0 // line-chart
+      if (index === 1) layout.y = 0 // donut-chart
+      if (index === 2) layout.y = 4 // distribution-list
+      if (index === 3) layout.y = 4 // sunburst
+      if (index === 4) layout.y = 4 // bar-chart
+      if (index === 5) layout.y = 9 // forecast
+      
+      return {
+        ...layout,
+        minW: w.minW,
+        minH: w.minH,
+        maxW: w.maxW,
+        maxH: w.maxH
+      }
+    }),
     md: widgets.map(w => ({
       ...w.defaultLayout,
       w: Math.min(w.defaultLayout.w, 8), // Adjust for medium screens
