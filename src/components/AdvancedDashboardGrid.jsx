@@ -16,11 +16,66 @@ function AdvancedDashboardGrid({
   onChartFilter, 
   chartFilter, 
   categoricalColumns,
-  onLayoutChange: externalOnLayoutChange // Callback to notify parent of layout changes
+  onLayoutChange: externalOnLayoutChange, // Callback to notify parent of layout changes
+  onAddWidgetReady // Callback to pass addWidget function to parent
 }) {
   const [layouts, setLayouts] = useState({})
   const [widgetVisibility, setWidgetVisibility] = useState({})
   const [isDragging, setIsDragging] = useState(false)
+  
+  // Handle adding a new widget
+  const handleAddWidget = (widgetId) => {
+    const config = WIDGET_CONFIGS[widgetId]
+    if (!config) return
+    
+    // Make widget visible
+    setWidgetVisibility(prev => ({
+      ...prev,
+      [widgetId]: true
+    }))
+    
+    // Add widget to layouts for all breakpoints
+    setLayouts(prevLayouts => {
+      const newLayouts = { ...prevLayouts }
+      const breakpoints = ['lg', 'md', 'sm', 'xs', 'xxs']
+      
+      breakpoints.forEach(bp => {
+        if (!newLayouts[bp]) {
+          newLayouts[bp] = []
+        }
+        
+        // Check if widget already exists in this breakpoint
+        const exists = newLayouts[bp].some(item => item.i === widgetId)
+        if (exists) return
+        
+        // Find the highest y position to place new widget below existing ones
+        let maxY = 0
+        newLayouts[bp].forEach(item => {
+          if (item.y + item.h > maxY) {
+            maxY = item.y + item.h
+          }
+        })
+        
+        // Create new layout item
+        const defaultLayout = { ...config.defaultLayout }
+        const newItem = {
+          i: widgetId,
+          x: defaultLayout.x || 0,
+          y: maxY + 1, // Place below existing widgets
+          w: defaultLayout.w || 6,
+          h: defaultLayout.h || 4,
+          minW: config.minW,
+          minH: config.minH,
+          maxW: config.maxW,
+          maxH: config.maxH
+        }
+        
+        newLayouts[bp] = [...newLayouts[bp], newItem]
+      })
+      
+      return newLayouts
+    })
+  }
 
   // Initialize layouts and visibility
   useEffect(() => {

@@ -46,6 +46,7 @@ function Dashboard() {
   const [showFilters, setShowFilters] = useState(false)
   const [dashboardLayouts, setDashboardLayouts] = useState(null) // Store widget layouts for sharing
   const [dashboardWidgetVisibility, setDashboardWidgetVisibility] = useState(null) // Store widget visibility for sharing
+  const [addWidgetFunction, setAddWidgetFunction] = useState(null) // Function to add widgets
   const hasInitialized = useRef(false)
   const isUpdatingMetadata = useRef(false)
 
