@@ -80,7 +80,8 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
   }, [sampledFullData, selectedCategorical, selectedDate, selectedNumeric])
 
   const handlePieClick = (data, index) => {
-    if (selectedCategorical && data && data.name) {
+    const categoryColumn = selectedCategorical || selectedDate
+    if (categoryColumn && data && data.name) {
       const isCurrentlySelected = chartFilter?.type === 'category' && chartFilter?.value === data.name
       if (isCurrentlySelected) {
         onChartFilter(null) // Deselect if clicking same segment
