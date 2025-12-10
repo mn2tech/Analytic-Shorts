@@ -24,8 +24,35 @@ function AdvancedDashboardGrid({
 
   // Initialize layouts and visibility
   useEffect(() => {
-    const savedLayouts = loadLayouts()
-    const savedVisibility = loadWidgetVisibility()
+    // Check if layouts were passed from shared dashboard (via URL params or localStorage)
+    const urlParams = new URLSearchParams(window.location.search)
+    const pathParts = window.location.pathname.split('/shared/')
+    const shareId = urlParams.get('share') || (pathParts.length > 1 ? pathParts[1] : null)
+    
+    let savedLayouts = null
+    let savedVisibility = null
+    
+    if (shareId) {
+      // Try to load from shared dashboard
+      try {
+        const sharedData = localStorage.getItem(`shared_dashboard_${shareId}`)
+        if (sharedData) {
+          const parsed = JSON.parse(sharedData)
+          if (parsed.layouts) savedLayouts = parsed.layouts
+          if (parsed.widgetVisibility) savedVisibility = parsed.widgetVisibility
+        }
+      } catch (error) {
+        console.error('Error loading shared layouts:', error)
+      }
+    }
+    
+    // Fallback to user's saved layouts
+    if (!savedLayouts) {
+      savedLayouts = loadLayouts()
+    }
+    if (!savedVisibility) {
+      savedVisibility = loadWidgetVisibility()
+    }
     
     // Validate and fix saved layouts
     const validatedLayouts = savedLayouts ? validateAndFixLayouts(savedLayouts) : null
