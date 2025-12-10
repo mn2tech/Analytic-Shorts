@@ -50,14 +50,14 @@ function AdvancedDashboardGrid({
 
   // Save layouts when they change (but not during drag)
   useEffect(() => {
-    if (Object.keys(layouts).length > 0 && !isDragging) {
+    if (layouts && typeof layouts === 'object' && Object.keys(layouts).length > 0 && !isDragging) {
       saveLayouts(layouts)
     }
   }, [layouts, isDragging])
 
   // Save visibility when it changes
   useEffect(() => {
-    if (Object.keys(widgetVisibility).length > 0) {
+    if (widgetVisibility && typeof widgetVisibility === 'object' && Object.keys(widgetVisibility).length > 0) {
       saveWidgetVisibility(widgetVisibility)
     }
   }, [widgetVisibility])
