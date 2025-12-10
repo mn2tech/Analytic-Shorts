@@ -824,20 +824,31 @@ function Dashboard() {
               selectedDate={selectedDate}
             />
           ) : dashboardView === 'advanced' ? (
-            <AdvancedDashboardGrid
-              data={data}
-              filteredData={filteredData}
-              selectedNumeric={selectedNumeric}
-              selectedCategorical={selectedCategorical}
-              selectedDate={selectedDate}
-              onChartFilter={handleChartFilter}
-              chartFilter={chartFilter}
-              categoricalColumns={categoricalColumns}
-              onLayoutChange={(layoutData) => {
-                setDashboardLayouts(layoutData.layouts)
-                setDashboardWidgetVisibility(layoutData.widgetVisibility)
-              }}
-            />
+            <div className="flex gap-4">
+              <div className="flex-1">
+                <AdvancedDashboardGrid
+                  data={data}
+                  filteredData={filteredData}
+                  selectedNumeric={selectedNumeric}
+                  selectedCategorical={selectedCategorical}
+                  selectedDate={selectedDate}
+                  onChartFilter={handleChartFilter}
+                  chartFilter={chartFilter}
+                  categoricalColumns={categoricalColumns}
+                  onLayoutChange={(layoutData) => {
+                    setDashboardLayouts(layoutData.layouts)
+                    setDashboardWidgetVisibility(layoutData.widgetVisibility)
+                  }}
+                  onAddWidgetReady={(addWidgetFn) => {
+                    setAddWidgetFunction(() => addWidgetFn)
+                  }}
+                />
+              </div>
+              <WidgetPalette 
+                onAddWidget={addWidgetFunction}
+                visibleWidgets={dashboardWidgetVisibility ? Object.keys(dashboardWidgetVisibility).filter(id => dashboardWidgetVisibility[id] !== false) : []}
+              />
+            </div>
           ) : (
             <>
               <DashboardCharts
@@ -1090,20 +1101,31 @@ function Dashboard() {
             onMetadataUpdate={handleMetadataUpdate}
           />
         ) : dashboardView === 'advanced' ? (
-          <AdvancedDashboardGrid
-            data={data}
-            filteredData={filteredData}
-            selectedNumeric={selectedNumeric}
-            selectedCategorical={selectedCategorical}
-            selectedDate={selectedDate}
-            onChartFilter={handleChartFilter}
-            chartFilter={chartFilter}
-            categoricalColumns={categoricalColumns}
-            onLayoutChange={(layoutData) => {
-              setDashboardLayouts(layoutData.layouts)
-              setDashboardWidgetVisibility(layoutData.widgetVisibility)
-            }}
-          />
+          <div className="flex gap-4">
+            <div className="flex-1">
+              <AdvancedDashboardGrid
+                data={data}
+                filteredData={filteredData}
+                selectedNumeric={selectedNumeric}
+                selectedCategorical={selectedCategorical}
+                selectedDate={selectedDate}
+                onChartFilter={handleChartFilter}
+                chartFilter={chartFilter}
+                categoricalColumns={categoricalColumns}
+                onLayoutChange={(layoutData) => {
+                  setDashboardLayouts(layoutData.layouts)
+                  setDashboardWidgetVisibility(layoutData.widgetVisibility)
+                }}
+                onAddWidgetReady={(addWidgetFn) => {
+                  setAddWidgetFunction(() => addWidgetFn)
+                }}
+              />
+            </div>
+            <WidgetPalette 
+              onAddWidget={addWidgetFunction}
+              visibleWidgets={dashboardWidgetVisibility ? Object.keys(dashboardWidgetVisibility).filter(id => dashboardWidgetVisibility[id] !== false) : []}
+            />
+          </div>
         ) : (
           <DashboardCharts
             data={data}
