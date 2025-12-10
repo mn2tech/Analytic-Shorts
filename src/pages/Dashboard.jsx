@@ -35,7 +35,7 @@ function Dashboard() {
   const [chartFilter, setChartFilter] = useState(null) // { type: 'category' | 'date', value: string }
   const [shareId, setShareId] = useState(null)
   const [shareLinkCopied, setShareLinkCopied] = useState(false)
-  const [dashboardView, setDashboardView] = useState('advanced') // 'advanced', 'simple', 'data', or 'timeseries'
+  const [dashboardView, setDashboardView] = useState('simple') // 'simple', 'data', or 'timeseries'
   const [dashboardTitle, setDashboardTitle] = useState('Analytics Dashboard')
   // Store the sidebar-filtered data separately
   const [sidebarFilteredData, setSidebarFilteredData] = useState(null)
