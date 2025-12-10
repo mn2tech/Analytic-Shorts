@@ -68,14 +68,32 @@ function AdvancedDashboardGrid({
   }, [widgetVisibility])
 
   // Filter layouts to only include visible widgets
-  const filterLayoutsForVisibleWidgets = (allLayouts) => {
-    const filtered = {}
-    Object.keys(allLayouts).forEach(breakpoint => {
-      filtered[breakpoint] = allLayouts[breakpoint].filter(item => 
-        widgetVisibility[item.i] !== false
-      )
-    })
-    return filtered
+  const filterLayoutsForVisibleWidgets = useMemo(() => {
+    return (allLayouts) => {
+      const filtered = {}
+      Object.keys(allLayouts).forEach(breakpoint => {
+        filtered[breakpoint] = allLayouts[breakpoint].filter(item => 
+          widgetVisibility[item.i] !== false
+        )
+      })
+      return filtered
+    }
+  }, [widgetVisibility])
+
+  // Handle layout change
+  const handleLayoutChange = (currentLayout, allLayouts) => {
+    // Only update if not currently dragging (to avoid updates during drag)
+    if (!isDragging) {
+      setLayouts(allLayouts)
+    }
+  }
+
+  // Handle widget delete
+  const handleDeleteWidget = (widgetId) => {
+    setWidgetVisibility(prev => ({
+      ...prev,
+      [widgetId]: false
+    }))
   }
 
   // Initialize default layouts if not loaded
@@ -88,7 +106,7 @@ function AdvancedDashboardGrid({
     }
     // Filter to only include visible widgets
     return filterLayoutsForVisibleWidgets(baseLayouts)
-  }, [layouts, widgetVisibility])
+  }, [layouts, widgetVisibility, filterLayoutsForVisibleWidgets])
 
   // Grid layout breakpoints (matching Tailwind breakpoints)
   const breakpoints = { lg: 1200, md: 768, sm: 640, xs: 480, xxs: 0 }
@@ -120,9 +138,12 @@ function AdvancedDashboardGrid({
         }}
         onDragStop={(layout, oldItem, newItem, placeholder, e, element) => {
           setIsDragging(false)
-          // Update layouts after drag stops
-          const allLayouts = {}
-          Object.keys(currentLayouts).forEach(bp => {
+          // Update layouts after drag stops - preserve all breakpoints
+          const allLayouts = { ...currentLayouts }
+          // Update the current breakpoint's layout
+          // React Grid Layout will determine which breakpoint we're on
+          // For now, update all breakpoints with the new layout
+          Object.keys(allLayouts).forEach(bp => {
             allLayouts[bp] = layout
           })
           setLayouts(allLayouts)
@@ -135,9 +156,10 @@ function AdvancedDashboardGrid({
         }}
         onResizeStop={(layout, oldItem, newItem, placeholder, e, element) => {
           setIsDragging(false)
-          // Update layouts after resize stops
-          const allLayouts = {}
-          Object.keys(currentLayouts).forEach(bp => {
+          // Update layouts after resize stops - preserve all breakpoints
+          const allLayouts = { ...currentLayouts }
+          // Update the current breakpoint's layout
+          Object.keys(allLayouts).forEach(bp => {
             allLayouts[bp] = layout
           })
           setLayouts(allLayouts)
@@ -145,7 +167,7 @@ function AdvancedDashboardGrid({
         isDraggable={true}
         isResizable={true}
         draggableHandle=".drag-handle"
-        compactType="vertical"
+        compactType={null}
         preventCollision={true}
         margin={[16, 16]}
         containerPadding={[16, 16]}
