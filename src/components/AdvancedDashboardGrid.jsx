@@ -152,13 +152,18 @@ function AdvancedDashboardGrid({
       // Debounce parent notification to avoid blocking UI
       const timeoutId = setTimeout(() => {
         if (externalOnLayoutChange) {
-          externalOnLayoutChange({ layouts, widgetVisibility })
+          // Create stable references to prevent infinite loops
+          externalOnLayoutChange({ 
+            layouts: { ...layouts }, 
+            widgetVisibility: { ...widgetVisibility } 
+          })
         }
       }, 100) // 100ms debounce
       
       return () => clearTimeout(timeoutId)
     }
-  }, [layouts, widgetVisibility, isDragging, externalOnLayoutChange])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layouts, widgetVisibility, isDragging]) // Removed externalOnLayoutChange from deps to prevent loops
 
   // Save visibility when it changes
   useEffect(() => {

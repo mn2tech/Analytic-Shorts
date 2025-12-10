@@ -850,12 +850,11 @@ function Dashboard() {
               </div>
               <WidgetPalette 
                 onAddWidget={addWidgetFunction}
-                visibleWidgets={useMemo(() => 
+                visibleWidgets={
                   dashboardWidgetVisibility 
                     ? Object.keys(dashboardWidgetVisibility).filter(id => dashboardWidgetVisibility[id] !== false) 
-                    : [], 
-                  [dashboardWidgetVisibility]
-                )}
+                    : []
+                }
               />
             </div>
           ) : (
