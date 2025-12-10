@@ -409,10 +409,20 @@ function AdvancedDashboardGrid({
     try {
       // Get base layouts
       let baseLayouts
-      if (!layouts || typeof layouts !== 'object' || Object.keys(layouts).length === 0) {
+      if (!layouts || typeof layouts !== 'object' || Array.isArray(layouts)) {
         baseLayouts = getDefaultLayouts()
       } else {
-        baseLayouts = layouts
+        // Safely check if layouts has keys
+        try {
+          const keys = Object.keys(layouts)
+          if (keys.length === 0) {
+            baseLayouts = getDefaultLayouts()
+          } else {
+            baseLayouts = layouts
+          }
+        } catch (e) {
+          baseLayouts = getDefaultLayouts()
+        }
       }
       
       // Ensure baseLayouts is valid
@@ -422,40 +432,65 @@ function AdvancedDashboardGrid({
       
       // Filter to only include visible widgets and ALWAYS fix overlaps
       const filtered = {}
-      if (baseLayouts && typeof baseLayouts === 'object') {
-        Object.keys(baseLayouts).forEach(breakpoint => {
-          if (Array.isArray(baseLayouts[breakpoint])) {
-            // First filter by visibility
-            let visibleItems = baseLayouts[breakpoint].filter(item => {
-              if (!item || !item.i) return false
-              // If widgetVisibility is not initialized yet, show all widgets
-              if (!widgetVisibility || typeof widgetVisibility !== 'object' || Object.keys(widgetVisibility).length === 0) {
-                return true
-              }
-              return widgetVisibility[item.i] !== false
-            })
-            
-            // ALWAYS fix overlaps - even if they shouldn't exist, ensure they don't
-            const cols = breakpoint === 'lg' ? 12 : breakpoint === 'md' ? 10 : 6
-            filtered[breakpoint] = fixOverlappingWidgets(visibleItems, cols)
-          } else {
-            filtered[breakpoint] = []
-          }
-        })
+      if (baseLayouts && typeof baseLayouts === 'object' && !Array.isArray(baseLayouts)) {
+        try {
+          const breakpoints = Object.keys(baseLayouts)
+          breakpoints.forEach(breakpoint => {
+            if (Array.isArray(baseLayouts[breakpoint])) {
+              // First filter by visibility
+              let visibleItems = baseLayouts[breakpoint].filter(item => {
+                if (!item || !item.i) return false
+                // If widgetVisibility is not initialized yet, show all widgets
+                if (!widgetVisibility || typeof widgetVisibility !== 'object' || Array.isArray(widgetVisibility)) {
+                  return true
+                }
+                try {
+                  const visKeys = Object.keys(widgetVisibility)
+                  if (visKeys.length === 0) {
+                    return true
+                  }
+                } catch (e) {
+                  return true
+                }
+                return widgetVisibility[item.i] !== false
+              })
+              
+              // ALWAYS fix overlaps - even if they shouldn't exist, ensure they don't
+              const cols = breakpoint === 'lg' ? 12 : breakpoint === 'md' ? 10 : 6
+              filtered[breakpoint] = fixOverlappingWidgets(visibleItems, cols)
+            } else {
+              filtered[breakpoint] = []
+            }
+          })
+        } catch (e) {
+          console.error('Error processing baseLayouts:', e)
+        }
       }
       
       // Ensure we have at least the default layouts
-      if (Object.keys(filtered).length === 0) {
-        const defaults = getDefaultLayouts()
-        // Apply overlap fixing to defaults too
-        const fixedDefaults = {}
-        Object.keys(defaults).forEach(bp => {
-          if (Array.isArray(defaults[bp])) {
-            const cols = bp === 'lg' ? 12 : bp === 'md' ? 10 : 6
-            fixedDefaults[bp] = fixOverlappingWidgets(defaults[bp], cols)
+      try {
+        const filteredKeys = Object.keys(filtered)
+        if (filteredKeys.length === 0) {
+          const defaults = getDefaultLayouts()
+          // Apply overlap fixing to defaults too
+          const fixedDefaults = {}
+          if (defaults && typeof defaults === 'object' && !Array.isArray(defaults)) {
+            try {
+              const defaultKeys = Object.keys(defaults)
+              defaultKeys.forEach(bp => {
+                if (Array.isArray(defaults[bp])) {
+                  const cols = bp === 'lg' ? 12 : bp === 'md' ? 10 : 6
+                  fixedDefaults[bp] = fixOverlappingWidgets(defaults[bp], cols)
+                }
+              })
+            } catch (e) {
+              console.error('Error processing defaults:', e)
+            }
           }
-        })
-        return fixedDefaults
+          return fixedDefaults
+        }
+      } catch (e) {
+        console.error('Error checking filtered keys:', e)
       }
       
       return filtered
@@ -464,12 +499,19 @@ function AdvancedDashboardGrid({
       const defaults = getDefaultLayouts()
       // Apply overlap fixing even in error case
       const fixedDefaults = {}
-      Object.keys(defaults).forEach(bp => {
-        if (Array.isArray(defaults[bp])) {
-          const cols = bp === 'lg' ? 12 : bp === 'md' ? 10 : 6
-          fixedDefaults[bp] = fixOverlappingWidgets(defaults[bp], cols)
+      if (defaults && typeof defaults === 'object' && !Array.isArray(defaults)) {
+        try {
+          const defaultKeys = Object.keys(defaults)
+          defaultKeys.forEach(bp => {
+            if (Array.isArray(defaults[bp])) {
+              const cols = bp === 'lg' ? 12 : bp === 'md' ? 10 : 6
+              fixedDefaults[bp] = fixOverlappingWidgets(defaults[bp], cols)
+            }
+          })
+        } catch (e) {
+          console.error('Error processing defaults in catch:', e)
         }
-      })
+      }
       return fixedDefaults
     }
   }, [layouts, widgetVisibility])
