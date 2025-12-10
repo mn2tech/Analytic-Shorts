@@ -278,6 +278,81 @@ function AdvancedDashboardGrid({
     })
   }, [])
 
+  // Helper function to fix overlapping widgets in a layout
+  const fixOverlappingWidgets = useCallback((layoutArray, cols = 12) => {
+    if (!Array.isArray(layoutArray) || layoutArray.length === 0) return layoutArray
+    
+    const fixed = []
+    
+    layoutArray.forEach(item => {
+      if (!item || !item.i) return
+      
+      // Check if this item overlaps with any already processed item
+      let overlaps = false
+      let newX = item.x
+      let newY = item.y
+      
+      for (const existing of fixed) {
+        if (!(
+          newX + item.w <= existing.x ||
+          existing.x + existing.w <= newX ||
+          newY + item.h <= existing.y ||
+          existing.y + existing.h <= newY
+        )) {
+          overlaps = true
+          break
+        }
+      }
+      
+      // If overlaps, find next available position
+      if (overlaps) {
+        let found = false
+        let testY = 0
+        let testX = 0
+        
+        while (!found && testY < 50) {
+          const testOverlaps = fixed.some(existing => {
+            return !(
+              testX + item.w <= existing.x ||
+              existing.x + existing.w <= testX ||
+              testY + item.h <= existing.y ||
+              existing.y + existing.h <= testY
+            )
+          })
+          
+          if (!testOverlaps) {
+            newX = testX
+            newY = testY
+            found = true
+          } else {
+            testX += item.w
+            if (testX + item.w > cols) {
+              testX = 0
+              testY += item.h + 1
+            }
+          }
+        }
+        
+        // Fallback: place at bottom
+        if (!found) {
+          const maxY = fixed.length > 0 
+            ? Math.max(...fixed.map(existing => existing.y + existing.h))
+            : 0
+          newX = 0
+          newY = maxY + 1
+        }
+      }
+      
+      fixed.push({
+        ...item,
+        x: newX,
+        y: newY
+      })
+    })
+    
+    return fixed
+  }, [])
+
   // Initialize default layouts if not loaded and filter to only include visible widgets
   const currentLayouts = useMemo(() => {
     try {
@@ -294,12 +369,13 @@ function AdvancedDashboardGrid({
         baseLayouts = getDefaultLayouts()
       }
       
-      // Filter to only include visible widgets
+      // Filter to only include visible widgets and fix overlaps
       const filtered = {}
       if (baseLayouts && typeof baseLayouts === 'object') {
         Object.keys(baseLayouts).forEach(breakpoint => {
           if (Array.isArray(baseLayouts[breakpoint])) {
-            filtered[breakpoint] = baseLayouts[breakpoint].filter(item => {
+            // First filter by visibility
+            let visibleItems = baseLayouts[breakpoint].filter(item => {
               if (!item || !item.i) return false
               // If widgetVisibility is not initialized yet, show all widgets
               if (!widgetVisibility || typeof widgetVisibility !== 'object' || Object.keys(widgetVisibility).length === 0) {
@@ -307,6 +383,10 @@ function AdvancedDashboardGrid({
               }
               return widgetVisibility[item.i] !== false
             })
+            
+            // Then fix any overlaps
+            const cols = breakpoint === 'lg' ? 12 : breakpoint === 'md' ? 10 : 6
+            filtered[breakpoint] = fixOverlappingWidgets(visibleItems, cols)
           }
         })
       }
