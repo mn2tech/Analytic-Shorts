@@ -15,7 +15,8 @@ function AdvancedDashboardGrid({
   selectedDate, 
   onChartFilter, 
   chartFilter, 
-  categoricalColumns 
+  categoricalColumns,
+  onLayoutChange: externalOnLayoutChange // Callback to notify parent of layout changes
 }) {
   const [layouts, setLayouts] = useState({})
   const [widgetVisibility, setWidgetVisibility] = useState({})
@@ -48,12 +49,16 @@ function AdvancedDashboardGrid({
     }
   }, [])
 
-  // Save layouts when they change (but not during drag)
+  // Save layouts when they change (but not during drag) and notify parent
   useEffect(() => {
     if (layouts && typeof layouts === 'object' && Object.keys(layouts).length > 0 && !isDragging) {
       saveLayouts(layouts)
+      // Notify parent component of layout changes for sharing
+      if (externalOnLayoutChange) {
+        externalOnLayoutChange({ layouts, widgetVisibility })
+      }
     }
-  }, [layouts, isDragging])
+  }, [layouts, widgetVisibility, isDragging, externalOnLayoutChange])
 
   // Save visibility when it changes
   useEffect(() => {
@@ -146,21 +151,39 @@ function AdvancedDashboardGrid({
 
   // Ensure currentLayouts is valid before rendering GridLayout
   const safeLayouts = useMemo(() => {
-    if (!currentLayouts || typeof currentLayouts !== 'object' || Array.isArray(currentLayouts)) {
-      return getDefaultLayouts()
-    }
-    // Ensure all breakpoints have valid arrays
-    const safe = {}
-    Object.keys(currentLayouts).forEach(bp => {
-      if (Array.isArray(currentLayouts[bp])) {
-        safe[bp] = currentLayouts[bp]
+    try {
+      if (!currentLayouts || typeof currentLayouts !== 'object' || Array.isArray(currentLayouts)) {
+        return getDefaultLayouts()
       }
-    })
-    // If no valid breakpoints, return defaults
-    if (Object.keys(safe).length === 0) {
+      // Ensure all breakpoints have valid arrays
+      const safe = {}
+      const requiredBreakpoints = ['lg', 'md', 'sm', 'xs', 'xxs']
+      
+      requiredBreakpoints.forEach(bp => {
+        if (currentLayouts[bp] && Array.isArray(currentLayouts[bp])) {
+          safe[bp] = currentLayouts[bp]
+        } else {
+          // If breakpoint is missing, use lg layout as fallback
+          if (currentLayouts.lg && Array.isArray(currentLayouts.lg)) {
+            safe[bp] = currentLayouts.lg
+          } else {
+            // Last resort: use default layouts
+            const defaults = getDefaultLayouts()
+            safe[bp] = defaults[bp] || defaults.lg || []
+          }
+        }
+      })
+      
+      // Ensure we have at least one valid breakpoint
+      if (Object.keys(safe).length === 0) {
+        return getDefaultLayouts()
+      }
+      
+      return safe
+    } catch (error) {
+      console.error('Error creating safeLayouts:', error)
       return getDefaultLayouts()
     }
-    return safe
   }, [currentLayouts])
 
   return (
@@ -216,6 +239,7 @@ function AdvancedDashboardGrid({
         }}
         isDraggable={true}
         isResizable={true}
+        resizeHandles={['s', 'w', 'e', 'n', 'sw', 'nw', 'se', 'ne']} // Enable all resize handles
         draggableHandle=".drag-handle"
         compactType={null}
         preventCollision={true}

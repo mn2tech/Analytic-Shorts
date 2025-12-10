@@ -44,6 +44,8 @@ function Dashboard() {
   const [saving, setSaving] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
+  const [dashboardLayouts, setDashboardLayouts] = useState(null) // Store widget layouts for sharing
+  const [dashboardWidgetVisibility, setDashboardWidgetVisibility] = useState(null) // Store widget visibility for sharing
   const hasInitialized = useRef(false)
   const isUpdatingMetadata = useRef(false)
 
@@ -830,6 +832,10 @@ function Dashboard() {
               onChartFilter={handleChartFilter}
               chartFilter={chartFilter}
               categoricalColumns={categoricalColumns}
+              onLayoutChange={(layoutData) => {
+                setDashboardLayouts(layoutData.layouts)
+                setDashboardWidgetVisibility(layoutData.widgetVisibility)
+              }}
             />
           ) : (
             <>
@@ -1016,6 +1022,8 @@ function Dashboard() {
                     selectedCategorical: selectedCategorical,
                     selectedDate: selectedDate,
                     dashboardView: dashboardView, // Save the current view (advanced/simple)
+                    layouts: dashboardLayouts, // Include widget layouts
+                    widgetVisibility: dashboardWidgetVisibility, // Include widget visibility
                   }
                   if (saveSharedDashboard(newShareId, dashboardData)) {
                     setShareId(newShareId)
@@ -1090,6 +1098,10 @@ function Dashboard() {
             onChartFilter={handleChartFilter}
             chartFilter={chartFilter}
             categoricalColumns={categoricalColumns}
+            onLayoutChange={(layoutData) => {
+              setDashboardLayouts(layoutData.layouts)
+              setDashboardWidgetVisibility(layoutData.widgetVisibility)
+            }}
           />
         ) : (
           <DashboardCharts
