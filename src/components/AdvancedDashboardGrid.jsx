@@ -23,6 +23,81 @@ function AdvancedDashboardGrid({
   const [widgetVisibility, setWidgetVisibility] = useState({})
   const [isDragging, setIsDragging] = useState(false)
   
+  // Helper function to fix overlapping widgets in a layout
+  const fixOverlappingWidgets = (layoutArray, cols = 12) => {
+    if (!Array.isArray(layoutArray) || layoutArray.length === 0) return layoutArray
+    
+    const fixed = []
+    
+    layoutArray.forEach(item => {
+      if (!item || !item.i) return
+      
+      // Check if this item overlaps with any already processed item
+      let overlaps = false
+      let newX = item.x
+      let newY = item.y
+      
+      for (const existing of fixed) {
+        if (!(
+          newX + item.w <= existing.x ||
+          existing.x + existing.w <= newX ||
+          newY + item.h <= existing.y ||
+          existing.y + existing.h <= newY
+        )) {
+          overlaps = true
+          break
+        }
+      }
+      
+      // If overlaps, find next available position
+      if (overlaps) {
+        let found = false
+        let testY = 0
+        let testX = 0
+        
+        while (!found && testY < 50) {
+          const testOverlaps = fixed.some(existing => {
+            return !(
+              testX + item.w <= existing.x ||
+              existing.x + existing.w <= testX ||
+              testY + item.h <= existing.y ||
+              existing.y + existing.h <= testY
+            )
+          })
+          
+          if (!testOverlaps) {
+            newX = testX
+            newY = testY
+            found = true
+          } else {
+            testX += item.w
+            if (testX + item.w > cols) {
+              testX = 0
+              testY += item.h + 1
+            }
+          }
+        }
+        
+        // Fallback: place at bottom
+        if (!found) {
+          const maxY = fixed.length > 0 
+            ? Math.max(...fixed.map(existing => existing.y + existing.h))
+            : 0
+          newX = 0
+          newY = maxY + 1
+        }
+      }
+      
+      fixed.push({
+        ...item,
+        x: newX,
+        y: newY
+      })
+    })
+    
+    return fixed
+  }
+  
   // Handle adding a new widget - optimized with batched updates and async processing
   const handleAddWidget = useCallback((widgetId) => {
     const config = WIDGET_CONFIGS[widgetId]
