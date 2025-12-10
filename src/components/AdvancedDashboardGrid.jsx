@@ -570,7 +570,7 @@ function AdvancedDashboardGrid({
         }}
         onResizeStop={(layout, oldItem, newItem, placeholder, e, element) => {
           setIsDragging(false)
-          // Update layouts after resize stops - preserve all breakpoints
+          // Update layouts after resize stops - preserve all breakpoints and fix overlaps
           if (currentLayouts && typeof currentLayouts === 'object' && !Array.isArray(currentLayouts)) {
             const allLayouts = { ...currentLayouts }
             // Update the current breakpoint's layout
@@ -578,7 +578,18 @@ function AdvancedDashboardGrid({
               Object.keys(allLayouts).forEach(bp => {
                 allLayouts[bp] = layout
               })
-              setLayouts(allLayouts)
+              
+              // ALWAYS fix overlaps after resize
+              const fixedLayouts = {}
+              Object.keys(allLayouts).forEach(bp => {
+                if (Array.isArray(allLayouts[bp])) {
+                  const cols = bp === 'lg' ? 12 : bp === 'md' ? 10 : 6
+                  fixedLayouts[bp] = fixOverlappingWidgets(allLayouts[bp], cols)
+                } else {
+                  fixedLayouts[bp] = []
+                }
+              })
+              setLayouts(fixedLayouts)
             }
           }
         }}
