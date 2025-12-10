@@ -648,6 +648,7 @@ function AdvancedDashboardGrid({
         preventCollision={true}
         margin={[16, 16]}
         containerPadding={[16, 16]}
+        allowOverlap={false}
         onDrop={(layout, layoutItem, e) => {
           // Handle drop from external source (widget palette)
           const widgetId = e.dataTransfer?.getData('widgetId')
