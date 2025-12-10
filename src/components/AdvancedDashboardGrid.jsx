@@ -361,6 +361,7 @@ function AdvancedDashboardGrid({
   }, [])
 
   // Initialize default layouts if not loaded and filter to only include visible widgets
+  // ALWAYS apply overlap fixing to ensure clean layout
   const currentLayouts = useMemo(() => {
     try {
       // Get base layouts
@@ -376,7 +377,7 @@ function AdvancedDashboardGrid({
         baseLayouts = getDefaultLayouts()
       }
       
-      // Filter to only include visible widgets and fix overlaps
+      // Filter to only include visible widgets and ALWAYS fix overlaps
       const filtered = {}
       if (baseLayouts && typeof baseLayouts === 'object') {
         Object.keys(baseLayouts).forEach(breakpoint => {
@@ -391,22 +392,42 @@ function AdvancedDashboardGrid({
               return widgetVisibility[item.i] !== false
             })
             
-            // Then fix any overlaps
+            // ALWAYS fix overlaps - even if they shouldn't exist, ensure they don't
             const cols = breakpoint === 'lg' ? 12 : breakpoint === 'md' ? 10 : 6
             filtered[breakpoint] = fixOverlappingWidgets(visibleItems, cols)
+          } else {
+            filtered[breakpoint] = []
           }
         })
       }
       
       // Ensure we have at least the default layouts
       if (Object.keys(filtered).length === 0) {
-        return getDefaultLayouts()
+        const defaults = getDefaultLayouts()
+        // Apply overlap fixing to defaults too
+        const fixedDefaults = {}
+        Object.keys(defaults).forEach(bp => {
+          if (Array.isArray(defaults[bp])) {
+            const cols = bp === 'lg' ? 12 : bp === 'md' ? 10 : 6
+            fixedDefaults[bp] = fixOverlappingWidgets(defaults[bp], cols)
+          }
+        })
+        return fixedDefaults
       }
       
       return filtered
     } catch (error) {
       console.error('Error calculating currentLayouts:', error)
-      return getDefaultLayouts()
+      const defaults = getDefaultLayouts()
+      // Apply overlap fixing even in error case
+      const fixedDefaults = {}
+      Object.keys(defaults).forEach(bp => {
+        if (Array.isArray(defaults[bp])) {
+          const cols = bp === 'lg' ? 12 : bp === 'md' ? 10 : 6
+          fixedDefaults[bp] = fixOverlappingWidgets(defaults[bp], cols)
+        }
+      })
+      return fixedDefaults
     }
   }, [layouts, widgetVisibility])
 

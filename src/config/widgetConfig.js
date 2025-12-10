@@ -124,35 +124,48 @@ export const getDefaultLayouts = () => {
     lg: widgets.map((w, index) => {
       const layout = { ...w.defaultLayout }
       
-      // Arrange widgets in a clean grid pattern
-      // Row 1: line-chart (0,0, w:6) and donut-chart (6,0, w:6)
-      // Row 2: distribution-list (0,5, w:4), sunburst (4,5, w:4), bar-chart (8,5, w:4)
-      // Row 3: forecast (0,11, w:12)
+      // Arrange widgets in a clean grid pattern with NO overlaps
+      // Row 1: line-chart (0,0, w:6, h:4) and donut-chart (6,0, w:6, h:4)
+      // Row 2: distribution-list (0,5, w:4, h:5), sunburst (4,5, w:4, h:5), bar-chart (8,5, w:4, h:5)
+      // Row 3: forecast (0,11, w:12, h:5)
+      // Ensure y positions account for widget heights to prevent overlap
       
       if (index === 0) {
+        // Line chart - top left
         layout.x = 0
         layout.y = 0
         layout.w = 6
+        layout.h = 4
       } else if (index === 1) {
+        // Donut chart - top right
         layout.x = 6
         layout.y = 0
         layout.w = 6
+        layout.h = 4
       } else if (index === 2) {
+        // Distribution list - second row, left
         layout.x = 0
-        layout.y = 5 // Below first row (0 + 4 + 1 spacing)
+        layout.y = 5 // Row 1 ends at y=4, so start at y=5
         layout.w = 4
+        layout.h = 5
       } else if (index === 3) {
+        // Sunburst - second row, middle
         layout.x = 4
         layout.y = 5
         layout.w = 4
+        layout.h = 5
       } else if (index === 4) {
+        // Bar chart - second row, right
         layout.x = 8
         layout.y = 5
         layout.w = 4
+        layout.h = 5
       } else if (index === 5) {
+        // Forecast - third row, full width
         layout.x = 0
-        layout.y = 11 // Below second row (5 + 5 + 1 spacing)
+        layout.y = 11 // Row 2 ends at y=10, so start at y=11
         layout.w = 12
+        layout.h = 5
       }
       
       return {
