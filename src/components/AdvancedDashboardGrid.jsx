@@ -23,58 +23,69 @@ function AdvancedDashboardGrid({
   const [widgetVisibility, setWidgetVisibility] = useState({})
   const [isDragging, setIsDragging] = useState(false)
   
-  // Handle adding a new widget
+  // Handle adding a new widget - optimized with batched updates and async processing
   const handleAddWidget = useCallback((widgetId) => {
     const config = WIDGET_CONFIGS[widgetId]
     if (!config) return
     
-    // Make widget visible
-    setWidgetVisibility(prev => ({
-      ...prev,
-      [widgetId]: true
-    }))
-    
-    // Add widget to layouts for all breakpoints
-    setLayouts(prevLayouts => {
-      const newLayouts = { ...prevLayouts }
-      const breakpoints = ['lg', 'md', 'sm', 'xs', 'xxs']
-      
-      breakpoints.forEach(bp => {
-        if (!newLayouts[bp]) {
-          newLayouts[bp] = []
+    // Defer all state updates to next tick to prevent blocking
+    setTimeout(() => {
+      // Batch both state updates together
+      setWidgetVisibility(prev => {
+        // Check if already visible to avoid unnecessary update
+        if (prev[widgetId] === true) return prev
+        
+        return {
+          ...prev,
+          [widgetId]: true
         }
-        
-        // Check if widget already exists in this breakpoint
-        const exists = newLayouts[bp].some(item => item.i === widgetId)
-        if (exists) return
-        
-        // Find the highest y position to place new widget below existing ones
-        let maxY = 0
-        newLayouts[bp].forEach(item => {
-          if (item.y + item.h > maxY) {
-            maxY = item.y + item.h
-          }
-        })
-        
-        // Create new layout item
-        const defaultLayout = { ...config.defaultLayout }
-        const newItem = {
-          i: widgetId,
-          x: defaultLayout.x || 0,
-          y: maxY + 1, // Place below existing widgets
-          w: defaultLayout.w || 6,
-          h: defaultLayout.h || 4,
-          minW: config.minW,
-          minH: config.minH,
-          maxW: config.maxW,
-          maxH: config.maxH
-        }
-        
-        newLayouts[bp] = [...newLayouts[bp], newItem]
       })
       
-      return newLayouts
-    })
+      setLayouts(prevLayouts => {
+        const newLayouts = { ...prevLayouts }
+        const breakpoints = ['lg', 'md', 'sm', 'xs', 'xxs']
+        let hasChanges = false
+        
+        breakpoints.forEach(bp => {
+          if (!newLayouts[bp]) {
+            newLayouts[bp] = []
+          }
+          
+          // Check if widget already exists in this breakpoint
+          const exists = newLayouts[bp].some(item => item.i === widgetId)
+          if (exists) return
+          
+          hasChanges = true
+          
+          // Find the highest y position to place new widget below existing ones
+          let maxY = 0
+          newLayouts[bp].forEach(item => {
+            if (item.y + item.h > maxY) {
+              maxY = item.y + item.h
+            }
+          })
+          
+          // Create new layout item
+          const defaultLayout = { ...config.defaultLayout }
+          const newItem = {
+            i: widgetId,
+            x: defaultLayout.x || 0,
+            y: maxY + 1, // Place below existing widgets
+            w: defaultLayout.w || 6,
+            h: defaultLayout.h || 4,
+            minW: config.minW,
+            minH: config.minH,
+            maxW: config.maxW,
+            maxH: config.maxH
+          }
+          
+          newLayouts[bp] = [...newLayouts[bp], newItem]
+        })
+        
+        // Only return new object if there were changes
+        return hasChanges ? newLayouts : prevLayouts
+      })
+    }, 0) // Defer to next event loop tick
   }, [])
 
   // Initialize layouts and visibility

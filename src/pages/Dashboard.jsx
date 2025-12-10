@@ -837,8 +837,11 @@ function Dashboard() {
                   chartFilter={chartFilter}
                   categoricalColumns={categoricalColumns}
                   onLayoutChange={(layoutData) => {
-                    setDashboardLayouts(layoutData.layouts)
-                    setDashboardWidgetVisibility(layoutData.widgetVisibility)
+                    // Defer state updates to prevent blocking
+                    setTimeout(() => {
+                      setDashboardLayouts(layoutData.layouts)
+                      setDashboardWidgetVisibility(layoutData.widgetVisibility)
+                    }, 0)
                   }}
                   onAddWidgetReady={(addWidgetFn) => {
                     setAddWidgetFunction(() => addWidgetFn)
@@ -1119,8 +1122,11 @@ function Dashboard() {
                 chartFilter={chartFilter}
                 categoricalColumns={categoricalColumns}
                 onLayoutChange={(layoutData) => {
-                  setDashboardLayouts(layoutData.layouts)
-                  setDashboardWidgetVisibility(layoutData.widgetVisibility)
+                  // Defer state updates to prevent blocking
+                  setTimeout(() => {
+                    setDashboardLayouts(layoutData.layouts)
+                    setDashboardWidgetVisibility(layoutData.widgetVisibility)
+                  }, 0)
                 }}
                 onAddWidgetReady={(addWidgetFn) => {
                   setAddWidgetFunction(() => addWidgetFn)

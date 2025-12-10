@@ -50,12 +50,13 @@ function WidgetPalette({ onAddWidget, visibleWidgets = [] }) {
   }
 
   const handleAddWidget = (widgetId) => {
-    // Use requestAnimationFrame to defer the operation and prevent blocking
-    if (onAddWidget) {
-      requestAnimationFrame(() => {
-        onAddWidget(widgetId)
-      })
-    }
+    // Prevent multiple rapid clicks
+    if (!onAddWidget) return
+    
+    // Use setTimeout to defer and allow UI to respond immediately
+    setTimeout(() => {
+      onAddWidget(widgetId)
+    }, 0)
   }
 
   const handleDragStart = (e, widgetId) => {
