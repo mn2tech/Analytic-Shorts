@@ -50,8 +50,11 @@ function WidgetPalette({ onAddWidget, visibleWidgets = [] }) {
   }
 
   const handleAddWidget = (widgetId) => {
+    // Use requestAnimationFrame to defer the operation and prevent blocking
     if (onAddWidget) {
-      onAddWidget(widgetId)
+      requestAnimationFrame(() => {
+        onAddWidget(widgetId)
+      })
     }
   }
 

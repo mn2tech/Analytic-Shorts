@@ -132,13 +132,20 @@ function AdvancedDashboardGrid({
   }, [])
 
   // Save layouts when they change (but not during drag) and notify parent
+  // Use debouncing to prevent excessive updates
   useEffect(() => {
     if (layouts && typeof layouts === 'object' && Object.keys(layouts).length > 0 && !isDragging) {
+      // Save to localStorage immediately (lightweight operation)
       saveLayouts(layouts)
-      // Notify parent component of layout changes for sharing
-      if (externalOnLayoutChange) {
-        externalOnLayoutChange({ layouts, widgetVisibility })
-      }
+      
+      // Debounce parent notification to avoid blocking UI
+      const timeoutId = setTimeout(() => {
+        if (externalOnLayoutChange) {
+          externalOnLayoutChange({ layouts, widgetVisibility })
+        }
+      }, 100) // 100ms debounce
+      
+      return () => clearTimeout(timeoutId)
     }
   }, [layouts, widgetVisibility, isDragging, externalOnLayoutChange])
 
@@ -151,6 +158,7 @@ function AdvancedDashboardGrid({
 
   // Get visible widgets - include all widgets that are visible, not just DEFAULT_WIDGETS
   // But only include widgets that have layouts defined
+  // Optimized: Create a Set of widget IDs with layouts for O(1) lookup
   const visibleWidgets = useMemo(() => {
     // First, get all widget IDs that should be visible based on visibility state
     let candidateWidgets = []
@@ -164,20 +172,25 @@ function AdvancedDashboardGrid({
       candidateWidgets = allWidgetIds.filter(id => widgetVisibility[id] !== false)
     }
     
-    // Filter to only include widgets that have layouts in at least one breakpoint
-    // This prevents rendering widgets that don't have layout definitions yet
-    const widgetsWithLayouts = candidateWidgets.filter(widgetId => {
-      if (!layouts || typeof layouts !== 'object') return false
-      
-      // Check if widget exists in any breakpoint layout
+    // Create a Set of widget IDs that have layouts (for fast lookup)
+    const widgetsWithLayoutsSet = new Set()
+    if (layouts && typeof layouts === 'object') {
       const breakpoints = ['lg', 'md', 'sm', 'xs', 'xxs']
-      return breakpoints.some(bp => {
+      breakpoints.forEach(bp => {
         if (layouts[bp] && Array.isArray(layouts[bp])) {
-          return layouts[bp].some(item => item && item.i === widgetId)
+          layouts[bp].forEach(item => {
+            if (item && item.i) {
+              widgetsWithLayoutsSet.add(item.i)
+            }
+          })
         }
-        return false
       })
-    })
+    }
+    
+    // Filter candidate widgets using Set lookup (O(1) instead of O(n))
+    const widgetsWithLayouts = candidateWidgets.filter(widgetId => 
+      widgetsWithLayoutsSet.has(widgetId)
+    )
     
     // If no widgets have layouts yet, return defaults (for initial render)
     return widgetsWithLayouts.length > 0 ? widgetsWithLayouts : DEFAULT_WIDGETS
