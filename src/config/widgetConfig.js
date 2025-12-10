@@ -74,6 +74,48 @@ export const DEFAULT_WIDGETS = [
   'forecast-chart'
 ]
 
+// Helper function to check if two layout items overlap
+const doItemsOverlap = (item1, item2) => {
+  return !(
+    item1.x + item1.w <= item2.x ||
+    item2.x + item2.w <= item1.x ||
+    item1.y + item1.h <= item2.y ||
+    item2.y + item2.h <= item1.y
+  )
+}
+
+// Helper function to find next available position for a widget
+const findNextAvailablePosition = (existingItems, width, height, cols = 12) => {
+  let y = 0
+  let x = 0
+  
+  // Try to find a position that doesn't overlap
+  while (true) {
+    const testItem = { x, y, w: width, h: height }
+    const overlaps = existingItems.some(item => doItemsOverlap(testItem, item))
+    
+    if (!overlaps) {
+      return { x, y }
+    }
+    
+    // Move to next position
+    x += width
+    if (x + width > cols) {
+      x = 0
+      y += height
+    }
+    
+    // Safety limit
+    if (y > 100) break
+  }
+  
+  // Fallback: place at bottom
+  const maxY = existingItems.length > 0 
+    ? Math.max(...existingItems.map(item => item.y + item.h))
+    : 0
+  return { x: 0, y: maxY + 1 }
+}
+
 // Generate default layouts for all breakpoints
 export const getDefaultLayouts = () => {
   const widgets = DEFAULT_WIDGETS.map(id => WIDGET_CONFIGS[id])
@@ -81,17 +123,37 @@ export const getDefaultLayouts = () => {
   return {
     lg: widgets.map((w, index) => {
       const layout = { ...w.defaultLayout }
-      // Ensure widgets don't overlap - space them out properly
-      // First row: line-chart (0,0) and donut-chart (6,0)
-      // Second row: distribution-list (0,4), sunburst (4,4), bar-chart (8,4)
-      // Third row: forecast (0,9)
-      // Make sure y positions don't overlap
-      if (index === 0) layout.y = 0 // line-chart
-      if (index === 1) layout.y = 0 // donut-chart
-      if (index === 2) layout.y = 4 // distribution-list
-      if (index === 3) layout.y = 4 // sunburst
-      if (index === 4) layout.y = 4 // bar-chart
-      if (index === 5) layout.y = 9 // forecast
+      
+      // Arrange widgets in a clean grid pattern
+      // Row 1: line-chart (0,0, w:6) and donut-chart (6,0, w:6)
+      // Row 2: distribution-list (0,5, w:4), sunburst (4,5, w:4), bar-chart (8,5, w:4)
+      // Row 3: forecast (0,11, w:12)
+      
+      if (index === 0) {
+        layout.x = 0
+        layout.y = 0
+        layout.w = 6
+      } else if (index === 1) {
+        layout.x = 6
+        layout.y = 0
+        layout.w = 6
+      } else if (index === 2) {
+        layout.x = 0
+        layout.y = 5 // Below first row (0 + 4 + 1 spacing)
+        layout.w = 4
+      } else if (index === 3) {
+        layout.x = 4
+        layout.y = 5
+        layout.w = 4
+      } else if (index === 4) {
+        layout.x = 8
+        layout.y = 5
+        layout.w = 4
+      } else if (index === 5) {
+        layout.x = 0
+        layout.y = 11 // Below second row (5 + 5 + 1 spacing)
+        layout.w = 12
+      }
       
       return {
         ...layout,

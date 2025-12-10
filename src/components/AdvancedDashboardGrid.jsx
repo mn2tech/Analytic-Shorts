@@ -57,22 +57,57 @@ function AdvancedDashboardGrid({
           
           hasChanges = true
           
-          // Find the highest y position to place new widget below existing ones
-          let maxY = 0
-          newLayouts[bp].forEach(item => {
-            if (item.y + item.h > maxY) {
-              maxY = item.y + item.h
-            }
-          })
-          
-          // Create new layout item
+          // Find next available position that doesn't overlap
           const defaultLayout = { ...config.defaultLayout }
+          const cols = bp === 'lg' ? 12 : bp === 'md' ? 10 : bp === 'sm' ? 6 : 6
+          const width = defaultLayout.w || 6
+          const height = defaultLayout.h || 4
+          
+          // Find position that doesn't overlap with existing widgets
+          let foundPosition = false
+          let testY = 0
+          let testX = 0
+          
+          while (!foundPosition && testY < 50) {
+            const testItem = { x: testX, y: testY, w: width, h: height }
+            const overlaps = newLayouts[bp].some(item => {
+              return !(
+                testItem.x + testItem.w <= item.x ||
+                item.x + item.w <= testItem.x ||
+                testItem.y + testItem.h <= item.y ||
+                item.y + item.h <= testItem.y
+              )
+            })
+            
+            if (!overlaps) {
+              foundPosition = true
+            } else {
+              testX += width
+              if (testX + width > cols) {
+                testX = 0
+                testY += height + 1 // Add spacing between rows
+              }
+            }
+          }
+          
+          // Fallback: place at bottom if no position found
+          if (!foundPosition) {
+            let maxY = 0
+            newLayouts[bp].forEach(item => {
+              if (item.y + item.h > maxY) {
+                maxY = item.y + item.h
+              }
+            })
+            testX = 0
+            testY = maxY + 1
+          }
+          
           const newItem = {
             i: widgetId,
-            x: defaultLayout.x || 0,
-            y: maxY + 1, // Place below existing widgets
-            w: defaultLayout.w || 6,
-            h: defaultLayout.h || 4,
+            x: testX,
+            y: testY,
+            w: width,
+            h: height,
             minW: config.minW,
             minH: config.minH,
             maxW: config.maxW,
