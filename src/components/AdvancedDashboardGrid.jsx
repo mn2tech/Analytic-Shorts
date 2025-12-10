@@ -23,45 +23,56 @@ function AdvancedDashboardGrid({
   const [isDragging, setIsDragging] = useState(false)
   
   // Helper function to fix overlapping widgets in a layout
+  // This function ensures NO widgets overlap by repositioning them in a clean grid
   const fixOverlappingWidgets = (layoutArray, cols = 12) => {
     if (!Array.isArray(layoutArray) || layoutArray.length === 0) return layoutArray
     
+    // Sort by y position first, then x, to process top-to-bottom, left-to-right
+    const sorted = [...layoutArray].sort((a, b) => {
+      if (a.y !== b.y) return a.y - b.y
+      return a.x - b.x
+    })
+    
     const fixed = []
     
-    layoutArray.forEach(item => {
+    sorted.forEach(item => {
       if (!item || !item.i) return
       
-      // Check if this item overlaps with any already processed item
-      let overlaps = false
       let newX = item.x
       let newY = item.y
+      let overlaps = false
       
+      // Check if this item overlaps with any already processed item
       for (const existing of fixed) {
-        if (!(
-          newX + item.w <= existing.x ||
-          existing.x + existing.w <= newX ||
-          newY + item.h <= existing.y ||
-          existing.y + existing.h <= newY
-        )) {
+        // Check for overlap: two rectangles overlap if they intersect
+        const itemRight = newX + item.w
+        const itemBottom = newY + item.h
+        const existingRight = existing.x + existing.w
+        const existingBottom = existing.y + existing.h
+        
+        // Overlap occurs when NOT separated
+        if (!(itemRight <= existing.x || existingRight <= newX || itemBottom <= existing.y || existingBottom <= newY)) {
           overlaps = true
           break
         }
       }
       
-      // If overlaps, find next available position
+      // If overlaps, find next available position in a grid pattern
       if (overlaps) {
         let found = false
         let testY = 0
         let testX = 0
+        const maxAttempts = 200 // Safety limit
         
-        while (!found && testY < 50) {
+        for (let attempt = 0; attempt < maxAttempts && !found; attempt++) {
+          // Check if this position overlaps with any existing widget
+          const testRight = testX + item.w
+          const testBottom = testY + item.h
+          
           const testOverlaps = fixed.some(existing => {
-            return !(
-              testX + item.w <= existing.x ||
-              existing.x + existing.w <= testX ||
-              testY + item.h <= existing.y ||
-              existing.y + existing.h <= testY
-            )
+            const existingRight = existing.x + existing.w
+            const existingBottom = existing.y + existing.h
+            return !(testRight <= existing.x || existingRight <= testX || testBottom <= existing.y || existingBottom <= testY)
           })
           
           if (!testOverlaps) {
@@ -69,15 +80,20 @@ function AdvancedDashboardGrid({
             newY = testY
             found = true
           } else {
+            // Move to next grid position
             testX += item.w
             if (testX + item.w > cols) {
               testX = 0
-              testY += item.h + 1
+              // Move to next row with spacing
+              const maxY = fixed.length > 0 
+                ? Math.max(...fixed.map(existing => existing.y + existing.h))
+                : 0
+              testY = Math.max(testY + item.h + 1, maxY + 1)
             }
           }
         }
         
-        // Fallback: place at bottom
+        // Fallback: place at bottom of all existing widgets
         if (!found) {
           const maxY = fixed.length > 0 
             ? Math.max(...fixed.map(existing => existing.y + existing.h))
