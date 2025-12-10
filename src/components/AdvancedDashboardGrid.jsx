@@ -192,12 +192,27 @@ function AdvancedDashboardGrid({
   }
 
   // Handle widget delete
-  const handleDeleteWidget = (widgetId) => {
+  const handleDeleteWidget = useCallback((widgetId) => {
+    // Set visibility to false
     setWidgetVisibility(prev => ({
       ...prev,
       [widgetId]: false
     }))
-  }
+    
+    // Also remove from layouts
+    setLayouts(prevLayouts => {
+      const newLayouts = { ...prevLayouts }
+      const breakpoints = ['lg', 'md', 'sm', 'xs', 'xxs']
+      
+      breakpoints.forEach(bp => {
+        if (newLayouts[bp] && Array.isArray(newLayouts[bp])) {
+          newLayouts[bp] = newLayouts[bp].filter(item => item.i !== widgetId)
+        }
+      })
+      
+      return newLayouts
+    })
+  }, [])
 
   // Initialize default layouts if not loaded and filter to only include visible widgets
   const currentLayouts = useMemo(() => {

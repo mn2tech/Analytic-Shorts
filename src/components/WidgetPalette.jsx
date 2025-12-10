@@ -55,6 +55,17 @@ function WidgetPalette({ onAddWidget, visibleWidgets = [] }) {
     }
   }
 
+  const handleDragStart = (e, widgetId) => {
+    e.dataTransfer.setData('widgetId', widgetId)
+    e.dataTransfer.effectAllowed = 'move'
+    // Add visual feedback
+    e.target.style.opacity = '0.5'
+  }
+
+  const handleDragEnd = (e) => {
+    e.target.style.opacity = '1'
+  }
+
   return (
     <div className="w-64 bg-white border-l border-gray-200 shadow-lg h-full overflow-y-auto">
       <div className="p-4 border-b border-gray-200 sticky top-0 bg-white z-10">
@@ -71,13 +82,16 @@ function WidgetPalette({ onAddWidget, visibleWidgets = [] }) {
             <button
               key={widget.id}
               onClick={() => handleAddWidget(widget.id)}
+              onDragStart={(e) => !isVisible && handleDragStart(e, widget.id)}
+              onDragEnd={handleDragEnd}
+              draggable={!isVisible}
               disabled={isVisible}
               className={`w-full p-3 rounded-lg border-2 transition-all text-left ${
                 isVisible
                   ? 'border-gray-200 bg-gray-50 opacity-60 cursor-not-allowed'
-                  : 'border-gray-200 hover:border-blue-500 hover:bg-blue-50 cursor-pointer'
+                  : 'border-gray-200 hover:border-blue-500 hover:bg-blue-50 cursor-pointer cursor-grab active:cursor-grabbing'
               }`}
-              title={isVisible ? 'Widget already added' : `Add ${widgetDescriptions[widget.id] || widget.title}`}
+              title={isVisible ? 'Widget already added' : `Drag or click to add ${widgetDescriptions[widget.id] || widget.title}`}
             >
               <div className="flex items-start gap-3">
                 <div className={`flex-shrink-0 ${isVisible ? 'text-gray-400' : 'text-blue-600'}`}>
