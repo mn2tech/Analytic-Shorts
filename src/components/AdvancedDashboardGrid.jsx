@@ -233,18 +233,30 @@ function AdvancedDashboardGrid({
     const validatedLayouts = savedLayouts ? validateAndFixLayouts(savedLayouts) : null
     
     if (validatedLayouts && typeof validatedLayouts === 'object' && !Array.isArray(validatedLayouts) && Object.keys(validatedLayouts).length > 0) {
-      // Fix overlaps in validated layouts
+      // ALWAYS fix overlaps in validated layouts
       const fixedLayouts = {}
       Object.keys(validatedLayouts).forEach(bp => {
         if (Array.isArray(validatedLayouts[bp])) {
           const cols = bp === 'lg' ? 12 : bp === 'md' ? 10 : 6
           fixedLayouts[bp] = fixOverlappingWidgets(validatedLayouts[bp], cols)
+        } else {
+          fixedLayouts[bp] = []
         }
       })
       setLayouts(fixedLayouts)
     } else {
+      // Use clean default layouts and ALWAYS apply overlap fixing
       const defaultLayouts = getDefaultLayouts()
-      setLayouts(defaultLayouts)
+      const fixedDefaults = {}
+      Object.keys(defaultLayouts).forEach(bp => {
+        if (Array.isArray(defaultLayouts[bp])) {
+          const cols = bp === 'lg' ? 12 : bp === 'md' ? 10 : 6
+          fixedDefaults[bp] = fixOverlappingWidgets(defaultLayouts[bp], cols)
+        } else {
+          fixedDefaults[bp] = []
+        }
+      })
+      setLayouts(fixedDefaults)
     }
     
     if (savedVisibility && typeof savedVisibility === 'object' && !Array.isArray(savedVisibility) && Object.keys(savedVisibility).length > 0) {
