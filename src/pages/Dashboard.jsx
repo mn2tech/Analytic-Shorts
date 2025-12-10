@@ -737,9 +737,9 @@ function Dashboard() {
                 
                 <div className="flex gap-2">
                   <button
-                    onClick={() => setDashboardView('advanced')}
+                    onClick={() => setDashboardView('simple')}
                     className={`px-3 py-1.5 text-sm border rounded-lg transition-colors ${
-                      dashboardView === 'advanced'
+                      dashboardView === 'simple'
                         ? 'bg-blue-600 text-white border-blue-600'
                         : 'bg-white border-gray-300 hover:bg-gray-50'
                     }`}
@@ -821,24 +821,6 @@ function Dashboard() {
               dateColumns={dateColumns}
               selectedNumeric={selectedNumeric}
               selectedDate={selectedDate}
-            />
-          ) : dashboardView === 'advanced' ? (
-            <AdvancedDashboardGrid
-              data={data}
-              filteredData={filteredData}
-              selectedNumeric={selectedNumeric}
-              selectedCategorical={selectedCategorical}
-              selectedDate={selectedDate}
-              onChartFilter={handleChartFilter}
-              chartFilter={chartFilter}
-              categoricalColumns={categoricalColumns}
-              onLayoutChange={(layoutData) => {
-                // Defer state updates to prevent blocking
-                setTimeout(() => {
-                  setDashboardLayouts(layoutData.layouts)
-                  setDashboardWidgetVisibility(layoutData.widgetVisibility)
-                }, 0)
-              }}
             />
           ) : (
             <>
@@ -956,9 +938,9 @@ function Dashboard() {
             </button>
             <div className="flex gap-2">
               <button
-                onClick={() => setDashboardView('advanced')}
+                onClick={() => setDashboardView('simple')}
                 className={`px-3 py-1.5 text-sm border rounded-lg transition-colors ${
-                  dashboardView === 'advanced'
+                  dashboardView === 'simple'
                     ? 'bg-blue-600 text-white border-blue-600'
                     : 'bg-white border-gray-300 hover:bg-gray-50'
                 }`}
@@ -1090,24 +1072,6 @@ function Dashboard() {
             categoricalColumns={categoricalColumns}
             dateColumns={dateColumns}
             onMetadataUpdate={handleMetadataUpdate}
-          />
-        ) : dashboardView === 'advanced' ? (
-          <AdvancedDashboardGrid
-            data={data}
-            filteredData={filteredData}
-            selectedNumeric={selectedNumeric}
-            selectedCategorical={selectedCategorical}
-            selectedDate={selectedDate}
-            onChartFilter={handleChartFilter}
-            chartFilter={chartFilter}
-            categoricalColumns={categoricalColumns}
-            onLayoutChange={(layoutData) => {
-              // Defer state updates to prevent blocking
-              setTimeout(() => {
-                setDashboardLayouts(layoutData.layouts)
-                setDashboardWidgetVisibility(layoutData.widgetVisibility)
-              }, 0)
-            }}
           />
         ) : (
           <DashboardCharts
