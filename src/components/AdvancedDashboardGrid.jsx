@@ -409,34 +409,55 @@ function AdvancedDashboardGrid({
   }, [])
 
   // Initialize default layouts if not loaded and filter to only include visible widgets
-  // ALWAYS apply overlap fixing to ensure clean layout
+  // ALWAYS use clean defaults to prevent ANY overlaps - FORCE clean layout
   const currentLayouts = useMemo(() => {
     try {
-      // Get base layouts
+      // ALWAYS start with clean defaults - this ensures perfect grid layout
+      const cleanDefaults = getDefaultLayouts()
+      const fixedDefaults = {}
+      if (cleanDefaults && typeof cleanDefaults === 'object' && !Array.isArray(cleanDefaults)) {
+        try {
+          const defaultKeys = Object.keys(cleanDefaults)
+          defaultKeys.forEach(bp => {
+            if (Array.isArray(cleanDefaults[bp])) {
+              const cols = bp === 'lg' ? 12 : bp === 'md' ? 10 : 6
+              fixedDefaults[bp] = fixOverlappingWidgets(cleanDefaults[bp], cols)
+            } else {
+              fixedDefaults[bp] = []
+            }
+          })
+        } catch (e) {
+          console.error('Error processing clean defaults:', e)
+        }
+      }
+      
+      // Get base layouts from state
       let baseLayouts
       if (!layouts || typeof layouts !== 'object' || Array.isArray(layouts)) {
-        baseLayouts = getDefaultLayouts()
+        return fixedDefaults
       } else {
         // Safely check if layouts has keys
         try {
           const keys = Object.keys(layouts)
           if (keys.length === 0) {
-            baseLayouts = getDefaultLayouts()
+            return fixedDefaults
           } else {
             baseLayouts = layouts
           }
         } catch (e) {
-          baseLayouts = getDefaultLayouts()
+          return fixedDefaults
         }
       }
       
       // Ensure baseLayouts is valid
       if (!baseLayouts || typeof baseLayouts !== 'object' || Array.isArray(baseLayouts)) {
-        baseLayouts = getDefaultLayouts()
+        return fixedDefaults
       }
       
       // Filter to only include visible widgets and ALWAYS fix overlaps
       const filtered = {}
+      let hasOverlaps = false
+      
       if (baseLayouts && typeof baseLayouts === 'object' && !Array.isArray(baseLayouts)) {
         try {
           const breakpoints = Object.keys(baseLayouts)
@@ -460,49 +481,66 @@ function AdvancedDashboardGrid({
                 return widgetVisibility[item.i] !== false
               })
               
-              // ALWAYS fix overlaps - even if they shouldn't exist, ensure they don't
+              // ALWAYS fix overlaps
               const cols = breakpoint === 'lg' ? 12 : breakpoint === 'md' ? 10 : 6
-              filtered[breakpoint] = fixOverlappingWidgets(visibleItems, cols)
+              const fixed = fixOverlappingWidgets(visibleItems, cols)
+              
+              // Double-check for overlaps after fixing
+              for (let i = 0; i < fixed.length; i++) {
+                for (let j = i + 1; j < fixed.length; j++) {
+                  const item1 = fixed[i]
+                  const item2 = fixed[j]
+                  if (item1 && item2) {
+                    const item1Right = item1.x + item1.w
+                    const item1Bottom = item1.y + item1.h
+                    const item2Right = item2.x + item2.w
+                    const item2Bottom = item2.y + item2.h
+                    if (!(item1Right <= item2.x || item2Right <= item1.x || item1Bottom <= item2.y || item2Bottom <= item1.y)) {
+                      hasOverlaps = true
+                      break
+                    }
+                  }
+                }
+                if (hasOverlaps) break
+              }
+              
+              // If overlaps detected, use clean defaults for this breakpoint
+              if (hasOverlaps) {
+                filtered[breakpoint] = fixedDefaults[breakpoint] || []
+              } else {
+                filtered[breakpoint] = fixed
+              }
             } else {
-              filtered[breakpoint] = []
+              filtered[breakpoint] = fixedDefaults[breakpoint] || []
             }
           })
         } catch (e) {
           console.error('Error processing baseLayouts:', e)
+          return fixedDefaults
         }
+      }
+      
+      // If any overlaps were detected, return clean defaults
+      if (hasOverlaps) {
+        return fixedDefaults
       }
       
       // Ensure we have at least the default layouts
       try {
         const filteredKeys = Object.keys(filtered)
         if (filteredKeys.length === 0) {
-          const defaults = getDefaultLayouts()
-          // Apply overlap fixing to defaults too
-          const fixedDefaults = {}
-          if (defaults && typeof defaults === 'object' && !Array.isArray(defaults)) {
-            try {
-              const defaultKeys = Object.keys(defaults)
-              defaultKeys.forEach(bp => {
-                if (Array.isArray(defaults[bp])) {
-                  const cols = bp === 'lg' ? 12 : bp === 'md' ? 10 : 6
-                  fixedDefaults[bp] = fixOverlappingWidgets(defaults[bp], cols)
-                }
-              })
-            } catch (e) {
-              console.error('Error processing defaults:', e)
-            }
-          }
           return fixedDefaults
         }
       } catch (e) {
         console.error('Error checking filtered keys:', e)
+        return fixedDefaults
       }
       
       return filtered
     } catch (error) {
       console.error('Error calculating currentLayouts:', error)
+      // Always return clean defaults on error
       const defaults = getDefaultLayouts()
-      // Apply overlap fixing even in error case
       const fixedDefaults = {}
       if (defaults && typeof defaults === 'object' && !Array.isArray(defaults)) {
         try {
