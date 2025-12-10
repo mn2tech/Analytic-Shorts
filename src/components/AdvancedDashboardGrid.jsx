@@ -287,7 +287,7 @@ function AdvancedDashboardGrid({
   }, [])
 
   // Helper function to fix overlapping widgets in a layout
-  const fixOverlappingWidgets = useCallback((layoutArray, cols = 12) => {
+  const fixOverlappingWidgets = (layoutArray, cols = 12) => {
     if (!Array.isArray(layoutArray) || layoutArray.length === 0) return layoutArray
     
     const fixed = []
@@ -359,7 +359,7 @@ function AdvancedDashboardGrid({
     })
     
     return fixed
-  }, [])
+  }
 
   // Initialize default layouts if not loaded and filter to only include visible widgets
   const currentLayouts = useMemo(() => {
