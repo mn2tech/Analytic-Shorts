@@ -144,11 +144,30 @@ function AdvancedDashboardGrid({
     )
   }
 
+  // Ensure currentLayouts is valid before rendering GridLayout
+  const safeLayouts = useMemo(() => {
+    if (!currentLayouts || typeof currentLayouts !== 'object' || Array.isArray(currentLayouts)) {
+      return getDefaultLayouts()
+    }
+    // Ensure all breakpoints have valid arrays
+    const safe = {}
+    Object.keys(currentLayouts).forEach(bp => {
+      if (Array.isArray(currentLayouts[bp])) {
+        safe[bp] = currentLayouts[bp]
+      }
+    })
+    // If no valid breakpoints, return defaults
+    if (Object.keys(safe).length === 0) {
+      return getDefaultLayouts()
+    }
+    return safe
+  }, [currentLayouts])
+
   return (
     <div className="w-full" style={{ minHeight: '600px' }}>
       <GridLayout
         className="layout"
-        layouts={currentLayouts}
+        layouts={safeLayouts}
         breakpoints={breakpoints}
         cols={cols}
         rowHeight={60}
