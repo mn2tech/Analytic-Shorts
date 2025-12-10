@@ -13,8 +13,16 @@ function MetricCards({ data, numericColumns, selectedNumeric, stats }) {
       : data
 
     const values = sampledData
-      .map((row) => parseNumericValue(row[selectedNumeric]))
-      .filter((val) => val !== 0 || row[selectedNumeric] === '0' || row[selectedNumeric] === '$0') // Keep zeros if they're valid
+      .map((row) => {
+        const value = parseNumericValue(row[selectedNumeric])
+        const originalValue = row[selectedNumeric]
+        return { value, originalValue }
+      })
+      .filter((item) => {
+        // Keep zeros if they're valid (original was '0' or '$0'), or if value is non-zero
+        return !isNaN(item.value) && (item.value !== 0 || item.originalValue === '0' || item.originalValue === '$0')
+      })
+      .map((item) => item.value)
 
     if (values.length === 0) return null
 

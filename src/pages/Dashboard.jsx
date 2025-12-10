@@ -5,6 +5,7 @@ import Navbar from '../components/Navbar'
 import Loader from '../components/Loader'
 import DashboardCharts from '../components/DashboardCharts'
 import AdvancedDashboard from '../components/AdvancedDashboard'
+import AdvancedDashboardGrid from '../components/AdvancedDashboardGrid'
 import MetricCards from '../components/MetricCards'
 import Filters from '../components/Filters'
 import AIInsights from '../components/AIInsights'
@@ -820,7 +821,7 @@ function Dashboard() {
               selectedDate={selectedDate}
             />
           ) : dashboardView === 'advanced' ? (
-            <AdvancedDashboard
+            <AdvancedDashboardGrid
               data={data}
               filteredData={filteredData}
               selectedNumeric={selectedNumeric}
@@ -1080,7 +1081,7 @@ function Dashboard() {
             onMetadataUpdate={handleMetadataUpdate}
           />
         ) : dashboardView === 'advanced' ? (
-          <AdvancedDashboard
+          <AdvancedDashboardGrid
             data={data}
             filteredData={filteredData}
             selectedNumeric={selectedNumeric}

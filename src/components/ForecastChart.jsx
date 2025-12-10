@@ -10,11 +10,8 @@ function ForecastChart({ data, selectedNumeric, selectedDate, forecastPeriods = 
 
   if (!data || !selectedNumeric || !selectedDate || data.length === 0) {
     return (
-      <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Forecast</h3>
-        <div className="h-[300px] flex items-center justify-center text-gray-400">
-          Select date and numeric columns to view forecast
-        </div>
+      <div className="h-full flex items-center justify-center text-gray-400 text-sm">
+        Select date and numeric columns to view forecast
       </div>
     )
   }
@@ -31,11 +28,8 @@ function ForecastChart({ data, selectedNumeric, selectedDate, forecastPeriods = 
 
   if (historicalData.length < 2) {
     return (
-      <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Forecast</h3>
-        <div className="h-[300px] flex items-center justify-center text-gray-400">
-          Need at least 2 data points for forecasting
-        </div>
+      <div className="h-full flex items-center justify-center text-gray-400 text-sm">
+        Need at least 2 data points for forecasting
       </div>
     )
   }
@@ -113,10 +107,9 @@ function ForecastChart({ data, selectedNumeric, selectedDate, forecastPeriods = 
 
   return (
     <>
-    <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200 relative group">
+    <div className="h-full flex flex-col">
       <div className="flex justify-between items-start mb-4">
         <div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-1">Forecast & Prediction</h3>
           <p className="text-sm text-gray-600">
             {selectedNumeric} forecast for next {forecastPeriods} periods
           </p>
