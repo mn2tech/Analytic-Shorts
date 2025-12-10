@@ -66,14 +66,12 @@ function WidgetRenderer({
         )
       }
       return (
-        <div className="h-full">
-          <ForecastChart
-            data={filteredData || data}
-            selectedNumeric={selectedNumeric}
-            selectedDate={selectedDate}
-            forecastPeriods={6}
-          />
-        </div>
+        <ForecastChart
+          data={filteredData || data}
+          selectedNumeric={selectedNumeric}
+          selectedDate={selectedDate}
+          forecastPeriods={6}
+        />
       )
     
     default:

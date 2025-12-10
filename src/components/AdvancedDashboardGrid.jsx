@@ -70,11 +70,16 @@ function AdvancedDashboardGrid({
   // Filter layouts to only include visible widgets
   const filterLayoutsForVisibleWidgets = useMemo(() => {
     return (allLayouts) => {
+      if (!allLayouts || typeof allLayouts !== 'object') {
+        return {}
+      }
       const filtered = {}
       Object.keys(allLayouts).forEach(breakpoint => {
-        filtered[breakpoint] = allLayouts[breakpoint].filter(item => 
-          widgetVisibility[item.i] !== false
-        )
+        if (Array.isArray(allLayouts[breakpoint])) {
+          filtered[breakpoint] = allLayouts[breakpoint].filter(item => 
+            item && item.i && widgetVisibility[item.i] !== false
+          )
+        }
       })
       return filtered
     }
@@ -105,6 +110,10 @@ function AdvancedDashboardGrid({
       baseLayouts = layouts
     }
     // Filter to only include visible widgets
+    // Ensure allLayouts is an object with breakpoint keys
+    if (!baseLayouts || typeof baseLayouts !== 'object') {
+      baseLayouts = getDefaultLayouts()
+    }
     return filterLayoutsForVisibleWidgets(baseLayouts)
   }, [layouts, widgetVisibility, filterLayoutsForVisibleWidgets])
 
@@ -176,28 +185,39 @@ function AdvancedDashboardGrid({
           const config = WIDGET_CONFIGS[widgetId]
           if (!config) return null
           
-          return (
-            <div key={widgetId} className="widget-container">
-              <DashboardWidget
-                id={widgetId}
-                title={config.title}
-                onDelete={handleDeleteWidget}
-                isDragging={isDragging}
-              >
-                <WidgetRenderer
-                  widgetId={widgetId}
-                  data={data}
-                  filteredData={filteredData}
-                  selectedNumeric={selectedNumeric}
-                  selectedCategorical={selectedCategorical}
-                  selectedDate={selectedDate}
-                  chartFilter={chartFilter}
-                  onChartFilter={onChartFilter}
-                  categoricalColumns={categoricalColumns}
-                />
-              </DashboardWidget>
-            </div>
-          )
+          try {
+            return (
+              <div key={widgetId}>
+                <DashboardWidget
+                  id={widgetId}
+                  title={config.title}
+                  onDelete={handleDeleteWidget}
+                  isDragging={isDragging}
+                >
+                  <WidgetRenderer
+                    widgetId={widgetId}
+                    data={data}
+                    filteredData={filteredData}
+                    selectedNumeric={selectedNumeric}
+                    selectedCategorical={selectedCategorical}
+                    selectedDate={selectedDate}
+                    chartFilter={chartFilter}
+                    onChartFilter={onChartFilter}
+                    categoricalColumns={categoricalColumns}
+                  />
+                </DashboardWidget>
+              </div>
+            )
+          } catch (error) {
+            console.error(`Error rendering widget ${widgetId}:`, error)
+            return (
+              <div key={widgetId}>
+                <div className="bg-white rounded-lg shadow-sm p-4 border border-red-200">
+                  <p className="text-red-600">Error loading widget: {config.title}</p>
+                </div>
+              </div>
+            )
+          }
         })}
       </GridLayout>
     </div>
