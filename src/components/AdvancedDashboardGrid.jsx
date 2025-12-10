@@ -310,7 +310,14 @@ function AdvancedDashboardGrid({
   }, [currentLayouts])
 
   return (
-    <div className="w-full" style={{ minHeight: '600px' }}>
+    <div 
+      className="w-full" 
+      style={{ minHeight: '600px' }}
+      onDragOver={(e) => {
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'move'
+      }}
+    >
       <GridLayout
         className="layout"
         layouts={safeLayouts}
@@ -368,6 +375,50 @@ function AdvancedDashboardGrid({
         preventCollision={true}
         margin={[16, 16]}
         containerPadding={[16, 16]}
+        onDrop={(layout, layoutItem, e) => {
+          // Handle drop from external source (widget palette)
+          const widgetId = e.dataTransfer?.getData('widgetId')
+          if (widgetId && WIDGET_CONFIGS[widgetId]) {
+            // Make widget visible
+            setWidgetVisibility(prev => ({
+              ...prev,
+              [widgetId]: true
+            }))
+            
+            // Add widget to layouts at drop position
+            setLayouts(prevLayouts => {
+              const newLayouts = { ...prevLayouts }
+              const breakpoints = ['lg', 'md', 'sm', 'xs', 'xxs']
+              
+              breakpoints.forEach(bp => {
+                if (!newLayouts[bp]) {
+                  newLayouts[bp] = []
+                }
+                
+                // Check if widget already exists
+                const exists = newLayouts[bp].some(item => item.i === widgetId)
+                if (!exists) {
+                  const config = WIDGET_CONFIGS[widgetId]
+                  const newItem = {
+                    i: widgetId,
+                    x: layoutItem.x || 0,
+                    y: layoutItem.y || 0,
+                    w: layoutItem.w || config.defaultLayout.w || 6,
+                    h: layoutItem.h || config.defaultLayout.h || 4,
+                    minW: config.minW,
+                    minH: config.minH,
+                    maxW: config.maxW,
+                    maxH: config.maxH
+                  }
+                  newLayouts[bp] = [...newLayouts[bp], newItem]
+                }
+              })
+              
+              return newLayouts
+            })
+          }
+        }}
+        droppingItem={{ i: '__dropping-elem__', w: 6, h: 4 }}
       >
         {visibleWidgets.map(widgetId => {
           const config = WIDGET_CONFIGS[widgetId]
