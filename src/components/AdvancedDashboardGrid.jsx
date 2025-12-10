@@ -159,7 +159,15 @@ function AdvancedDashboardGrid({
     const validatedLayouts = savedLayouts ? validateAndFixLayouts(savedLayouts) : null
     
     if (validatedLayouts && typeof validatedLayouts === 'object' && !Array.isArray(validatedLayouts) && Object.keys(validatedLayouts).length > 0) {
-      setLayouts(validatedLayouts)
+      // Fix overlaps in validated layouts
+      const fixedLayouts = {}
+      Object.keys(validatedLayouts).forEach(bp => {
+        if (Array.isArray(validatedLayouts[bp])) {
+          const cols = bp === 'lg' ? 12 : bp === 'md' ? 10 : 6
+          fixedLayouts[bp] = fixOverlappingWidgets(validatedLayouts[bp], cols)
+        }
+      })
+      setLayouts(fixedLayouts)
     } else {
       const defaultLayouts = getDefaultLayouts()
       setLayouts(defaultLayouts)
@@ -401,7 +409,7 @@ function AdvancedDashboardGrid({
       console.error('Error calculating currentLayouts:', error)
       return getDefaultLayouts()
     }
-  }, [layouts, widgetVisibility, fixOverlappingWidgets])
+  }, [layouts, widgetVisibility])
 
   // Grid layout breakpoints (matching Tailwind breakpoints)
   const breakpoints = { lg: 1200, md: 768, sm: 640, xs: 480, xxs: 0 }

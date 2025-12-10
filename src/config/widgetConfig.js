@@ -163,14 +163,24 @@ export const getDefaultLayouts = () => {
         maxH: w.maxH
       }
     }),
-    md: widgets.map(w => ({
-      ...w.defaultLayout,
-      w: Math.min(w.defaultLayout.w, 8), // Adjust for medium screens
-      minW: w.minW,
-      minH: w.minH,
-      maxW: w.maxW,
-      maxH: w.maxH
-    })),
+    md: widgets.map((w, index) => {
+      const layout = { ...w.defaultLayout }
+      // Arrange in 2-column grid for medium screens
+      if (index === 0) { layout.x = 0; layout.y = 0; layout.w = 5 }
+      else if (index === 1) { layout.x = 5; layout.y = 0; layout.w = 5 }
+      else if (index === 2) { layout.x = 0; layout.y = 5; layout.w = 5 }
+      else if (index === 3) { layout.x = 5; layout.y = 5; layout.w = 5 }
+      else if (index === 4) { layout.x = 0; layout.y = 10; layout.w = 5 }
+      else if (index === 5) { layout.x = 0; layout.y = 15; layout.w = 10 }
+      
+      return {
+        ...layout,
+        minW: w.minW,
+        minH: w.minH,
+        maxW: w.maxW,
+        maxH: w.maxH
+      }
+    }),
     sm: widgets.map(w => ({
       ...w.defaultLayout,
       w: 6, // 2 columns on small screens
