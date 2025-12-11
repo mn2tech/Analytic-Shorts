@@ -31,10 +31,15 @@ Find this line:
 STRIPE_SECRET_KEY=sk_live_...
 ```
 
-Replace it with:
+Replace it with your new secret key:
 ```env
 STRIPE_SECRET_KEY=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
 ```
+
+**Note:** 
+- Use the **Secret Key** (starts with `sk_live_...`), NOT the Publishable Key
+- If the key is masked in Stripe Dashboard, click "Reveal" to see the full key
+- Make sure you're copying the complete key (it's very long)
 
 ### 5. Save and exit
 - **nano**: Press `Ctrl+X`, then `Y`, then `Enter`
