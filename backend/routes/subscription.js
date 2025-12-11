@@ -241,19 +241,28 @@ router.post('/checkout', getUserFromToken, async (req, res) => {
     
     // Provide more detailed error messages
     let errorMessage = 'Failed to create checkout session'
-    if (error.type === 'StripeInvalidRequestError') {
-      errorMessage = `Stripe error: ${error.message}`
-      if (error.message.includes('No such price')) {
+    let errorTitle = 'Checkout Error'
+    
+    if (error.type === 'StripeInvalidRequestError' || error.type === 'StripeAuthenticationError') {
+      if (error.message.includes('Expired API Key') || error.message.includes('expired')) {
+        errorTitle = 'Expired API Key'
+        errorMessage = `Expired API Key provided: ${stripeSecretKey ? stripeSecretKey.substring(0, 20) + '...' + stripeSecretKey.substring(stripeSecretKey.length - 6) : 'Not shown'}\n\nPrice ID used: ${req.body?.priceId}\n\nPlease check:\n1. Backend is running\n2. Stripe is configured\n3. Products are created in Stripe Dashboard\n4. Check backend console for detailed error\n\nTo fix:\n1. Go to https://dashboard.stripe.com/apikeys\n2. Generate a new Secret Key (sk_live_...)\n3. Update STRIPE_SECRET_KEY in backend/.env on EC2\n4. Restart the backend server (PM2 restart all)`
+      } else if (error.message.includes('Invalid API Key') || error.message.includes('authentication')) {
+        errorTitle = 'Invalid API Key'
+        errorMessage = `Invalid Stripe API Key. Please verify:\n1. The key starts with 'sk_live_' for live mode or 'sk_test_' for test mode\n2. The key is correctly set in backend/.env as STRIPE_SECRET_KEY\n3. The backend server has been restarted after updating the key\n4. Check backend console for detailed error`
+      } else if (error.message.includes('No such price')) {
         errorMessage = `Invalid price ID: ${req.body?.priceId}. The price ID does not exist in your Stripe account (Live mode). Please:\n1. Go to https://dashboard.stripe.com/products (make sure you're in Live mode)\n2. Verify the product exists and copy the correct Price ID (starts with "price_")\n3. Update .env.local with VITE_STRIPE_PRO_PRICE_ID or VITE_STRIPE_ENTERPRISE_PRICE_ID\n4. Restart your frontend server`
       } else if (error.message.includes('No such customer')) {
         errorMessage = `Customer error: ${error.message}. This usually means the customer ID in your database is from test mode. The system will create a new customer automatically.`
+      } else {
+        errorMessage = `Stripe error: ${error.message}`
       }
     } else if (error.message) {
       errorMessage = error.message
     }
     
     res.status(500).json({ 
-      error: 'Failed to create checkout session',
+      error: errorTitle,
       message: errorMessage,
       priceId: req.body?.priceId,
       details: process.env.NODE_ENV === 'development' ? error.stack : undefined
