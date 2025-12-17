@@ -13,15 +13,32 @@ const sampleDataForCharts = (data, maxRows = 5000) => {
   return sampled
 }
 
-function DistributionListWidget({ data, selectedCategorical, selectedDate, selectedNumeric, chartFilter, onChartFilter }) {
+function DistributionListWidget({ data, filteredData, selectedCategorical, selectedDate, selectedNumeric, chartFilter, onChartFilter }) {
   const categoryColumn = selectedCategorical || selectedDate
   
+  // Use filteredData if available, otherwise use data
+  const dataToUse = filteredData || data
+  
   const listData = useMemo(() => {
-    if (!data || !categoryColumn || !selectedNumeric) return []
+    if (!dataToUse || !categoryColumn || !selectedNumeric) return []
     
-    const sampled = sampleDataForCharts(data, 5000)
+    const sampled = sampleDataForCharts(dataToUse, 5000)
     const grouped = {}
+    // Use a Set to track unique row identifiers to prevent counting duplicates
+    // Create a unique key based on all row values to detect exact duplicates
+    const seenRows = new Set()
+    
     sampled.forEach((row) => {
+      // Create a unique identifier for this row based on all its values
+      // This helps detect if the same row appears multiple times in the data
+      const rowKey = JSON.stringify(row)
+      
+      // Skip if we've seen this exact row before (duplicate detection)
+      if (seenRows.has(rowKey)) {
+        return
+      }
+      seenRows.add(rowKey)
+      
       const key = row[categoryColumn] || 'Unknown'
       const value = parseNumericValue(row[selectedNumeric])
       grouped[key] = (grouped[key] || 0) + value
@@ -32,7 +49,7 @@ function DistributionListWidget({ data, selectedCategorical, selectedDate, selec
     return Object.entries(grouped)
       .map(([name, value]) => ({ name, value, percentage: total > 0 ? (value / total) * 100 : 0 }))
       .sort((a, b) => b.value - a.value)
-  }, [data, categoryColumn, selectedNumeric])
+  }, [dataToUse, categoryColumn, selectedNumeric])
 
   const handleCardClick = (name) => {
     const isCurrentlySelected = chartFilter?.type === 'category' && chartFilter?.value === name

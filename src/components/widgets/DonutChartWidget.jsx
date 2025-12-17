@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Label } from 'recharts'
 import { parseNumericValue } from '../../utils/numberUtils'
 
 const COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444', '#6366f1', '#14b8a6']
@@ -14,15 +14,32 @@ const sampleDataForCharts = (data, maxRows = 5000) => {
   return sampled
 }
 
-function DonutChartWidget({ data, selectedCategorical, selectedDate, selectedNumeric, chartFilter, onChartFilter }) {
+function DonutChartWidget({ data, filteredData, selectedCategorical, selectedDate, selectedNumeric, chartFilter, onChartFilter, showValues = false }) {
   const categoryColumn = selectedCategorical || selectedDate
   
+  // Use filteredData if available, otherwise use data
+  const dataToUse = filteredData || data
+  
   const donutData = useMemo(() => {
-    if (!data || !categoryColumn || !selectedNumeric) return []
+    if (!dataToUse || !categoryColumn || !selectedNumeric) return []
     
-    const sampled = sampleDataForCharts(data, 5000)
+    const sampled = sampleDataForCharts(dataToUse, 5000)
     const grouped = {}
+    // Use a Set to track unique row identifiers to prevent counting duplicates
+    // Create a unique key based on all row values to detect exact duplicates
+    const seenRows = new Set()
+    
     sampled.forEach((row) => {
+      // Create a unique identifier for this row based on all its values
+      // This helps detect if the same row appears multiple times in the data
+      const rowKey = JSON.stringify(row)
+      
+      // Skip if we've seen this exact row before (duplicate detection)
+      if (seenRows.has(rowKey)) {
+        return
+      }
+      seenRows.add(rowKey)
+      
       const key = row[categoryColumn] || 'Unknown'
       const value = parseNumericValue(row[selectedNumeric])
       grouped[key] = (grouped[key] || 0) + value
@@ -32,11 +49,12 @@ function DonutChartWidget({ data, selectedCategorical, selectedDate, selectedNum
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 5)
-  }, [data, categoryColumn, selectedNumeric])
+  }, [dataToUse, categoryColumn, selectedNumeric])
 
   const donutTotal = useMemo(() => donutData.reduce((sum, item) => sum + item.value, 0), [donutData])
 
   const handlePieClick = (data) => {
+    if (!onChartFilter) return // Don't allow filtering if onChartFilter is not provided (e.g., in report mode)
     if (data && data.name) {
       const isCurrentlySelected = chartFilter?.type === 'category' && chartFilter?.value === data.name
       if (isCurrentlySelected) {
@@ -56,19 +74,26 @@ function DonutChartWidget({ data, selectedCategorical, selectedDate, selectedNum
   }
 
   return (
-    <div className="flex items-center gap-6 h-full">
-      <div className="relative flex-1" style={{ maxWidth: '300px' }}>
-        <ResponsiveContainer width="100%" height="100%">
+    <div className="flex items-center gap-6 h-full" style={{ minHeight: '200px' }}>
+      <div className="relative flex-1" style={{ maxWidth: '300px', minHeight: '200px' }}>
+        <ResponsiveContainer width="100%" height="100%" minHeight={200}>
           <PieChart>
-            <Pie
-              data={donutData}
-              cx="50%"
-              cy="50%"
-              innerRadius={60}
-              outerRadius={100}
-              paddingAngle={2}
-              dataKey="value"
-              onClick={handlePieClick}
+      <Pie
+        data={donutData}
+        cx="50%"
+        cy="50%"
+        innerRadius={60}
+        outerRadius={100}
+        paddingAngle={2}
+        dataKey="value"
+        onClick={onChartFilter ? handlePieClick : undefined}
+        style={onChartFilter ? { cursor: 'pointer' } : { cursor: 'default' }}
+              label={showValues ? (entry) => {
+                const percentage = ((entry.value / donutTotal) * 100).toFixed(1)
+                return `${entry.value.toLocaleString()} (${percentage}%)`
+              } : false}
+              labelLine={showValues}
+              outerRadius={showValues ? 90 : 100}
             >
               {donutData.map((entry, index) => {
                 const isSelected = chartFilter?.type === 'category' && chartFilter.value === entry.name
@@ -98,8 +123,10 @@ function DonutChartWidget({ data, selectedCategorical, selectedDate, selectedNum
           return (
             <div 
               key={index} 
-              className={`flex items-center justify-between text-sm p-2 rounded transition-colors cursor-pointer ${
-                isSelected ? 'bg-red-50 border border-red-200' : 'hover:bg-gray-50'
+              className={`flex items-center justify-between text-sm p-2 rounded transition-colors ${
+                onChartFilter ? 'cursor-pointer' : 'cursor-default'
+              } ${
+                isSelected ? 'bg-red-50 border border-red-200' : onChartFilter ? 'hover:bg-gray-50' : ''
               }`}
               onClick={() => handlePieClick(item)}
             >
