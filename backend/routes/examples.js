@@ -1,7 +1,27 @@
 const express = require('express')
+const axios = require('axios')
 const { detectColumnTypes, processData } = require('../controllers/dataProcessor')
 
 const router = express.Router()
+
+// Helper function to process data while preserving numeric values
+function processDataPreservingNumbers(data, numericColumns) {
+  return data.map((row) => {
+    const processed = {}
+    Object.keys(row).forEach((key) => {
+      const value = row[key]
+      // Preserve numeric values for numeric columns
+      if (numericColumns.includes(key) && typeof value === 'number') {
+        processed[key] = value
+      } else if (value === null || value === undefined) {
+        processed[key] = ''
+      } else {
+        processed[key] = String(value).trim()
+      }
+    })
+    return processed
+  })
+}
 
 // Example datasets
 const exampleDatasets = {
@@ -201,12 +221,46 @@ const exampleDatasets = {
   },
   yearlyIncome: {
     data: [
-      { Year: '2020', Income: '$0' },
-      { Year: '2021', Income: '$1,200' },
-      { Year: '2022', Income: '$5,600' },
-      { Year: '2023', Income: '$63,000' },
-      { Year: '2024', Income: '$554,000' },
-      { Year: '2025', Income: '$930,000' },
+      { Year: '2020', Income: 0 },
+      { Year: '2021', Income: 1200 },
+      { Year: '2022', Income: 5600 },
+      { Year: '2023', Income: 63000 },
+      { Year: '2024', Income: 554000 },
+      { Year: '2025', Income: 930000 },
+    ],
+  },
+  usaspending: {
+    data: [
+      { 'Award Date': '2024-01-15', 'Award Amount': 2500000, 'Prime contractor': 'Tech Solutions Inc', 'Awarding Agency': 'Department of Defense', 'Award Type': 'Contract', State: 'VA', 'NAICS Code': 541511, Description: 'Software Development Services' },
+      { 'Award Date': '2024-01-18', 'Award Amount': 1850000, 'Prime contractor': 'Global Construction Group', 'Awarding Agency': 'General Services Administration', 'Award Type': 'Contract', State: 'CA', 'NAICS Code': 236220, Description: 'Building Renovation Project' },
+      { 'Award Date': '2024-01-22', 'Award Amount': 3200000, 'Prime contractor': 'Medical Research Labs', 'Awarding Agency': 'National Institutes of Health', 'Award Type': 'Grant', State: 'MD', 'NAICS Code': 541712, Description: 'Biomedical Research Study' },
+      { 'Award Date': '2024-01-25', 'Award Amount': 950000, 'Prime contractor': 'Cybersecurity Systems LLC', 'Awarding Agency': 'Department of Homeland Security', 'Award Type': 'Contract', State: 'TX', 'NAICS Code': 541519, Description: 'Network Security Assessment' },
+      { 'Award Date': '2024-02-01', 'Award Amount': 4200000, 'Prime contractor': 'Transportation Services Co', 'Awarding Agency': 'Department of Transportation', 'Award Type': 'Contract', State: 'FL', 'NAICS Code': 485111, Description: 'Fleet Vehicle Maintenance' },
+      { 'Award Date': '2024-02-05', 'Award Amount': 1650000, 'Prime contractor': 'Environmental Solutions Inc', 'Awarding Agency': 'Environmental Protection Agency', 'Award Type': 'Grant', State: 'WA', 'NAICS Code': 562910, Description: 'Water Quality Monitoring Program' },
+      { 'Award Date': '2024-02-08', 'Award Amount': 2800000, 'Prime contractor': 'Aerospace Technologies', 'Awarding Agency': 'NASA', 'Award Type': 'Contract', State: 'AL', 'NAICS Code': 336411, Description: 'Satellite Component Development' },
+      { 'Award Date': '2024-02-12', 'Award Amount': 1100000, 'Prime contractor': 'Education Services Group', 'Awarding Agency': 'Department of Education', 'Award Type': 'Grant', State: 'NY', 'NAICS Code': 611710, Description: 'STEM Education Initiative' },
+      { 'Award Date': '2024-02-15', 'Award Amount': 3750000, 'Prime contractor': 'Energy Systems Corp', 'Awarding Agency': 'Department of Energy', 'Award Type': 'Contract', State: 'CO', 'NAICS Code': 221112, Description: 'Renewable Energy Research' },
+      { 'Award Date': '2024-02-18', 'Award Amount': 2200000, 'Prime contractor': 'Healthcare Innovations', 'Awarding Agency': 'Department of Veterans Affairs', 'Award Type': 'Contract', State: 'NC', 'NAICS Code': 621111, Description: 'Medical Equipment Procurement' },
+      { 'Award Date': '2024-02-22', 'Award Amount': 850000, 'Prime contractor': 'Data Analytics Firm', 'Awarding Agency': 'Census Bureau', 'Award Type': 'Contract', State: 'MA', 'NAICS Code': 541511, Description: 'Data Processing Services' },
+      { 'Award Date': '2024-02-25', 'Award Amount': 1950000, 'Prime contractor': 'Agricultural Research Center', 'Awarding Agency': 'Department of Agriculture', 'Award Type': 'Grant', State: 'IA', 'NAICS Code': 541712, Description: 'Crop Yield Research' },
+      { 'Award Date': '2024-03-01', 'Award Amount': 3100000, 'Prime contractor': 'Defense Contractors Inc', 'Awarding Agency': 'Department of Defense', 'Award Type': 'Contract', State: 'AZ', 'NAICS Code': 336414, Description: 'Military Vehicle Parts' },
+      { 'Award Date': '2024-03-05', 'Award Amount': 1400000, 'Prime contractor': 'Public Safety Systems', 'Awarding Agency': 'Department of Justice', 'Award Type': 'Grant', State: 'IL', 'NAICS Code': 541519, Description: 'Law Enforcement Technology' },
+      { 'Award Date': '2024-03-08', 'Award Amount': 2650000, 'Prime contractor': 'Infrastructure Builders', 'Awarding Agency': 'Department of Transportation', 'Award Type': 'Contract', State: 'PA', 'NAICS Code': 237310, Description: 'Highway Construction Project' },
+      { 'Award Date': '2024-03-12', 'Award Amount': 1750000, 'Prime contractor': 'Marine Research Institute', 'Awarding Agency': 'National Oceanic and Atmospheric Administration', 'Award Type': 'Grant', State: 'OR', 'NAICS Code': 541712, Description: 'Oceanographic Study' },
+      { 'Award Date': '2024-03-15', 'Award Amount': 4800000, 'Prime contractor': 'IT Services Corporation', 'Awarding Agency': 'General Services Administration', 'Award Type': 'Contract', State: 'GA', 'NAICS Code': 541511, Description: 'Enterprise IT Support' },
+      { 'Award Date': '2024-03-18', 'Award Amount': 920000, 'Prime contractor': 'Social Services Network', 'Awarding Agency': 'Department of Health and Human Services', 'Award Type': 'Grant', State: 'MI', 'NAICS Code': 624190, Description: 'Community Health Program' },
+      { 'Award Date': '2024-03-22', 'Award Amount': 2100000, 'Prime contractor': 'Telecommunications Systems', 'Awarding Agency': 'Federal Communications Commission', 'Award Type': 'Contract', State: 'NJ', 'NAICS Code': 517311, Description: 'Network Infrastructure Upgrade' },
+      { 'Award Date': '2024-03-25', 'Award Amount': 1350000, 'Prime contractor': 'Wildlife Conservation Org', 'Awarding Agency': 'Department of Interior', 'Award Type': 'Grant', State: 'MT', 'NAICS Code': 813312, Description: 'Wildlife Habitat Restoration' },
+      { 'Award Date': '2024-03-28', 'Award Amount': 3400000, 'Prime contractor': 'Aviation Services Group', 'Awarding Agency': 'Federal Aviation Administration', 'Award Type': 'Contract', State: 'OK', 'NAICS Code': 488190, Description: 'Airport Security Systems' },
+      { 'Award Date': '2024-04-01', 'Award Amount': 1550000, 'Prime contractor': 'Food Safety Labs', 'Awarding Agency': 'Food and Drug Administration', 'Award Type': 'Grant', State: 'MN', 'NAICS Code': 541712, Description: 'Food Safety Testing Program' },
+      { 'Award Date': '2024-04-05', 'Award Amount': 2900000, 'Prime contractor': 'Engineering Consultants', 'Awarding Agency': 'Army Corps of Engineers', 'Award Type': 'Contract', State: 'LA', 'NAICS Code': 541330, Description: 'Flood Control Project Design' },
+      { 'Award Date': '2024-04-08', 'Award Amount': 1180000, 'Prime contractor': 'Rural Development Corp', 'Awarding Agency': 'Department of Agriculture', 'Award Type': 'Grant', State: 'ND', 'NAICS Code': 541611, Description: 'Rural Economic Development' },
+      { 'Award Date': '2024-04-12', 'Award Amount': 4100000, 'Prime contractor': 'Space Systems Engineering', 'Awarding Agency': 'NASA', 'Award Type': 'Contract', State: 'CA', 'NAICS Code': 336414, Description: 'Spacecraft Propulsion System' },
+      { 'Award Date': '2024-04-15', 'Award Amount': 2250000, 'Prime contractor': 'Emergency Response Services', 'Awarding Agency': 'Federal Emergency Management Agency', 'Award Type': 'Grant', State: 'FL', 'NAICS Code': 624230, Description: 'Disaster Preparedness Training' },
+      { 'Award Date': '2024-04-18', 'Award Amount': 1680000, 'Prime contractor': 'Financial Services Tech', 'Awarding Agency': 'Department of Treasury', 'Award Type': 'Contract', State: 'DC', 'NAICS Code': 541511, Description: 'Financial System Modernization' },
+      { 'Award Date': '2024-04-22', 'Award Amount': 980000, 'Prime contractor': 'Mental Health Services', 'Awarding Agency': 'Substance Abuse and Mental Health Services Administration', 'Award Type': 'Grant', State: 'VT', 'NAICS Code': 621420, Description: 'Mental Health Outreach Program' },
+      { 'Award Date': '2024-04-25', 'Award Amount': 2750000, 'Prime contractor': 'Border Security Systems', 'Awarding Agency': 'Customs and Border Protection', 'Award Type': 'Contract', State: 'TX', 'NAICS Code': 541519, Description: 'Surveillance Technology' },
+      { 'Award Date': '2024-04-28', 'Award Amount': 1420000, 'Prime contractor': 'Urban Planning Institute', 'Awarding Agency': 'Department of Housing and Urban Development', 'Award Type': 'Grant', State: 'OH', 'NAICS Code': 541611, Description: 'Urban Development Study' },
     ],
   },
 }
@@ -215,7 +269,7 @@ router.get('/sales', (req, res) => {
   const dataset = exampleDatasets.sales
   const columns = Object.keys(dataset.data[0])
   const { numericColumns, categoricalColumns, dateColumns } = detectColumnTypes(dataset.data, columns)
-  const processedData = processData(dataset.data)
+  const processedData = processDataPreservingNumbers(dataset.data, numericColumns)
 
   res.json({
     data: processedData,
@@ -231,7 +285,7 @@ router.get('/attendance', (req, res) => {
   const dataset = exampleDatasets.attendance
   const columns = Object.keys(dataset.data[0])
   const { numericColumns, categoricalColumns, dateColumns } = detectColumnTypes(dataset.data, columns)
-  const processedData = processData(dataset.data)
+  const processedData = processDataPreservingNumbers(dataset.data, numericColumns)
 
   res.json({
     data: processedData,
@@ -247,7 +301,7 @@ router.get('/donations', (req, res) => {
   const dataset = exampleDatasets.donations
   const columns = Object.keys(dataset.data[0])
   const { numericColumns, categoricalColumns, dateColumns } = detectColumnTypes(dataset.data, columns)
-  const processedData = processData(dataset.data)
+  const processedData = processDataPreservingNumbers(dataset.data, numericColumns)
 
   res.json({
     data: processedData,
@@ -263,7 +317,7 @@ router.get('/medical', (req, res) => {
   const dataset = exampleDatasets.medical
   const columns = Object.keys(dataset.data[0])
   const { numericColumns, categoricalColumns, dateColumns } = detectColumnTypes(dataset.data, columns)
-  const processedData = processData(dataset.data)
+  const processedData = processDataPreservingNumbers(dataset.data, numericColumns)
 
   res.json({
     data: processedData,
@@ -279,7 +333,7 @@ router.get('/banking', (req, res) => {
   const dataset = exampleDatasets.banking
   const columns = Object.keys(dataset.data[0])
   const { numericColumns, categoricalColumns, dateColumns } = detectColumnTypes(dataset.data, columns)
-  const processedData = processData(dataset.data)
+  const processedData = processDataPreservingNumbers(dataset.data, numericColumns)
 
   res.json({
     data: processedData,
@@ -295,7 +349,7 @@ router.get('/yearly-income', (req, res) => {
   const dataset = exampleDatasets.yearlyIncome
   const columns = Object.keys(dataset.data[0])
   const { numericColumns, categoricalColumns, dateColumns } = detectColumnTypes(dataset.data, columns)
-  const processedData = processData(dataset.data)
+  const processedData = processDataPreservingNumbers(dataset.data, numericColumns)
 
   res.json({
     data: processedData,
@@ -305,6 +359,262 @@ router.get('/yearly-income', (req, res) => {
     dateColumns,
     rowCount: processedData.length,
   })
+})
+
+router.get('/usaspending', (req, res) => {
+  const dataset = exampleDatasets.usaspending
+  const columns = Object.keys(dataset.data[0])
+  const { numericColumns, categoricalColumns, dateColumns } = detectColumnTypes(dataset.data, columns)
+  const processedData = processDataPreservingNumbers(dataset.data, numericColumns)
+
+  res.json({
+    data: processedData,
+    columns,
+    numericColumns,
+    categoricalColumns,
+    dateColumns,
+    rowCount: processedData.length,
+  })
+})
+
+// Route to fetch real-time USASpending data from the official API
+router.get('/usaspending/live', async (req, res) => {
+  try {
+    // Get query parameters for filtering (optional)
+    const limit = parseInt(req.query.limit) || 100 // Default to 100 records
+    const fiscalYear = parseInt(req.query.fiscal_year) || new Date().getFullYear() // Default to current year
+    const awardType = req.query.award_type || null // 'A' for assistance (grants), 'C' for procurement (contracts), or null for all
+    const state = req.query.state || null // State code (e.g., 'VA', 'CA')
+    
+    // Build the API URL - using the spending_by_award endpoint
+    const apiUrl = 'https://api.usaspending.gov/api/v2/search/spending_by_award/'
+    
+    // Prepare the request body for the USASpending API
+    // Using the correct format based on API documentation
+    const currentDate = new Date()
+    const currentYear = currentDate.getFullYear()
+    const currentMonth = currentDate.getMonth() + 1
+    
+    // Calculate fiscal year dates (FY starts Oct 1)
+    let startYear = fiscalYear
+    let endYear = fiscalYear + 1
+    if (currentMonth >= 10) {
+      // We're in the new fiscal year
+      startYear = currentYear
+      endYear = currentYear + 1
+    } else {
+      // We're still in the previous fiscal year
+      startYear = currentYear - 1
+      endYear = currentYear
+    }
+    
+    // Build filters object
+    // NOTE: award_type_codes is REQUIRED by the API
+    const filters = {
+      time_period: [
+        {
+          start_date: `${startYear}-10-01`,
+          end_date: `${endYear}-09-30`
+        }
+      ],
+      // award_type_codes is required - use provided type or default to both
+      award_type_codes: awardType ? [awardType.toUpperCase()] : ['A', 'C'] // 'A' = grants, 'C' = contracts
+    }
+    
+    // Add optional state filter if provided
+    if (state) {
+      filters.recipient_locations = [
+        {
+          country: 'USA',
+          state: state.toUpperCase()
+        }
+      ]
+    }
+    
+    // Use field names that match the API format (capitalized with spaces)
+    const requestBody = {
+      filters: filters,
+      fields: [
+        'Award ID',
+        'Award Amount',
+        'Start Date',
+        'Prime contractor',
+        'Awarding Agency',
+        'Contract Award Type',
+        'recipient_location_state_code',
+        'naics_code',
+        'Description'
+      ],
+      page: 1,
+      limit: Math.min(limit, 100),
+      sort: 'Award Amount', // Must match one of the available sort fields
+      order: 'desc'
+    }
+    
+    // Add optional filters
+    if (awardType) {
+      // Award type codes: 'A' for assistance (grants), 'C' for procurement (contracts)
+      requestBody.filters.award_type_codes = [awardType.toUpperCase()]
+    }
+    
+    if (state) {
+      requestBody.filters.recipient_locations = [
+        {
+          country: 'USA',
+          state: state.toUpperCase()
+        }
+      ]
+    }
+    
+    // Fetch data from USASpending API using axios
+    console.log('Fetching USASpending data from:', apiUrl)
+    console.log('Request body:', JSON.stringify(requestBody, null, 2))
+    
+    let response
+    try {
+      response = await axios.post(apiUrl, requestBody, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        timeout: 30000 // 30 second timeout
+      })
+    } catch (apiError) {
+      // Log the full error details
+      if (apiError.response) {
+        console.error('USASpending API Error Response:', {
+          status: apiError.response.status,
+          statusText: apiError.response.statusText,
+          data: JSON.stringify(apiError.response.data, null, 2)
+        })
+        throw new Error(`USASpending API error (${apiError.response.status}): ${JSON.stringify(apiError.response.data)}`)
+      }
+      throw apiError
+    }
+    
+    const apiData = response.data
+    console.log('USASpending API response status:', response.status)
+    console.log('Response keys:', Object.keys(apiData))
+    
+    // Transform USASpending API response to our format
+    // The API returns results in different structures, so we handle multiple formats
+    const results = apiData.results || apiData.data || apiData.awards || []
+    console.log('Number of results:', results.length)
+    
+    if (results.length === 0 && apiData.page_metadata) {
+      console.log('API metadata:', JSON.stringify(apiData.page_metadata, null, 2))
+    }
+    
+    const transformedData = results.map((award) => {
+      // Handle the API response format - fields are returned with capitalized names
+      const awardDate = award['Start Date'] || award['End Date'] || award.Start_Date || award.End_Date || ''
+      const awardAmount = parseFloat(
+        award['Award Amount'] || 
+        award.Award_Amount || 
+        0
+      )
+      const recipientName = award['Recipient Name'] || 
+        award.Recipient_Name || 
+        award['Prime contractor'] ||
+        award.Prime_contractor ||
+        'Unknown'
+      const awardingAgency = award['Awarding Agency'] || 
+        award.Awarding_Agency || 
+        'Unknown'
+      const awardTypeValue = award['Contract Award Type'] || 
+        award.Contract_Award_Type || 
+        'Unknown'
+      const recipientState = award['recipient_location_state_code'] || 
+        award.recipient_location_state_code || 
+        ''
+      const naicsCode = parseInt(
+        award['naics_code'] || 
+        award.naics_code || 
+        0
+      )
+      const description = award['Description'] || 
+        award.Description || 
+        ''
+      
+      return {
+        'Award Date': awardDate,
+        'Award Amount': awardAmount,
+        'Prime contractor': recipientName,
+        'Awarding Agency': awardingAgency,
+        'Award Type': awardTypeValue,
+        'State': recipientState,
+        'NAICS Code': naicsCode,
+        'Description': description
+      }
+    })
+    
+    if (transformedData.length === 0) {
+      return res.status(404).json({ 
+        error: 'No data found for the specified filters',
+        message: 'Try adjusting the fiscal_year, award_type, or state parameters',
+        hint: 'Use ?fiscal_year=2023&limit=50&award_type=C for contracts or award_type=A for grants'
+      })
+    }
+    
+    // Process the data
+    const columns = Object.keys(transformedData[0])
+    const { numericColumns, categoricalColumns, dateColumns } = detectColumnTypes(transformedData, columns)
+    const processedData = processDataPreservingNumbers(transformedData, numericColumns)
+    
+    res.json({
+      data: processedData,
+      columns,
+      numericColumns,
+      categoricalColumns,
+      dateColumns,
+      rowCount: processedData.length,
+      source: 'USASpending.gov API (Real-time)',
+      filters: {
+        fiscal_year: fiscalYear,
+        award_type: awardType,
+        state: state,
+        limit: limit
+      },
+      apiResponse: {
+        totalRecords: apiData.page_metadata?.total || apiData.count || processedData.length,
+        page: apiData.page_metadata?.page || 1
+      }
+    })
+  } catch (error) {
+    console.error('Error fetching USASpending data:', error.message)
+    if (error.response) {
+      // The request was made and the server responded with a status code
+      // that falls out of the range of 2xx
+      console.error('Response status:', error.response.status)
+      console.error('Response data:', JSON.stringify(error.response.data, null, 2))
+      res.status(500).json({ 
+        error: 'Failed to fetch USASpending data',
+        message: error.message,
+        apiError: error.response.data,
+        status: error.response.status,
+        hint: 'The USASpending API returned an error. Try the sample dataset at /api/example/usaspending instead.',
+        documentation: 'https://api.usaspending.gov/docs/'
+      })
+    } else if (error.request) {
+      // The request was made but no response was received
+      console.error('No response received:', error.request)
+      res.status(500).json({ 
+        error: 'Failed to fetch USASpending data',
+        message: 'No response from USASpending API',
+        hint: 'The USASpending API may be temporarily unavailable. Try the sample dataset at /api/example/usaspending instead.',
+        documentation: 'https://api.usaspending.gov/docs/'
+      })
+    } else {
+      // Something happened in setting up the request that triggered an Error
+      console.error('Error setting up request:', error.message)
+      res.status(500).json({ 
+        error: 'Failed to fetch USASpending data',
+        message: error.message,
+        hint: 'The USASpending API may be temporarily unavailable. Try the sample dataset at /api/example/usaspending instead.',
+        documentation: 'https://api.usaspending.gov/docs/'
+      })
+    }
+  }
 })
 
 module.exports = router

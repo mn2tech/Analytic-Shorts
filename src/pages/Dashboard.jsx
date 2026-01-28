@@ -1,16 +1,18 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { parseNumericValue } from '../utils/numberUtils'
 import Navbar from '../components/Navbar'
 import Loader from '../components/Loader'
 import DashboardCharts from '../components/DashboardCharts'
 import AdvancedDashboard from '../components/AdvancedDashboard'
+import AdvancedDashboardGrid from '../components/AdvancedDashboardGrid'
 import MetricCards from '../components/MetricCards'
 import Filters from '../components/Filters'
 import AIInsights from '../components/AIInsights'
 import ForecastChart from '../components/ForecastChart'
 import DataMetadataEditor from '../components/DataMetadataEditor'
 import TimeSeriesReport from '../components/TimeSeriesReport'
+import DateRangeSlider from '../components/DateRangeSlider'
 import { saveAs } from 'file-saver'
 import { generateShareId, saveSharedDashboard, getShareableUrl, copyToClipboard } from '../utils/shareUtils'
 import { saveDashboard, updateDashboard } from '../services/dashboardService'
@@ -123,6 +125,26 @@ function Dashboard() {
       // Validate parsedData
       if (!parsedData || !parsedData.data || !Array.isArray(parsedData.data)) {
         console.error('Invalid data format:', parsedData)
+        // Set empty state so the error message displays
+        setData([])
+        setFilteredData([])
+        setColumns(parsedData?.columns || [])
+        setNumericColumns(parsedData?.numericColumns || [])
+        setCategoricalColumns(parsedData?.categoricalColumns || [])
+        setDateColumns(parsedData?.dateColumns || [])
+        setLoading(false)
+        return
+      }
+      
+      // Check if data array is empty
+      if (parsedData.data.length === 0) {
+        console.warn('Data array is empty')
+        setData([])
+        setFilteredData([])
+        setColumns(parsedData.columns || [])
+        setNumericColumns(parsedData.numericColumns || [])
+        setCategoricalColumns(parsedData.categoricalColumns || [])
+        setDateColumns(parsedData.dateColumns || [])
         setLoading(false)
         return
       }
@@ -236,7 +258,8 @@ function Dashboard() {
     }
   }
 
-  const applyChartFilter = (baseData) => {
+  // Memoize applyChartFilter to ensure stable reference for useCallback
+  const applyChartFilter = useCallback((baseData) => {
     if (!baseData) return baseData
     if (!chartFilter) return baseData
     
@@ -257,7 +280,7 @@ function Dashboard() {
     }
     
     return result
-  }
+  }, [chartFilter, selectedCategorical, selectedDate])
 
   const handleFilterChange = (filters, filtered) => {
     // Use requestAnimationFrame to make filtering non-blocking
@@ -273,6 +296,27 @@ function Dashboard() {
       })
     })
   }
+
+  // Handle date range slider filter changes
+  const handleDateRangeFilter = useCallback((filterInfo) => {
+    if (filterInfo && filterInfo.filteredData) {
+      // Date range filter applies to the base data
+      const dateFiltered = filterInfo.filteredData
+      
+      // Update sidebar filtered data immediately
+      setSidebarFilteredData(dateFiltered)
+      
+      // Apply chart filter and update filtered data immediately
+      // This ensures charts update in real-time during animation
+      const result = applyChartFilter(dateFiltered)
+      setFilteredData(result)
+    } else if (filterInfo && !filterInfo.filteredData) {
+      // Reset filter if no filtered data
+      setSidebarFilteredData(data)
+      const result = applyChartFilter(data)
+      setFilteredData(result)
+    }
+  }, [data, chartFilter, selectedCategorical, selectedDate, applyChartFilter])
 
   const handleChartFilter = (filter) => {
     setChartFilter(filter)
@@ -598,6 +642,19 @@ function Dashboard() {
     return () => window.removeEventListener('keydown', handleEsc)
   }, [isFullscreen])
 
+  // Safety check: If we've been loading too long without initializing, show error
+  useEffect(() => {
+    if (loading && !hasInitialized.current) {
+      const timeout = setTimeout(() => {
+        if (loading && !hasInitialized.current) {
+          console.error('Dashboard: Loading timeout - no data initialized')
+          setLoading(false)
+        }
+      }, 5000) // 5 second timeout
+      return () => clearTimeout(timeout)
+    }
+  }, [loading, hasInitialized])
+  
   if (loading) {
     console.log('Dashboard: Still loading. Data:', data, 'Has initialized:', hasInitialized.current)
     return (
@@ -609,6 +666,83 @@ function Dashboard() {
   }
   
   console.log('Dashboard: Rendering. Data length:', data?.length, 'Filtered data length:', filteredData?.length, 'Columns:', columns?.length, 'Selected numeric:', selectedNumeric, 'Selected categorical:', selectedCategorical)
+  
+  // Safety check: If not initialized and not loading, something went wrong
+  if (!hasInitialized.current && !loading) {
+    console.error('Dashboard: Not initialized and not loading - showing error message')
+    const storedData = sessionStorage.getItem('analyticsData')
+    let validation = null
+    try {
+      if (storedData) {
+        const parsed = JSON.parse(storedData)
+        validation = parsed.validation
+      }
+    } catch (e) {
+      // Ignore parse errors
+    }
+    
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Navbar />
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+          <div className="bg-red-50 border-2 border-red-300 rounded-lg p-8">
+            <div className="text-center mb-6">
+              <svg className="w-16 h-16 text-red-600 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <h2 className="text-2xl font-semibold text-red-900 mb-2">Unable to Load Dashboard</h2>
+              <p className="text-red-800 mb-6">There was an issue loading your data. This might be because:</p>
+            </div>
+            
+            <div className="bg-white rounded-lg p-4 mb-4 border border-red-200">
+              <ul className="list-disc list-inside text-red-800 space-y-2 text-sm">
+                <li>Your data file is empty or has no valid rows</li>
+                <li>Your data has no numeric columns (charts require numbers)</li>
+                <li>There was an error processing your file</li>
+                <li>The data format is not supported</li>
+              </ul>
+            </div>
+            
+            {validation && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+                <h3 className="text-yellow-900 font-semibold mb-2">Validation Results:</h3>
+                {validation.errors && validation.errors.length > 0 && (
+                  <div className="mb-3">
+                    {validation.errors.map((error, index) => (
+                      <div key={index} className="text-yellow-800 text-sm">
+                        <strong>Error:</strong> {error.message}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {validation.warnings && validation.warnings.length > 0 && (
+                  <div className="mb-3">
+                    {validation.warnings.map((warning, index) => (
+                      <div key={index} className="text-yellow-800 text-sm">
+                        <strong>Warning:</strong> {warning.message}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            
+            <div className="text-center">
+              <button
+                onClick={() => {
+                  sessionStorage.removeItem('analyticsData')
+                  navigate('/')
+                }}
+                className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+              >
+                Go Back to Upload
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
   
   // Check if data exists - but don't redirect if we're in the middle of a metadata update
   if (!data || data.length === 0) {
@@ -628,19 +762,114 @@ function Dashboard() {
     // Only redirect if we've actually initialized and there's truly no data
     // This prevents blank page during metadata updates
     if (hasInitialized.current) {
+      // Check if we have validation info to explain why
+      const storedData = sessionStorage.getItem('analyticsData')
+      let validation = null
+      try {
+        if (storedData) {
+          const parsed = JSON.parse(storedData)
+          validation = parsed.validation
+        }
+      } catch (e) {
+        // Ignore parse errors
+      }
+      
       return (
         <div className="min-h-screen bg-gray-50">
           <Navbar />
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center">
-              <h2 className="text-xl font-semibold text-yellow-900 mb-2">No Data Available</h2>
-              <p className="text-yellow-700 mb-4">No data was found. Please upload a file or load an example dataset.</p>
-              <button
-                onClick={() => navigate('/')}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                Go to Home
-              </button>
+            <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-8">
+              <div className="text-center mb-6">
+                <svg className="w-16 h-16 text-yellow-600 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                <h2 className="text-2xl font-semibold text-yellow-900 mb-2">Dashboard Cannot Be Displayed</h2>
+                <p className="text-yellow-800 mb-6">Your data was uploaded, but the dashboard cannot be generated. Here's why:</p>
+              </div>
+              
+              {validation && validation.errors && validation.errors.length > 0 ? (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+                  <h3 className="text-red-900 font-semibold mb-3">❌ Critical Issues:</h3>
+                  {validation.errors.map((error, index) => (
+                    <div key={index} className="mb-3">
+                      <p className="text-red-800 font-medium">{error.message}</p>
+                      <p className="text-red-700 text-sm mt-1">{error.suggestion}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : validation && validation.warnings && validation.warnings.length > 0 ? (
+                <div className="bg-yellow-100 border border-yellow-300 rounded-lg p-4 mb-4">
+                  <h3 className="text-yellow-900 font-semibold mb-3">⚠️ Data Issues Found:</h3>
+                  {validation.warnings.map((warning, index) => (
+                    <div key={index} className="mb-3">
+                      <p className="text-yellow-900 font-medium">{warning.message}</p>
+                      <p className="text-yellow-800 text-sm mt-1">{warning.suggestion}</p>
+                      {warning.fixSteps && warning.fixSteps.length > 0 && (
+                        <div className="mt-2">
+                          <p className="text-yellow-800 text-xs font-medium mb-1">How to fix:</p>
+                          <ul className="list-disc list-inside text-xs text-yellow-800 space-y-1">
+                            {warning.fixSteps.map((step, stepIndex) => (
+                              <li key={stepIndex}>{step}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {warning.examples && warning.examples.length > 0 && (
+                        <div className="mt-2">
+                          <p className="text-yellow-800 text-xs font-medium mb-1">Examples:</p>
+                          <div className="space-y-1">
+                            {warning.examples.map((example, exIndex) => (
+                              <div key={exIndex} className="text-xs bg-yellow-200 p-2 rounded">
+                                <span className="text-red-600 line-through">{example.before}</span>
+                                {' → '}
+                                <span className="text-green-600 font-medium">{example.after}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                  <h3 className="text-blue-900 font-semibold mb-2">Common Reasons for Blank Dashboard:</h3>
+                  <ul className="list-disc list-inside text-blue-800 space-y-2 text-sm">
+                    <li><strong>No numeric columns:</strong> Charts require at least one column with numbers (e.g., Sales, Amount, Quantity)</li>
+                    <li><strong>Data format issues:</strong> Numbers with currency symbols ($1,200) or commas may not be detected</li>
+                    <li><strong>Empty data:</strong> Your file might be empty or have no valid rows</li>
+                    <li><strong>All text data:</strong> If all columns are text/categories, charts cannot be generated</li>
+                  </ul>
+                </div>
+              )}
+              
+              {validation && validation.summary && (
+                <div className="bg-gray-100 rounded-lg p-3 mb-4 text-sm">
+                  <p className="text-gray-700">
+                    <strong>Your Data Summary:</strong> {validation.summary.totalRows} rows, {validation.summary.totalColumns} columns
+                    {validation.summary.numericColumns > 0 ? ` • ${validation.summary.numericColumns} numeric` : ' • 0 numeric (⚠️ This is the problem!)'}
+                    {validation.summary.dateColumns > 0 && ` • ${validation.summary.dateColumns} date`}
+                    {validation.summary.categoricalColumns > 0 && ` • ${validation.summary.categoricalColumns} categorical`}
+                  </p>
+                </div>
+              )}
+              
+              <div className="text-center space-y-3">
+                <div className="bg-white rounded-lg p-4 border border-yellow-300">
+                  <p className="text-gray-800 font-medium mb-2">💡 What to do:</p>
+                  <ol className="text-left text-sm text-gray-700 space-y-1 list-decimal list-inside">
+                    <li>Go back to the home page</li>
+                    <li>Fix your data based on the recommendations above</li>
+                    <li>Re-upload your corrected file</li>
+                  </ol>
+                </div>
+                <button
+                  onClick={() => navigate('/')}
+                  className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                >
+                  Go Back to Upload
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -651,6 +880,109 @@ function Dashboard() {
       <div className="min-h-screen bg-gray-50">
         <Navbar />
         <Loader />
+      </div>
+    )
+  }
+  
+  // Check if we have data but no numeric columns (charts won't work)
+  // Handle both null/undefined and empty array cases
+  const hasNoNumericColumns = data && data.length > 0 && (!numericColumns || numericColumns.length === 0)
+  
+  if (hasNoNumericColumns) {
+    console.log('Dashboard: No numeric columns detected', {
+      dataLength: data?.length,
+      numericColumns,
+      columns,
+      selectedNumeric
+    })
+    
+    const storedData = sessionStorage.getItem('analyticsData')
+    let validation = null
+    try {
+      if (storedData) {
+        const parsed = JSON.parse(storedData)
+        validation = parsed.validation
+      }
+    } catch (e) {
+      // Ignore parse errors
+    }
+    
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Navbar />
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+          <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-8">
+            <div className="text-center mb-6">
+              <svg className="w-16 h-16 text-yellow-600 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <h2 className="text-2xl font-semibold text-yellow-900 mb-2">No Charts Can Be Generated</h2>
+              <p className="text-yellow-800 mb-6">Your data has {data.length} rows, but no numeric columns were detected.</p>
+            </div>
+            
+            {validation && validation.warnings && validation.warnings.length > 0 ? (
+              <div className="bg-yellow-100 border border-yellow-300 rounded-lg p-4 mb-4">
+                <h3 className="text-yellow-900 font-semibold mb-3">⚠️ How to Fix This:</h3>
+                {validation.warnings.map((warning, index) => (
+                  <div key={index} className="mb-3">
+                    <p className="text-yellow-900 font-medium">{warning.message}</p>
+                    <p className="text-yellow-800 text-sm mt-1">{warning.suggestion}</p>
+                    {warning.fixSteps && warning.fixSteps.length > 0 && (
+                      <div className="mt-2">
+                        <p className="text-yellow-800 text-xs font-medium mb-1">How to fix:</p>
+                        <ul className="list-disc list-inside text-xs text-yellow-800 space-y-1">
+                          {warning.fixSteps.map((step, stepIndex) => (
+                            <li key={stepIndex}>{step}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {warning.examples && warning.examples.length > 0 && (
+                      <div className="mt-2">
+                        <p className="text-yellow-800 text-xs font-medium mb-1">Examples:</p>
+                        <div className="space-y-1">
+                          {warning.examples.map((example, exIndex) => (
+                            <div key={exIndex} className="text-xs bg-yellow-200 p-2 rounded">
+                              <span className="text-red-600 line-through">{example.before}</span>
+                              {' → '}
+                              <span className="text-green-600 font-medium">{example.after}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                <h3 className="text-blue-900 font-semibold mb-2">Why This Happened:</h3>
+                <ul className="list-disc list-inside text-blue-800 space-y-2 text-sm">
+                  <li>Your data only contains text/category columns (like names, descriptions, status)</li>
+                  <li>Charts need at least one numeric column (numbers like sales, amounts, quantities)</li>
+                  <li>Numbers with currency symbols ($1,200) or commas may not be detected as numeric</li>
+                </ul>
+                <div className="mt-3 pt-3 border-t border-blue-300">
+                  <p className="text-blue-900 font-medium mb-2">💡 Solution:</p>
+                  <ol className="list-decimal list-inside text-blue-800 text-sm space-y-1">
+                    <li>Add a column with numbers (e.g., Sales, Amount, Quantity, Count)</li>
+                    <li>Or remove currency symbols and commas from existing number columns</li>
+                    <li>Re-upload your corrected file</li>
+                  </ol>
+                </div>
+              </div>
+            )}
+            
+            <div className="text-center">
+              <button
+                onClick={() => navigate('/')}
+                className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+              >
+                Go Back to Fix Data
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     )
   }
@@ -756,6 +1088,16 @@ function Dashboard() {
                     Advanced
                   </button>
                   <button
+                    onClick={() => setDashboardView('custom')}
+                    className={`px-3 py-1.5 text-sm border rounded-lg transition-colors ${
+                      dashboardView === 'custom'
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-white border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    Custom
+                  </button>
+                  <button
                     onClick={() => setDashboardView('timeseries')}
                     className={`px-3 py-1.5 text-sm border rounded-lg transition-colors ${
                       dashboardView === 'timeseries'
@@ -858,12 +1200,97 @@ function Dashboard() {
     )
   }
 
+  // Final safety check: If we have data but no numeric columns, show error message
+  // This catches cases where the earlier check might have been missed
+  if (data && data.length > 0 && (!numericColumns || numericColumns.length === 0)) {
+    console.warn('Dashboard: Data exists but no numeric columns detected', {
+      dataLength: data.length,
+      numericColumns,
+      columns
+    })
+    
+    const storedData = sessionStorage.getItem('analyticsData')
+    let validation = null
+    try {
+      if (storedData) {
+        const parsed = JSON.parse(storedData)
+        validation = parsed.validation
+      }
+    } catch (e) {
+      // Ignore parse errors
+    }
+    
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Navbar />
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+          <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-8">
+            <div className="text-center mb-6">
+              <svg className="w-16 h-16 text-yellow-600 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <h2 className="text-2xl font-semibold text-yellow-900 mb-2">No Charts Can Be Generated</h2>
+              <p className="text-yellow-800 mb-6">Your data has {data.length} rows, but no numeric columns were detected.</p>
+            </div>
+            
+            {validation && validation.warnings && validation.warnings.length > 0 ? (
+              <div className="bg-yellow-100 border border-yellow-300 rounded-lg p-4 mb-4">
+                <h3 className="text-yellow-900 font-semibold mb-3">⚠️ How to Fix This:</h3>
+                {validation.warnings.map((warning, index) => (
+                  <div key={index} className="mb-3">
+                    <p className="text-yellow-900 font-medium">{warning.message}</p>
+                    <p className="text-yellow-800 text-sm mt-1">{warning.suggestion}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                <h3 className="text-blue-900 font-semibold mb-2">Why This Happened:</h3>
+                <ul className="list-disc list-inside text-blue-800 space-y-2 text-sm">
+                  <li>Your data only contains text/category columns (like names, descriptions, status)</li>
+                  <li>Charts need at least one numeric column (numbers like sales, amounts, quantities)</li>
+                  <li>Numbers with currency symbols ($1,200) or commas may not be detected as numeric</li>
+                </ul>
+                <div className="mt-3 pt-3 border-t border-blue-300">
+                  <p className="text-blue-900 font-medium mb-2">💡 Solution:</p>
+                  <ol className="list-decimal list-inside text-blue-800 text-sm space-y-1">
+                    <li>Add a column with numbers (e.g., Sales, Amount, Quantity, Count)</li>
+                    <li>Or remove currency symbols and commas from existing number columns</li>
+                    <li>Re-upload your corrected file</li>
+                  </ol>
+                </div>
+              </div>
+            )}
+            
+            <div className="text-center mt-6">
+              <button
+                onClick={() => window.location.href = '/'}
+                className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-lg transition-colors"
+              >
+                Upload New Data
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-gray-50 to-purple-50 watermark-bg relative">
       {/* Analytics Watermark Pattern */}
       <div className="analytics-watermark"></div>
       <div className="analytics-watermark-icons"></div>
       <Navbar />
+      
+      {/* Date Range Slider - Top of Dashboard */}
+      {selectedDate && dateColumns.includes(selectedDate) && (
+        <DateRangeSlider
+          data={data}
+          selectedDate={selectedDate}
+          onFilterChange={handleDateRangeFilter}
+        />
+      )}
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {/* Header */}
@@ -955,6 +1382,26 @@ function Dashboard() {
                 }`}
               >
                 Charts
+              </button>
+              <button
+                onClick={() => setDashboardView('advanced')}
+                className={`px-3 py-1.5 text-sm border rounded-lg transition-colors ${
+                  dashboardView === 'advanced'
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                Advanced
+              </button>
+              <button
+                onClick={() => setDashboardView('custom')}
+                className={`px-3 py-1.5 text-sm border rounded-lg transition-colors ${
+                  dashboardView === 'custom'
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                Custom
               </button>
               <button
                 onClick={() => setDashboardView('data')}
@@ -1099,6 +1546,22 @@ function Dashboard() {
             selectedDate={selectedDate}
             onChartFilter={handleChartFilter}
             chartFilter={chartFilter}
+            categoricalColumns={categoricalColumns}
+            numericColumns={numericColumns}
+            dateColumns={dateColumns}
+          />
+        ) : dashboardView === 'custom' ? (
+          <AdvancedDashboardGrid
+            data={data}
+            filteredData={filteredData}
+            selectedNumeric={selectedNumeric}
+            selectedCategorical={selectedCategorical}
+            selectedDate={selectedDate}
+            onChartFilter={handleChartFilter}
+            chartFilter={chartFilter}
+            categoricalColumns={categoricalColumns}
+            numericColumns={numericColumns}
+            dateColumns={dateColumns}
           />
         ) : (
           <DashboardCharts
@@ -1109,6 +1572,7 @@ function Dashboard() {
             selectedDate={selectedDate}
             onChartFilter={handleChartFilter}
             chartFilter={chartFilter}
+            onDateRangeFilter={handleDateRangeFilter}
           />
         )}
 

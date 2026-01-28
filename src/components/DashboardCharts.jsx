@@ -1,6 +1,7 @@
-import { useState, useMemo, memo } from 'react'
+import { useEffect, useMemo, useState, memo } from 'react'
 import { LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import ChartInsights from './ChartInsights'
+import DateRangeSlider from './DateRangeSlider'
 import { parseNumericValue } from '../utils/numberUtils'
 
 const COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444', '#6366f1', '#14b8a6']
@@ -17,16 +18,38 @@ const sampleDataForCharts = (data, maxRows = 5000) => {
   return sampled
 }
 
-function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategorical, selectedDate, onChartFilter, chartFilter }) {
+function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategorical, selectedDate, onChartFilter, chartFilter, onDateRangeFilter }) {
   const [hoveredSegment, setHoveredSegment] = useState(null)
   const [chartInsights, setChartInsights] = useState(null)
+  const [maximized, setMaximized] = useState(null) // { type: 'line' | 'pie', title: string } | null
   
-  // Use filteredData for display, but data for pie chart calculations (to show all categories)
-  const displayData = filteredData || data
+  // Use filteredData for display (slider/filters), fallback to full data
+  // Add defensive check to ensure data is valid array
+  const displayData = useMemo(() => {
+    const dataToUse = filteredData || data
+    if (!Array.isArray(dataToUse)) return []
+    if (dataToUse.length === 0) return []
+    return dataToUse
+  }, [filteredData, data])
   
   // Sample data for charts to improve performance
-  const sampledDisplayData = useMemo(() => sampleDataForCharts(displayData, 5000), [displayData])
-  const sampledFullData = useMemo(() => sampleDataForCharts(data, 10000), [data])
+  const sampledDisplayData = useMemo(() => {
+    if (!displayData || displayData.length === 0) return []
+    return sampleDataForCharts(displayData, 5000)
+  }, [displayData])
+  
+  // IMPORTANT: Pie chart should also respect filtered data (e.g. date slider),
+  // otherwise it will look "stuck" while other charts update.
+  const pieBaseData = useMemo(() => {
+    const dataToUse = filteredData || data
+    if (!Array.isArray(dataToUse) || dataToUse.length === 0) return []
+    return dataToUse
+  }, [filteredData, data])
+
+  const sampledPieData = useMemo(() => {
+    if (!pieBaseData || pieBaseData.length === 0) return []
+    return sampleDataForCharts(pieBaseData, 10000)
+  }, [pieBaseData])
   
   const prepareLineChartData = useMemo(() => {
     if (!sampledDisplayData || sampledDisplayData.length === 0 || !selectedNumeric) return []
@@ -57,14 +80,14 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
   }, [sampledDisplayData, selectedNumeric, selectedDate])
 
   const preparePieChartData = useMemo(() => {
-    if (!sampledFullData || sampledFullData.length === 0) return []
+    if (!sampledPieData || sampledPieData.length === 0) return []
 
     // Pie charts can work with categorical OR date columns (treating dates as categories)
     const categoryColumn = selectedCategorical || selectedDate
     if (categoryColumn && selectedNumeric) {
       const grouped = {}
       // Process sampled data instead of full dataset
-      sampledFullData.forEach((row) => {
+      sampledPieData.forEach((row) => {
         // Use the category column (categorical or date)
         const key = row[categoryColumn] || 'Unknown'
         const value = parseNumericValue(row[selectedNumeric])
@@ -77,7 +100,7 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
     }
 
     return []
-  }, [sampledFullData, selectedCategorical, selectedDate, selectedNumeric])
+  }, [sampledPieData, selectedCategorical, selectedDate, selectedNumeric])
 
   const handlePieClick = (data, index) => {
     const categoryColumn = selectedCategorical || selectedDate
@@ -104,7 +127,14 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
 
   const lineData = prepareLineChartData
   const pieData = preparePieChartData
-  const totalValue = useMemo(() => pieData.reduce((sum, item) => sum + item.value, 0), [pieData])
+  const totalValue = useMemo(() => {
+    if (!pieData || pieData.length === 0) return 0
+    return pieData.reduce((sum, item) => sum + (item.value || 0), 0)
+  }, [pieData])
+  
+  // Add safety checks to prevent rendering with invalid data
+  const hasValidLineData = lineData && Array.isArray(lineData) && lineData.length > 0
+  const hasValidPieData = pieData && Array.isArray(pieData) && pieData.length > 0
 
   const handleChartClick = (chartType, chartData, chartTitle) => {
     // Convert chart data back to original row format for insights
@@ -160,6 +190,23 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
   }
 
+  // Close maximize modal with ESC, and prevent body scroll while open
+  useEffect(() => {
+    if (!maximized) return
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') setMaximized(null)
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      document.body.style.overflow = prevOverflow
+    }
+  }, [maximized])
+
   return (
     <>
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
@@ -178,21 +225,37 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
               </div>
             )}
             {lineData.length > 0 && (
-              <button
-                onClick={() => handleChartClick('line', lineData, `${selectedNumeric || 'Value'} ${selectedDate ? 'Over Time' : ''}`)}
-                className="opacity-0 group-hover:opacity-100 transition-opacity p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg"
-                title="Get AI insights for this chart"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                </svg>
-              </button>
+              <>
+                <button
+                  onClick={() =>
+                    setMaximized({
+                      type: 'line',
+                      title: `${selectedNumeric || 'Value'} ${selectedDate ? 'Over Time' : ''}`,
+                    })
+                  }
+                  className="opacity-0 group-hover:opacity-100 transition-opacity p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-50 rounded-lg"
+                  title="Maximize chart"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3" />
+                  </svg>
+                </button>
+                <button
+                  onClick={() => handleChartClick('line', lineData, `${selectedNumeric || 'Value'} ${selectedDate ? 'Over Time' : ''}`)}
+                  className="opacity-0 group-hover:opacity-100 transition-opacity p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg"
+                  title="Get AI insights for this chart"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                  </svg>
+                </button>
+              </>
             )}
           </div>
         </div>
-        {lineData.length > 0 ? (
+        {hasValidLineData ? (
           <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={lineData}>
+            <LineChart data={lineData} key={`line-${lineData.length}-${selectedNumeric}`}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
               <XAxis 
                 dataKey={selectedDate ? "date" : "name"}
@@ -268,24 +331,40 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
           <h3 className="text-lg font-semibold text-gray-900">
             {selectedCategorical || selectedDate || 'Distribution'}
           </h3>
-          {pieData.length > 0 && (
-            <button
-              onClick={() => handleChartClick('pie', pieData, `Distribution by ${selectedCategorical || selectedDate || 'Category'}`)}
-              className="opacity-0 group-hover:opacity-100 transition-opacity p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg"
-              title="Get AI insights for this chart"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-              </svg>
-            </button>
+          {hasValidPieData && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() =>
+                  setMaximized({
+                    type: 'pie',
+                    title: `Distribution by ${selectedCategorical || selectedDate || 'Category'}`,
+                  })
+                }
+                className="opacity-0 group-hover:opacity-100 transition-opacity p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-50 rounded-lg"
+                title="Maximize chart"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3" />
+                </svg>
+              </button>
+              <button
+                onClick={() => handleChartClick('pie', pieData, `Distribution by ${selectedCategorical || selectedDate || 'Category'}`)}
+                className="opacity-0 group-hover:opacity-100 transition-opacity p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg"
+                title="Get AI insights for this chart"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                </svg>
+              </button>
+            </div>
           )}
         </div>
-        {pieData.length > 0 ? (
+        {hasValidPieData ? (
           <div className="flex items-center gap-6">
             {/* Chart on left */}
             <div className="relative flex-1" style={{ maxWidth: '300px' }}>
               <ResponsiveContainer width="100%" height={300}>
-                <PieChart>
+                <PieChart key={`pie-${pieData.length}-${selectedCategorical || selectedDate}`}>
                   <Pie
                     data={pieData}
                     cx="50%"
@@ -379,6 +458,131 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
         )}
       </div>
     </div>
+
+    {maximized && (
+      <div
+        className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
+        onClick={() => setMaximized(null)}
+      >
+        <div
+          className="bg-white w-full max-w-6xl rounded-xl shadow-2xl border border-gray-200 overflow-hidden"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">{maximized.title}</h3>
+              <p className="text-xs text-gray-500">Press ESC to close</p>
+            </div>
+            <button
+              className="p-2 rounded-lg hover:bg-gray-100 text-gray-700"
+              onClick={() => setMaximized(null)}
+              title="Close"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          <div className="p-6">
+            {/* Date slider inside maximize modal (filters the whole dashboard) */}
+            {selectedDate && typeof onDateRangeFilter === 'function' && (
+              <div className="mb-4">
+                <DateRangeSlider
+                  data={data}
+                  selectedDate={selectedDate}
+                  onFilterChange={onDateRangeFilter}
+                />
+              </div>
+            )}
+
+            {maximized.type === 'line' ? (
+              <div className="h-[520px]">
+                {hasValidLineData ? (
+                  <ResponsiveContainer width="100%" height={520}>
+                    <LineChart data={lineData} key={`line-max-${lineData.length}-${selectedNumeric}`}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                      <XAxis
+                        dataKey={selectedDate ? "date" : "name"}
+                        tickFormatter={selectedDate ? formatDate : undefined}
+                        stroke="#6b7280"
+                        style={{ fontSize: '12px' }}
+                      />
+                      <YAxis stroke="#6b7280" style={{ fontSize: '12px' }} />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: '#fff',
+                          border: '1px solid #e5e7eb',
+                          borderRadius: '6px',
+                          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                        }}
+                        labelFormatter={selectedDate ? formatDate : undefined}
+                        animationDuration={200}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="value"
+                        stroke="#3b82f6"
+                        strokeWidth={2}
+                        dot={false}
+                        animationDuration={800}
+                        animationBegin={0}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-[520px] flex items-center justify-center text-gray-400">No data to display</div>
+                )}
+              </div>
+            ) : (
+              <div className="h-[520px] flex items-center justify-center">
+                {hasValidPieData ? (
+                  <div className="w-full max-w-3xl">
+                    <ResponsiveContainer width="100%" height={520}>
+                      <PieChart key={`pie-max-${pieData.length}-${selectedCategorical || selectedDate}`}>
+                        <Pie
+                          data={pieData}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={120}
+                          outerRadius={200}
+                          paddingAngle={2}
+                          dataKey="value"
+                          animationBegin={0}
+                          animationDuration={800}
+                        >
+                          {pieData.map((entry, index) => {
+                            const isSelected = chartFilter?.type === 'category' && chartFilter?.value === entry.name
+                            return (
+                              <Cell
+                                key={`cell-max-${index}`}
+                                fill={isSelected ? '#ef4444' : COLORS[index % COLORS.length]}
+                              />
+                            )
+                          })}
+                        </Pie>
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: '#fff',
+                            border: '1px solid #e5e7eb',
+                            borderRadius: '6px',
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                          }}
+                          formatter={(value) => [Number(value || 0).toLocaleString(), 'Value']}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : (
+                  <div className="h-[520px] flex items-center justify-center text-gray-400">No data to display</div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    )}
+
     {chartInsights && (
       <ChartInsights
         chartData={chartInsights.chartData}
