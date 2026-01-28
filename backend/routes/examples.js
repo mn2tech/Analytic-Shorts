@@ -507,6 +507,7 @@ router.get('/usaspending/live', async (req, res) => {
     
     const transformedData = results.map((award) => {
       // Handle the API response format - fields are returned with capitalized names
+      const awardId = award['Award ID'] || award.Award_ID || award.award_id || award.id || ''
       const awardDate = award['Start Date'] || award['End Date'] || award.Start_Date || award.End_Date || ''
       const awardAmount = parseFloat(
         award['Award Amount'] || 
@@ -535,6 +536,7 @@ router.get('/usaspending/live', async (req, res) => {
         ''
       
       return {
+        'Award ID': awardId,
         'Award Date': awardDate,
         'Award Amount': awardAmount,
         'Recipient Name': recipientName,
@@ -612,6 +614,115 @@ router.get('/usaspending/live', async (req, res) => {
         documentation: 'https://api.usaspending.gov/docs/'
       })
     }
+  }
+})
+
+// Drill-down: fetch subawards/subcontractors for a set of prime award IDs
+// Usage: GET /api/example/usaspending/subawards?award_ids=ID1,ID2,...&limit=200
+router.get('/usaspending/subawards', async (req, res) => {
+  try {
+    const awardIdsRaw = (req.query.award_ids || '').toString().trim()
+    const limit = Math.min(parseInt(req.query.limit) || 200, 500)
+
+    if (!awardIdsRaw) {
+      return res.status(400).json({
+        error: 'Missing award_ids',
+        message: 'Provide award_ids as a comma-separated list.',
+      })
+    }
+
+    // Cap to avoid hammering the API
+    const awardIds = awardIdsRaw
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .slice(0, 10)
+
+    // NOTE: USASpending subaward data is separate from prime award data.
+    // This endpoint structure is based on USASpending v2 conventions and may evolve.
+    const apiUrl = 'https://api.usaspending.gov/api/v2/awards/subawards/'
+
+    const allResults = []
+
+    for (const award_id of awardIds) {
+      const body = {
+        award_id,
+        limit: Math.min(limit, 500),
+        page: 1,
+        sort: 'subaward_amount',
+        order: 'desc',
+      }
+
+      try {
+        const resp = await axios.post(apiUrl, body, {
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          timeout: 30000,
+        })
+        const results = resp.data?.results || resp.data?.data || []
+        results.forEach((r) => allResults.push({ ...r, __prime_award_id: award_id }))
+      } catch (e) {
+        // If one award id fails, continue with others
+        console.error('Subawards fetch failed for award_id:', award_id, e?.response?.status || e?.message)
+      }
+    }
+
+    // Transform into a generic table
+    const transformed = allResults.map((r) => {
+      const subName =
+        r.subawardee_name ||
+        r.sub_awardee_name ||
+        r.awardee_name ||
+        r.recipient_name ||
+        r.subaward_recipient_name ||
+        'Unknown'
+
+      const subAmount = parseFloat(
+        r.subaward_amount ||
+          r.sub_award_amount ||
+          r.amount ||
+          r.total_obligation ||
+          0
+      )
+
+      const subDate =
+        r.subaward_action_date ||
+        r.sub_award_action_date ||
+        r.action_date ||
+        r.subaward_date ||
+        ''
+
+      const primeAwardId = r.__prime_award_id || r.award_id || ''
+
+      const desc = r.description || r.subaward_description || ''
+
+      return {
+        'Prime Award ID': primeAwardId,
+        'Subcontractor Name': subName,
+        'Subaward Amount': subAmount,
+        'Subaward Date': subDate,
+        Description: desc,
+      }
+    })
+
+    const columns = ['Prime Award ID', 'Subcontractor Name', 'Subaward Amount', 'Subaward Date', 'Description']
+    const { numericColumns, categoricalColumns, dateColumns } = detectColumnTypes(transformed, columns)
+
+    return res.json({
+      data: transformed,
+      columns,
+      numericColumns,
+      categoricalColumns,
+      dateColumns,
+      rowCount: transformed.length,
+      source: 'USASpending.gov API (Subawards)',
+      note: 'Subaward coverage varies by award; some primes may have no reported subawards.',
+    })
+  } catch (err) {
+    console.error('Subawards route error:', err)
+    return res.status(500).json({
+      error: 'Failed to fetch subawards',
+      message: err?.message || 'Unknown error',
+    })
   }
 })
 
