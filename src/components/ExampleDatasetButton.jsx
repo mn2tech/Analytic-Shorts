@@ -35,6 +35,16 @@ function ExampleDatasetButton({ onDatasetLoad, onError }) {
       description: 'Year-over-year income growth (2020-2025)',
       endpoint: '/api/example/yearly-income',
     },
+    {
+      name: 'USA Spending',
+      description: 'Federal government awards, contracts, and grants',
+      endpoint: '/api/example/usaspending',
+    },
+    {
+      name: 'USA Spending (Live)',
+      description: 'Real-time data from USASpending.gov API',
+      endpoint: '/api/example/usaspending/live',
+    },
   ]
 
   const loadExample = async (endpoint, datasetName) => {

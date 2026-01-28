@@ -33,6 +33,9 @@ backend/uploads
 *.xlsx
 *.xls
 
+# Keep specific sample datasets tracked
+!sample-usaspending-data.csv
+
 # IDE
 .vscode
 .idea
