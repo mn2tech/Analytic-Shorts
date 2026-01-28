@@ -438,7 +438,7 @@ router.get('/usaspending/live', async (req, res) => {
         'Award ID',
         'Award Amount',
         'Start Date',
-        'Prime contractor',
+        'Recipient Name',
         'Awarding Agency',
         'Contract Award Type',
         'recipient_location_state_code',
