@@ -1118,6 +1118,12 @@ router.get('/cdc-health', async (req, res) => {
     // Process the data
     const columns = Object.keys(transformedData[0])
     const { numericColumns, categoricalColumns, dateColumns } = detectColumnTypes(transformedData, columns)
+    
+    // Ensure 'Metric' column is always included in categoricalColumns for filtering
+    if (!categoricalColumns.includes('Metric') && columns.includes('Metric')) {
+      categoricalColumns.push('Metric')
+    }
+    
     const processedData = processDataPreservingNumbers(transformedData, numericColumns)
     
     res.json({
