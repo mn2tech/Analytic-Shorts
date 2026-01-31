@@ -53,6 +53,12 @@ function Dashboard() {
   const hasInitialized = useRef(false)
   const isUpdatingMetadata = useRef(false)
 
+  // Debug: Check if layouts are saved
+  useEffect(() => {
+    console.log('Saved layouts:', localStorage.getItem('dashboard_layouts'))
+    console.log('Saved visibility:', localStorage.getItem('dashboard_widget_visibility'))
+  }, [dashboardLayouts, dashboardWidgetVisibility])
+
   useEffect(() => {
     // Prevent multiple initializations
     if (hasInitialized.current) {
@@ -328,7 +334,42 @@ function Dashboard() {
   const openSubawardsForRecipient = useCallback((recipientName) => {
     setSubawardRecipient(recipientName || '')
     setSubawardModalOpen(true)
-  }, [])
+    
+    // Debug: Log the Award IDs being collected
+    const allData = sidebarFilteredData || filteredData || data || []
+    const matchingRows = allData.filter((r) => {
+      if (!r) return false
+      const recipientNameField = r['Recipient Name'] || r['Recipient Name'] || r.recipientName
+      return recipientNameField === recipientName
+    })
+    
+    const awardIds = matchingRows.map((r) => {
+      // Try multiple field name variations
+      return r['Award ID'] || r['AwardID'] || r.awardId || r.award_id || r.id || ''
+    }).filter((id) => id && id !== '')
+    
+    // Debug: Check if Award ID column exists
+    const firstRow = allData[0]
+    const hasAwardIdColumn = firstRow && ('Award ID' in firstRow || 'AwardID' in firstRow || 'awardId' in firstRow)
+    const columnsList = columns || []
+    const hasAwardIdInColumns = columnsList.includes('Award ID') || columnsList.includes('AwardID')
+    
+    console.log('openSubawardsForRecipient:', { 
+      recipientName, 
+      awardIds, 
+      awardIdsCount: awardIds.length,
+      matchingRowsCount: matchingRows.length,
+      totalRows: allData.length,
+      hasAwardIdColumn,
+      hasAwardIdInColumns,
+      columns: columnsList,
+      firstRowKeys: firstRow ? Object.keys(firstRow) : []
+    })
+    
+    if (awardIds.length === 0 && matchingRows.length > 0) {
+      console.warn('No Award IDs found! Sample row:', matchingRows[0])
+    }
+  }, [sidebarFilteredData, filteredData, data, columns])
 
   const clearChartFilter = () => {
     setChartFilter(null)
@@ -1291,14 +1332,34 @@ function Dashboard() {
       <div className="analytics-watermark-icons"></div>
       <Navbar />
       
-      {/* Date Range Slider - Top of Dashboard */}
-      {selectedDate && dateColumns.includes(selectedDate) && (
-        <DateRangeSlider
-          data={data}
-          selectedDate={selectedDate}
-          onFilterChange={handleDateRangeFilter}
-        />
-      )}
+      {/* Date Range Slider and Network View Button - Top of Dashboard */}
+      <div className="bg-white border-b border-gray-200 shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between py-3">
+            <div className="flex-1">
+              {selectedDate && dateColumns.includes(selectedDate) && (
+                <DateRangeSlider
+                  data={data}
+                  selectedDate={selectedDate}
+                  onFilterChange={handleDateRangeFilter}
+                />
+              )}
+            </div>
+            <div className="ml-4">
+              <button
+                onClick={() => navigate('/network')}
+                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg hover:from-purple-700 hover:to-blue-700 transition-all shadow-md hover:shadow-lg font-medium text-sm"
+                title="Open Network Visualization (SAS Visual Investigator style)"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+                Network View
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {/* Header */}
@@ -1645,9 +1706,16 @@ function Dashboard() {
         recipientName={subawardRecipient}
         primeAwardIds={
           (sidebarFilteredData || filteredData || data || [])
-            ?.filter((r) => r && r['Recipient Name'] === subawardRecipient)
-            ?.map((r) => r['Award ID'])
-            ?.filter(Boolean) || []
+            ?.filter((r) => {
+              if (!r) return false
+              const recipientName = r['Recipient Name'] || r['Recipient Name'] || r.recipientName
+              return recipientName === subawardRecipient
+            })
+            ?.map((r) => {
+              // Try multiple field name variations
+              return r['Award ID'] || r['AwardID'] || r.awardId || r.award_id || r.id || ''
+            })
+            ?.filter((id) => id && id !== '') || []
         }
       />
     </div>

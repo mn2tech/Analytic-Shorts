@@ -2,7 +2,7 @@ import { useMemo, memo } from 'react'
 import { parseNumericValue } from '../utils/numberUtils'
 
 function MetricCards({ data, numericColumns, selectedNumeric, stats }) {
-  if (!data || data.length === 0 || !stats) return null
+  if (!data || data.length === 0 || !stats || !selectedNumeric) return null
 
   // Memoize expensive calculations to prevent recalculation on every render
   const metrics = useMemo(() => {
@@ -74,9 +74,25 @@ function MetricCards({ data, numericColumns, selectedNumeric, stats }) {
   }
 
   // Calculate more meaningful metrics
+  // Add defensive check for selectedNumeric
+  if (!selectedNumeric || !data || data.length === 0) {
+    return null
+  }
+
   const values = data
-    .map((row) => parseNumericValue(row[selectedNumeric]))
-    .filter((val) => val !== 0 || row[selectedNumeric] === '0' || row[selectedNumeric] === '$0') // Keep zeros if they're valid
+    .map((row) => {
+      if (!row || !row[selectedNumeric]) {
+        return { value: NaN, originalValue: null }
+      }
+      const value = parseNumericValue(row[selectedNumeric])
+      const originalValue = row[selectedNumeric]
+      return { value, originalValue }
+    })
+    .filter((item) => {
+      // Keep zeros if they're valid (original was '0' or '$0'), or if value is non-zero
+      return !isNaN(item.value) && isFinite(item.value) && (item.value !== 0 || item.originalValue === '0' || item.originalValue === '$0')
+    })
+    .map((item) => item.value)
 
   if (values.length === 0) return null
 

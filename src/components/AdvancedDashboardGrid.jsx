@@ -4,8 +4,10 @@ import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
 import DashboardWidget from './DashboardWidget'
 import WidgetRenderer from './widgets/WidgetRenderer'
+import WidgetConfigModal from './WidgetConfigModal'
 import { WIDGET_CONFIGS, DEFAULT_WIDGETS, getDefaultLayouts } from '../config/widgetConfig'
 import { saveLayouts, loadLayouts, saveWidgetVisibility, loadWidgetVisibility, validateAndFixLayouts } from '../utils/layoutPersistence'
+import { analyzeDataAndSuggestWidgets, generateDynamicLayouts } from '../utils/dataAnalysis'
 
 function AdvancedDashboardGrid({ 
   data, 
@@ -16,11 +18,17 @@ function AdvancedDashboardGrid({
   onChartFilter, 
   chartFilter, 
   categoricalColumns,
+  numericColumns = [],
+  dateColumns = [],
+  viewMode = 'edit',
   onLayoutChange: externalOnLayoutChange // Callback to notify parent of layout changes
 }) {
   const [layouts, setLayouts] = useState({})
   const [widgetVisibility, setWidgetVisibility] = useState({})
+  const [widgetConfigs, setWidgetConfigs] = useState({}) // Store per-widget configurations
   const [isDragging, setIsDragging] = useState(false)
+  const [configModalOpen, setConfigModalOpen] = useState(false)
+  const [configuringWidgetId, setConfiguringWidgetId] = useState(null)
   
   // Helper function to fix overlapping widgets in a layout
   // This function ensures NO widgets overlap by repositioning them in a clean grid
@@ -213,23 +221,16 @@ function AdvancedDashboardGrid({
     }, 0) // Defer to next event loop tick
   }, [])
 
-  // Initialize layouts and visibility
+  // Analyze data and generate dynamic widgets
+  const dataAnalysis = useMemo(() => {
+    if (!data || data.length === 0) {
+      return { suggestedWidgets: [], widgetConfigs: {}, defaultSelections: {} }
+    }
+    return analyzeDataAndSuggestWidgets(data, numericColumns, categoricalColumns, dateColumns)
+  }, [data, numericColumns, categoricalColumns, dateColumns])
+
+  // Initialize layouts and visibility based on data analysis
   useEffect(() => {
-    // Always start with clean default layouts to ensure no overlaps
-    // This ensures a standard canvas layout
-    const defaultLayouts = getDefaultLayouts()
-    
-    // ALWAYS apply overlap fixing to defaults
-    const fixedDefaults = {}
-    Object.keys(defaultLayouts).forEach(bp => {
-      if (Array.isArray(defaultLayouts[bp])) {
-        const cols = bp === 'lg' ? 12 : bp === 'md' ? 10 : 6
-        fixedDefaults[bp] = fixOverlappingWidgets(defaultLayouts[bp], cols)
-      } else {
-        fixedDefaults[bp] = []
-      }
-    })
-    
     // Check if layouts were passed from shared dashboard (via URL params or localStorage)
     const urlParams = new URLSearchParams(window.location.search)
     const pathParts = window.location.pathname.split('/shared/')
@@ -263,6 +264,7 @@ function AdvancedDashboardGrid({
     // Validate and fix saved layouts
     const validatedLayouts = savedLayouts ? validateAndFixLayouts(savedLayouts) : null
     
+    // If we have saved layouts, use them
     if (validatedLayouts && typeof validatedLayouts === 'object' && !Array.isArray(validatedLayouts) && Object.keys(validatedLayouts).length > 0) {
       // ALWAYS fix overlaps in validated layouts
       const fixedLayouts = {}
@@ -275,22 +277,46 @@ function AdvancedDashboardGrid({
         }
       })
       setLayouts(fixedLayouts)
+    } else if (dataAnalysis.suggestedWidgets.length > 0) {
+      // Generate dynamic layouts based on data analysis
+      const dynamicLayouts = generateDynamicLayouts(dataAnalysis.suggestedWidgets)
+      setLayouts(dynamicLayouts)
+      // Set widget configs from analysis
+      setWidgetConfigs(dataAnalysis.widgetConfigs)
     } else {
-      // Use clean default layouts (already fixed for overlaps)
+      // Fallback to default layouts if no data or suggestions
+      const defaultLayouts = getDefaultLayouts()
+      const fixedDefaults = {}
+      Object.keys(defaultLayouts).forEach(bp => {
+        if (Array.isArray(defaultLayouts[bp])) {
+          const cols = bp === 'lg' ? 12 : bp === 'md' ? 10 : 6
+          fixedDefaults[bp] = fixOverlappingWidgets(defaultLayouts[bp], cols)
+        } else {
+          fixedDefaults[bp] = []
+        }
+      })
       setLayouts(fixedDefaults)
     }
     
+    // Set widget visibility based on suggested widgets or saved state
     if (savedVisibility && typeof savedVisibility === 'object' && !Array.isArray(savedVisibility) && Object.keys(savedVisibility).length > 0) {
       setWidgetVisibility(savedVisibility)
+    } else if (dataAnalysis.suggestedWidgets.length > 0) {
+      // Make suggested widgets visible
+      const dynamicVisibility = {}
+      dataAnalysis.suggestedWidgets.forEach(id => {
+        dynamicVisibility[id] = true
+      })
+      setWidgetVisibility(dynamicVisibility)
     } else {
-      // All widgets visible by default
+      // All default widgets visible
       const defaultVisibility = {}
       DEFAULT_WIDGETS.forEach(id => {
         defaultVisibility[id] = true
       })
       setWidgetVisibility(defaultVisibility)
     }
-  }, [])
+  }, [dataAnalysis])
 
   // Save layouts when they change (but not during drag) and notify parent
   // Use debouncing to prevent excessive updates
@@ -298,6 +324,9 @@ function AdvancedDashboardGrid({
     if (layouts && typeof layouts === 'object' && Object.keys(layouts).length > 0 && !isDragging) {
       // Save to localStorage immediately (lightweight operation)
       saveLayouts(layouts)
+      // Debug: Check if layouts are saved
+      console.log('Saved layouts:', localStorage.getItem('dashboard_layouts'))
+      console.log('Saved visibility:', localStorage.getItem('dashboard_widget_visibility'))
       
       // Debounce parent notification to avoid blocking UI
       const timeoutId = setTimeout(() => {
@@ -319,6 +348,8 @@ function AdvancedDashboardGrid({
   useEffect(() => {
     if (widgetVisibility && typeof widgetVisibility === 'object' && Object.keys(widgetVisibility).length > 0) {
       saveWidgetVisibility(widgetVisibility)
+      // Debug: Check if visibility is saved
+      console.log('Saved visibility:', localStorage.getItem('dashboard_widget_visibility'))
     }
   }, [widgetVisibility])
 
@@ -736,22 +767,35 @@ function AdvancedDashboardGrid({
           const config = WIDGET_CONFIGS[widgetId]
           if (!config) return null
           
+          // Use dynamic config if available, otherwise use defaults
+          const widgetConfig = widgetConfigs[widgetId] || {}
+          const widgetTitle = widgetConfig.title || config.title
+          const widgetNumeric = widgetConfig.selectedNumeric || selectedNumeric
+          const widgetCategorical = widgetConfig.selectedCategorical || selectedCategorical
+          const widgetDate = widgetConfig.selectedDate || selectedDate
+          
           try {
             return (
               <div key={widgetId}>
                 <DashboardWidget
                   id={widgetId}
-                  title={config.title}
+                  title={widgetTitle}
                   onDelete={handleDeleteWidget}
+                  onConfigure={(id) => {
+                    setConfiguringWidgetId(id)
+                    setConfigModalOpen(true)
+                  }}
+                  isConfigured={!!(widgetConfig.selectedNumeric || widgetConfig.selectedCategorical || widgetConfig.selectedDate)}
                   isDragging={isDragging}
+                  viewMode={viewMode}
                 >
                   <WidgetRenderer
                     widgetId={widgetId}
                     data={data}
                     filteredData={filteredData}
-                    selectedNumeric={selectedNumeric}
-                    selectedCategorical={selectedCategorical}
-                    selectedDate={selectedDate}
+                    selectedNumeric={widgetNumeric}
+                    selectedCategorical={widgetCategorical}
+                    selectedDate={widgetDate}
                     chartFilter={chartFilter}
                     onChartFilter={onChartFilter}
                     categoricalColumns={categoricalColumns}
@@ -771,6 +815,30 @@ function AdvancedDashboardGrid({
           }
         })}
       </GridLayout>
+      
+      {/* Widget Configuration Modal */}
+      {configModalOpen && configuringWidgetId && (
+        <WidgetConfigModal
+          isOpen={configModalOpen}
+          widgetId={configuringWidgetId}
+          currentConfig={widgetConfigs[configuringWidgetId] || {}}
+          numericColumns={numericColumns}
+          categoricalColumns={categoricalColumns}
+          dateColumns={dateColumns}
+          onSave={(config) => {
+            setWidgetConfigs(prev => ({
+              ...prev,
+              [configuringWidgetId]: config
+            }))
+            setConfigModalOpen(false)
+            setConfiguringWidgetId(null)
+          }}
+          onClose={() => {
+            setConfigModalOpen(false)
+            setConfiguringWidgetId(null)
+          }}
+        />
+      )}
     </div>
   )
 }
