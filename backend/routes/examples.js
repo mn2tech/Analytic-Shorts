@@ -1,5 +1,8 @@
 const express = require('express')
 const axios = require('axios')
+const fs = require('fs')
+const path = require('path')
+const Papa = require('papaparse')
 const { detectColumnTypes, processData } = require('../controllers/dataProcessor')
 
 const router = express.Router()
@@ -638,18 +641,33 @@ router.get('/usaspending/subawards', async (req, res) => {
       .filter(Boolean)
       .slice(0, 10)
 
-    // NOTE: USASpending subaward data is separate from prime award data.
-    // This endpoint structure is based on USASpending v2 conventions and may evolve.
-    const apiUrl = 'https://api.usaspending.gov/api/v2/awards/subawards/'
+    // NOTE: USASpending subaward data is queried through the search endpoint
+    // with filters for prime_award_id. Subawards are returned as regular awards
+    // that have a parent award relationship.
+    const apiUrl = 'https://api.usaspending.gov/api/v2/search/spending_by_award/'
 
     const allResults = []
 
     for (const award_id of awardIds) {
+      // Try different filter approaches - USASpending API may not support prime_award_id filter
+      // Try using the search endpoint with parent_award_id or related filters
       const body = {
-        award_id,
-        limit: Math.min(limit, 500),
+        filters: {
+          // Try parent_award_id or prime_award_id - API may use different field names
+          parent_award_id: award_id,
+          award_type_codes: ['A', 'C'],
+        },
+        fields: [
+          'Award ID',
+          'Award Amount',
+          'Recipient Name',
+          'Start Date',
+          'Awarding Agency',
+          'Description',
+        ],
         page: 1,
-        sort: 'subaward_amount',
+        limit: Math.min(limit, 500),
+        sort: 'Award Amount',
         order: 'desc',
       }
 
@@ -659,41 +677,57 @@ router.get('/usaspending/subawards', async (req, res) => {
           timeout: 30000,
         })
         const results = resp.data?.results || resp.data?.data || []
-        results.forEach((r) => allResults.push({ ...r, __prime_award_id: award_id }))
+        if (results.length > 0) {
+          results.forEach((r) => allResults.push({ ...r, __prime_award_id: award_id }))
+        } else {
+          // If parent_award_id doesn't work, try prime_award_id
+          const body2 = {
+            filters: {
+              prime_award_id: award_id,
+              award_type_codes: ['A', 'C'],
+            },
+            fields: [
+              'Award ID',
+              'Award Amount',
+              'Recipient Name',
+              'Start Date',
+              'Awarding Agency',
+              'Description',
+            ],
+            page: 1,
+            limit: Math.min(limit, 500),
+            sort: 'Award Amount',
+            order: 'desc',
+          }
+          try {
+            const resp2 = await axios.post(apiUrl, body2, {
+              headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+              timeout: 30000,
+            })
+            const results2 = resp2.data?.results || resp2.data?.data || []
+            results2.forEach((r) => allResults.push({ ...r, __prime_award_id: award_id }))
+          } catch (e2) {
+            // Both approaches failed - this award may not have subawards or API doesn't support this filter
+            console.log(`No subawards found for award_id: ${award_id} (tried parent_award_id and prime_award_id)`)
+          }
+        }
       } catch (e) {
         // If one award id fails, continue with others
         console.error('Subawards fetch failed for award_id:', award_id, e?.response?.status || e?.message)
+        if (e?.response?.data) {
+          console.error('Error details:', JSON.stringify(e.response.data).substring(0, 200))
+        }
       }
     }
 
     // Transform into a generic table
+    // The API returns awards with fields like 'Recipient Name', 'Award Amount', etc.
     const transformed = allResults.map((r) => {
-      const subName =
-        r.subawardee_name ||
-        r.sub_awardee_name ||
-        r.awardee_name ||
-        r.recipient_name ||
-        r.subaward_recipient_name ||
-        'Unknown'
-
-      const subAmount = parseFloat(
-        r.subaward_amount ||
-          r.sub_award_amount ||
-          r.amount ||
-          r.total_obligation ||
-          0
-      )
-
-      const subDate =
-        r.subaward_action_date ||
-        r.sub_award_action_date ||
-        r.action_date ||
-        r.subaward_date ||
-        ''
-
-      const primeAwardId = r.__prime_award_id || r.award_id || ''
-
-      const desc = r.description || r.subaward_description || ''
+      const subName = r['Recipient Name'] || r.recipient_name || 'Unknown'
+      const subAmount = parseFloat(r['Award Amount'] || r.award_amount || 0)
+      const subDate = r['Start Date'] || r.start_date || r.action_date || ''
+      const primeAwardId = r.__prime_award_id || ''
+      const desc = r.Description || r.description || ''
 
       return {
         'Prime Award ID': primeAwardId,
@@ -723,6 +757,290 @@ router.get('/usaspending/subawards', async (req, res) => {
       error: 'Failed to fetch subawards',
       message: err?.message || 'Unknown error',
     })
+  }
+})
+
+// Network visualization example - ideal for SAS Visual Investigator style analysis
+router.get('/network', (req, res) => {
+  try {
+    // Read the network data CSV file
+    // Try multiple possible paths
+    const possiblePaths = [
+      path.join(__dirname, '../../sample-network-data.csv'), // From backend/routes/
+      path.join(__dirname, '../../../sample-network-data.csv'), // Alternative
+      path.join(process.cwd(), 'sample-network-data.csv') // From project root
+    ]
+    
+    let csvPath = null
+    for (const testPath of possiblePaths) {
+      if (fs.existsSync(testPath)) {
+        csvPath = testPath
+        break
+      }
+    }
+    
+    if (!csvPath) {
+      console.error('Network data file not found. Tried paths:', possiblePaths)
+      console.error('__dirname:', __dirname)
+      console.error('process.cwd():', process.cwd())
+      return res.status(404).json({ 
+        error: 'Network example data file not found',
+        message: `File not found. Tried: ${possiblePaths.join(', ')}`,
+        currentDir: __dirname,
+        cwd: process.cwd()
+      })
+    }
+    
+    console.log('Loading network data from:', csvPath)
+    
+    let csvContent
+    try {
+      csvContent = fs.readFileSync(csvPath, 'utf-8')
+      console.log('CSV file read successfully, length:', csvContent.length)
+    } catch (readError) {
+      console.error('Error reading CSV file:', readError)
+      return res.status(500).json({
+        error: 'Failed to read network data file',
+        message: readError.message
+      })
+    }
+    
+    // Use papaparse for proper CSV parsing (handles quoted fields, commas in values, etc.)
+    let parseResult
+    try {
+      parseResult = Papa.parse(csvContent, {
+        header: true,
+        skipEmptyLines: true,
+        transformHeader: (header) => header.trim(),
+        transform: (value) => value.trim()
+      })
+      console.log('CSV parsed successfully, rows:', parseResult.data.length)
+    } catch (parseError) {
+      console.error('Error parsing CSV:', parseError)
+      return res.status(500).json({
+        error: 'Failed to parse CSV file',
+        message: parseError.message
+      })
+    }
+
+    if (parseResult.errors && parseResult.errors.length > 0) {
+      console.warn('CSV parsing warnings:', parseResult.errors)
+    }
+
+    const data = parseResult.data.filter(row => {
+      // Filter out completely empty rows
+      return Object.values(row).some(val => val && val.toString().trim() !== '')
+    })
+
+    if (data.length === 0) {
+      return res.status(400).json({ 
+        error: 'No data found',
+        message: 'CSV file contains no valid data rows'
+      })
+    }
+
+    console.log('Filtered data rows:', data.length)
+
+    // Try to parse Amount column as number
+    const processedData = data.map(row => {
+      const processed = { ...row }
+      if (processed.Amount && !isNaN(processed.Amount)) {
+        processed.Amount = parseFloat(processed.Amount)
+      }
+      return processed
+    })
+
+    // Detect column types
+    let columnTypes
+    let finalData
+    try {
+      columnTypes = detectColumnTypes(processedData)
+      console.log('Column types detected:', {
+        numeric: columnTypes.numericColumns,
+        categorical: columnTypes.categoricalColumns,
+        date: columnTypes.dateColumns
+      })
+      finalData = processDataPreservingNumbers(processedData, columnTypes.numericColumns)
+    } catch (detectError) {
+      console.error('Error detecting column types:', detectError)
+      return res.status(500).json({
+        error: 'Failed to process data',
+        message: detectError.message
+      })
+    }
+
+    const columns = Object.keys(finalData[0] || {})
+
+    console.log(`Network example loaded: ${finalData.length} rows, ${columns.length} columns`)
+
+    res.json({
+      data: finalData,
+      columns: columns,
+      numericColumns: columnTypes.numericColumns,
+      categoricalColumns: columnTypes.categoricalColumns,
+      dateColumns: columnTypes.dateColumns,
+      rowCount: finalData.length
+    })
+  } catch (error) {
+    console.error('Error loading network example:', error)
+    res.status(500).json({ 
+      error: 'Failed to load network example data',
+      message: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    })
+  }
+})
+
+// Route to fetch unemployment rate data from BLS API
+router.get('/unemployment', async (req, res) => {
+  try {
+    // Get query parameters
+    const startYear = parseInt(req.query.start_year) || new Date().getFullYear() - 5 // Default to last 5 years
+    const endYear = parseInt(req.query.end_year) || new Date().getFullYear()
+    const blsApiKey = process.env.BLS_API_KEY || null // Optional API key for v2.0 (v1.0 works without key)
+    
+    // BLS API endpoint
+    const apiUrl = 'https://api.bls.gov/publicAPI/v2/timeseries/data/'
+    
+    // National unemployment rate series ID
+    const seriesId = 'LNS14000000' // U.S. unemployment rate, seasonally adjusted
+    
+    // Build request body
+    const requestBody = {
+      seriesid: [seriesId],
+      startyear: startYear.toString(),
+      endyear: endYear.toString(),
+      registrationkey: blsApiKey || undefined // Only include if API key is provided
+    }
+    
+    // Remove undefined values
+    if (!requestBody.registrationkey) {
+      delete requestBody.registrationkey
+    }
+    
+    console.log('Fetching BLS unemployment data from:', apiUrl)
+    console.log('Request parameters:', { startYear, endYear, hasApiKey: !!blsApiKey })
+    
+    // Fetch data from BLS API
+    let response
+    try {
+      response = await axios.post(apiUrl, requestBody, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        timeout: 30000 // 30 second timeout
+      })
+    } catch (apiError) {
+      if (apiError.response) {
+        console.error('BLS API Error Response:', {
+          status: apiError.response.status,
+          statusText: apiError.response.statusText,
+          data: JSON.stringify(apiError.response.data, null, 2)
+        })
+        throw new Error(`BLS API error (${apiError.response.status}): ${JSON.stringify(apiError.response.data)}`)
+      }
+      throw apiError
+    }
+    
+    const apiData = response.data
+    console.log('BLS API response status:', response.status)
+    console.log('BLS API status:', apiData.status)
+    
+    // Check for API errors
+    if (apiData.status !== 'REQUEST_SUCCEEDED') {
+      const errorMessage = apiData.message?.[0] || 'Unknown error from BLS API'
+      console.error('BLS API error:', errorMessage)
+      return res.status(500).json({
+        error: 'BLS API request failed',
+        message: errorMessage,
+        hint: 'The BLS API may require registration for v2.0. You can register at https://www.bls.gov/developers/api_signature_v2.htm',
+        documentation: 'https://www.bls.gov/developers/api_signature_v2.htm'
+      })
+    }
+    
+    // Extract data from response
+    const results = apiData.Results?.series?.[0]?.data || []
+    
+    if (results.length === 0) {
+      return res.status(404).json({
+        error: 'No unemployment data found',
+        message: `No data available for the period ${startYear}-${endYear}`,
+        hint: 'Try adjusting the start_year and end_year parameters'
+      })
+    }
+    
+    // Transform BLS data to our format
+    // BLS returns data in reverse chronological order (newest first)
+    // We'll reverse it to show oldest first for better time series visualization
+    const transformedData = results
+      .reverse()
+      .map((item) => {
+        // BLS format: year, period (M01-M12 for months), value
+        const year = item.year
+        const period = item.period
+        const month = period.replace('M', '') // Convert M01 to 01, M12 to 12
+        const monthName = new Date(year, parseInt(month) - 1).toLocaleString('default', { month: 'long' })
+        const date = `${year}-${month.padStart(2, '0')}-01` // Use first day of month
+        const unemploymentRate = parseFloat(item.value)
+        
+        return {
+          Date: date,
+          Year: year.toString(),
+          Month: monthName,
+          'Unemployment Rate (%)': unemploymentRate,
+          Period: period
+        }
+      })
+    
+    // Process the data
+    const columns = Object.keys(transformedData[0])
+    const { numericColumns, categoricalColumns, dateColumns } = detectColumnTypes(transformedData, columns)
+    const processedData = processDataPreservingNumbers(transformedData, numericColumns)
+    
+    res.json({
+      data: processedData,
+      columns,
+      numericColumns,
+      categoricalColumns,
+      dateColumns,
+      rowCount: processedData.length,
+      source: 'Bureau of Labor Statistics (BLS) API',
+      series: 'LNS14000000 (U.S. Unemployment Rate, Seasonally Adjusted)',
+      filters: {
+        start_year: startYear,
+        end_year: endYear
+      },
+      note: blsApiKey 
+        ? 'Using BLS API v2.0 with registration key' 
+        : 'Using BLS API v1.0 (no registration required). For higher rate limits, register at https://www.bls.gov/developers/api_signature_v2.htm'
+    })
+  } catch (error) {
+    console.error('Error fetching BLS unemployment data:', error.message)
+    if (error.response) {
+      res.status(500).json({
+        error: 'Failed to fetch unemployment data',
+        message: error.message,
+        apiError: error.response.data,
+        status: error.response.status,
+        hint: 'The BLS API may be temporarily unavailable. Check https://www.bls.gov/developers/ for status.',
+        documentation: 'https://www.bls.gov/developers/api_signature_v2.htm'
+      })
+    } else if (error.request) {
+      res.status(500).json({
+        error: 'Failed to fetch unemployment data',
+        message: 'No response from BLS API',
+        hint: 'The BLS API may be temporarily unavailable. Check your internet connection.',
+        documentation: 'https://www.bls.gov/developers/api_signature_v2.htm'
+      })
+    } else {
+      res.status(500).json({
+        error: 'Failed to fetch unemployment data',
+        message: error.message,
+        hint: 'Check backend logs for more details.',
+        documentation: 'https://www.bls.gov/developers/api_signature_v2.htm'
+      })
+    }
   }
 })
 
