@@ -112,10 +112,23 @@ function MetricCards({ data, numericColumns, selectedNumeric, stats }) {
   // Calculate coefficient of variation (relative variability)
   const cv = stats.avg > 0 ? (metrics.stdDev / stats.avg) * 100 : 0
 
+  // Detect if this is percentage/rate data (shouldn't show "Total Sum")
+  const isPercentageData = selectedNumeric.toLowerCase().includes('%') || 
+                           selectedNumeric.toLowerCase().includes('rate') ||
+                           selectedNumeric.toLowerCase().includes('percentage') ||
+                           (stats.max <= 100 && stats.min >= 0 && stats.avg < 50) // Heuristic: likely percentage if 0-100 range
+
+  // Calculate range (more meaningful for percentage data)
+  const range = stats.max - stats.min
+
+  // Build card data - conditionally show "Total Sum" or "Range" based on data type
   const cardData = [
     { label: 'Total Items', value: metrics.totalItems, color: 'gray' },
     { label: 'Engagement Rate', value: formatValue(metrics.engagementRate, 'percentage'), color: 'green' },
-    { label: 'Total Sum', value: formatValue(stats.sum), color: 'purple' },
+    // Show "Range" for percentage data, "Total Sum" for other numeric data
+    isPercentageData 
+      ? { label: 'Range', value: formatValue(range), color: 'purple' }
+      : { label: 'Total Sum', value: formatValue(stats.sum), color: 'purple' },
     { label: 'Average Value', value: formatValue(stats.avg), color: 'indigo' },
     { label: 'Median Value', value: formatValue(metrics.median), color: 'pink' },
     { label: 'Max Value', value: formatValue(stats.max), color: 'blue' },
