@@ -1050,7 +1050,7 @@ router.get('/cdc-health', async (req, res) => {
     // Get query parameters
     const startYear = parseInt(req.query.start_year) || new Date().getFullYear() - 5 // Default to last 5 years
     const endYear = parseInt(req.query.end_year) || new Date().getFullYear()
-    const metric = req.query.metric || 'mortality' // mortality, birth_rate, life_expectancy
+    const metric = req.query.metric || 'mortality' // mortality, birth_rate, life_expectancy, or 'all' for all metrics
     
     // CDC Data API endpoint - Using CDC Wonder API alternative or public health data
     // For this implementation, we'll use a CDC public dataset endpoint
@@ -1069,6 +1069,11 @@ router.get('/cdc-health', async (req, res) => {
     const transformedData = []
     const currentYear = new Date().getFullYear()
     
+    // Determine which metrics to include
+    const metricsToInclude = metric === 'all' 
+      ? ['mortality', 'birth_rate', 'life_expectancy']
+      : [metric]
+    
     // Generate monthly data for the requested range
     for (let year = startYear; year <= endYear; year++) {
       for (let month = 1; month <= 12; month++) {
@@ -1080,30 +1085,36 @@ router.get('/cdc-health', async (req, res) => {
         const date = `${year}-${String(month).padStart(2, '0')}-01`
         const monthName = new Date(year, month - 1).toLocaleString('default', { month: 'long' })
         
-        // Simulate health metrics (in production, fetch from CDC API)
-        // These are example values - replace with actual API calls
-        let healthMetric = 0
-        if (metric === 'mortality') {
-          // Age-adjusted death rate per 100,000 (example values)
-          healthMetric = 750 + Math.random() * 50 - (year - startYear) * 2 // Decreasing trend
-        } else if (metric === 'birth_rate') {
-          // Births per 1,000 population (example values)
-          healthMetric = 12 + Math.random() * 1
-        } else if (metric === 'life_expectancy') {
-          // Life expectancy in years (example values)
-          healthMetric = 78 + (year - startYear) * 0.1 + Math.random() * 0.5 // Increasing trend
+        // Generate data for each metric
+        for (const currentMetric of metricsToInclude) {
+          // Simulate health metrics (in production, fetch from CDC API)
+          // These are example values - replace with actual API calls
+          let healthMetric = 0
+          let metricName = ''
+          
+          if (currentMetric === 'mortality') {
+            // Age-adjusted death rate per 100,000 (example values)
+            healthMetric = 750 + Math.random() * 50 - (year - startYear) * 2 // Decreasing trend
+            metricName = 'Death Rate (per 100,000)'
+          } else if (currentMetric === 'birth_rate') {
+            // Births per 1,000 population (example values)
+            healthMetric = 12 + Math.random() * 1
+            metricName = 'Birth Rate (per 1,000)'
+          } else if (currentMetric === 'life_expectancy') {
+            // Life expectancy in years (example values)
+            healthMetric = 78 + (year - startYear) * 0.1 + Math.random() * 0.5 // Increasing trend
+            metricName = 'Life Expectancy (years)'
+          }
+          
+          transformedData.push({
+            Date: date,
+            Year: year.toString(),
+            Month: monthName,
+            'Health Metric': parseFloat(healthMetric.toFixed(2)),
+            Metric: metricName,
+            Period: `M${String(month).padStart(2, '0')}`
+          })
         }
-        
-        transformedData.push({
-          Date: date,
-          Year: year.toString(),
-          Month: monthName,
-          'Health Metric': parseFloat(healthMetric.toFixed(2)),
-          Metric: metric === 'mortality' ? 'Death Rate (per 100,000)' : 
-                  metric === 'birth_rate' ? 'Birth Rate (per 1,000)' : 
-                  'Life Expectancy (years)',
-          Period: `M${String(month).padStart(2, '0')}`
-        })
       }
     }
     

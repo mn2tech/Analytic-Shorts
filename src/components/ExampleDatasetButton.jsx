@@ -56,6 +56,11 @@ function ExampleDatasetButton({ onDatasetLoad, onError }) {
       endpoint: '/api/example/unemployment',
     },
     {
+      name: 'CDC Health Data - All Metrics',
+      description: 'All health metrics: Death Rate, Birth Rate, and Life Expectancy from CDC',
+      endpoint: '/api/example/cdc-health?metric=all',
+    },
+    {
       name: 'CDC Health Data - Death Rate',
       description: 'Age-adjusted death rate per 100,000 population from CDC',
       endpoint: '/api/example/cdc-health?metric=mortality',
