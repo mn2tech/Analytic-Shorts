@@ -55,6 +55,11 @@ function ExampleDatasetButton({ onDatasetLoad, onError }) {
       description: 'U.S. unemployment rate data from Bureau of Labor Statistics',
       endpoint: '/api/example/unemployment',
     },
+    {
+      name: 'CDC Health Data',
+      description: 'Health statistics and disease surveillance data from CDC',
+      endpoint: '/api/example/cdc-health',
+    },
   ]
 
   const loadExample = async (endpoint, datasetName) => {

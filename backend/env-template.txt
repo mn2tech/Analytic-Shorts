@@ -20,6 +20,10 @@ FRONTEND_URL=http://localhost:3000
 # Register at https://www.bls.gov/developers/api_signature_v2.htm
 # BLS_API_KEY=your_bls_api_key_here
 
+# CDC API Key (Optional - for CDC Wonder API access)
+# Register at https://wonder.cdc.gov/ if needed
+# CDC_API_KEY=your_cdc_api_key_here
+
 # CORS Allowed Origins
 ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
 
