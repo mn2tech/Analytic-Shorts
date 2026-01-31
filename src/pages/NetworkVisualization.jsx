@@ -40,18 +40,35 @@ function NetworkVisualization() {
 
   // Check if data is suitable for network visualization
   const isNetworkDataSuitable = useMemo(() => {
-    if (!data || !data.data || !data.data.length) return false
+    if (!data || !data.data || !data.data.length) {
+      console.log('NetworkVisualization: No data available')
+      return false
+    }
     
-    // Check if we have recipient/contractor columns
-    const hasRecipientColumn = data.categoricalColumns?.some(col => 
-      col.toLowerCase().includes('recipient') || 
-      col.toLowerCase().includes('contractor') ||
-      col.toLowerCase().includes('company')
-    ) || data.columns?.some(col => 
-      col.toLowerCase().includes('recipient') || 
-      col.toLowerCase().includes('contractor') ||
-      col.toLowerCase().includes('company')
-    )
+    // Check all possible column sources
+    const allColumns = [
+      ...(data.columns || []),
+      ...(data.categoricalColumns || []),
+      ...(data.data[0] ? Object.keys(data.data[0]) : [])
+    ]
+    
+    // Check if we have recipient/contractor columns (case-insensitive)
+    const hasRecipientColumn = allColumns.some(col => {
+      const colLower = String(col).toLowerCase()
+      return colLower.includes('recipient') || 
+             colLower.includes('contractor') ||
+             colLower.includes('company') ||
+             colLower === 'recipient name' ||
+             colLower === 'prime contractor'
+    })
+    
+    console.log('NetworkVisualization: Data suitability check', {
+      hasData: !!data?.data?.length,
+      allColumns: allColumns.slice(0, 10), // First 10 columns
+      hasRecipientColumn,
+      categoricalColumns: data.categoricalColumns,
+      columns: data.columns
+    })
     
     return hasRecipientColumn
   }, [data])
@@ -111,10 +128,19 @@ function NetworkVisualization() {
       })
     })
 
-      return {
-        nodes: Array.from(nodesMap.values()),
-        links: links
-      }
+    const result = {
+      nodes: Array.from(nodesMap.values()),
+      links: links
+    }
+    
+    console.log('NetworkVisualization: Network data built', {
+      nodeCount: result.nodes.length,
+      linkCount: result.links.length,
+      recipientColumn,
+      recipientGroupsCount: recipientGroups.size
+    })
+
+    return result
     } catch (error) {
       console.error('Error building network data:', error)
       return { nodes: [], links: [] }
