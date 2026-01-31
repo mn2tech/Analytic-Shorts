@@ -249,7 +249,12 @@ function Dashboard() {
         setSelectedNumeric(parsedData.numericColumns[0])
       }
       if (parsedData.categoricalColumns && parsedData.categoricalColumns.length > 0) {
-        setSelectedCategorical(parsedData.categoricalColumns[0])
+        // Auto-select 'Metric' column if available (for CDC health data), otherwise first categorical
+        const metricColumn = parsedData.categoricalColumns.find(col => 
+          col.toLowerCase() === 'metric' || col === 'Metric'
+        )
+        const columnToSelect = metricColumn || parsedData.categoricalColumns[0]
+        setSelectedCategorical(columnToSelect)
       }
       if (parsedData.dateColumns && parsedData.dateColumns.length > 0) {
         setSelectedDate(parsedData.dateColumns[0])
