@@ -16,6 +16,10 @@ FRONTEND_URL=http://localhost:3000
 # OpenAI API Key (Optional - for AI insights)
 # OPENAI_API_KEY=your_openai_api_key_here
 
+# BLS API Key (Optional - for higher rate limits)
+# Register at https://www.bls.gov/developers/api_signature_v2.htm
+# BLS_API_KEY=your_bls_api_key_here
+
 # CORS Allowed Origins
 ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
 

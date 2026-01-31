@@ -18,7 +18,7 @@ const sampleDataForCharts = (data, maxRows = 5000) => {
   return sampled
 }
 
-function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategorical, selectedDate, onChartFilter, chartFilter, onDateRangeFilter }) {
+function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategorical, selectedDate, onChartFilter, chartFilter, onDateRangeFilter, onSubawardDrilldown }) {
   const [hoveredSegment, setHoveredSegment] = useState(null)
   const [chartInsights, setChartInsights] = useState(null)
   const [maximized, setMaximized] = useState(null) // { type: 'line' | 'pie', title: string } | null
@@ -333,6 +333,17 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
           </h3>
           {hasValidPieData && (
             <div className="flex items-center gap-2">
+              {chartFilter?.type === 'category' &&
+                typeof onSubawardDrilldown === 'function' &&
+                (selectedCategorical === 'Recipient Name' || selectedCategorical === 'Prime contractor') && (
+                  <button
+                    onClick={() => onSubawardDrilldown(chartFilter.value)}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity px-3 py-1.5 text-xs font-medium text-gray-700 hover:text-gray-900 bg-white border border-gray-200 hover:border-gray-300 rounded-lg"
+                    title="Drill down to subcontractors / subawards"
+                  >
+                    Subcontractors
+                  </button>
+                )}
               <button
                 onClick={() =>
                   setMaximized({

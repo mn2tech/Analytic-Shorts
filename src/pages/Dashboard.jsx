@@ -13,6 +13,7 @@ import ForecastChart from '../components/ForecastChart'
 import DataMetadataEditor from '../components/DataMetadataEditor'
 import TimeSeriesReport from '../components/TimeSeriesReport'
 import DateRangeSlider from '../components/DateRangeSlider'
+import SubawardDrilldownModal from '../components/SubawardDrilldownModal'
 import { saveAs } from 'file-saver'
 import { generateShareId, saveSharedDashboard, getShareableUrl, copyToClipboard } from '../utils/shareUtils'
 import { saveDashboard, updateDashboard } from '../services/dashboardService'
@@ -47,6 +48,8 @@ function Dashboard() {
   const [showFilters, setShowFilters] = useState(false)
   const [dashboardLayouts, setDashboardLayouts] = useState(null) // Store widget layouts for sharing
   const [dashboardWidgetVisibility, setDashboardWidgetVisibility] = useState(null) // Store widget visibility for sharing
+  const [subawardModalOpen, setSubawardModalOpen] = useState(false)
+  const [subawardRecipient, setSubawardRecipient] = useState('')
   const hasInitialized = useRef(false)
   const isUpdatingMetadata = useRef(false)
 
@@ -321,6 +324,11 @@ function Dashboard() {
   const handleChartFilter = (filter) => {
     setChartFilter(filter)
   }
+
+  const openSubawardsForRecipient = useCallback((recipientName) => {
+    setSubawardRecipient(recipientName || '')
+    setSubawardModalOpen(true)
+  }, [])
 
   const clearChartFilter = () => {
     setChartFilter(null)
@@ -1573,6 +1581,7 @@ function Dashboard() {
             onChartFilter={handleChartFilter}
             chartFilter={chartFilter}
             onDateRangeFilter={handleDateRangeFilter}
+            onSubawardDrilldown={openSubawardsForRecipient}
           />
         )}
 
@@ -1629,6 +1638,18 @@ function Dashboard() {
           </details>
         </div>
       </div>
+
+      <SubawardDrilldownModal
+        isOpen={subawardModalOpen}
+        onClose={() => setSubawardModalOpen(false)}
+        recipientName={subawardRecipient}
+        primeAwardIds={
+          (sidebarFilteredData || filteredData || data || [])
+            ?.filter((r) => r && r['Recipient Name'] === subawardRecipient)
+            ?.map((r) => r['Award ID'])
+            ?.filter(Boolean) || []
+        }
+      />
     </div>
   )
 }

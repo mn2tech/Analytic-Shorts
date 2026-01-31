@@ -45,6 +45,16 @@ function ExampleDatasetButton({ onDatasetLoad, onError }) {
       description: 'Real-time data from USASpending.gov API',
       endpoint: '/api/example/usaspending/live',
     },
+    {
+      name: 'Network Relationships',
+      description: 'Entity relationships ideal for network visualization (like SAS Visual Investigator)',
+      endpoint: '/api/example/network',
+    },
+    {
+      name: 'Unemployment Rate (BLS)',
+      description: 'U.S. unemployment rate data from Bureau of Labor Statistics',
+      endpoint: '/api/example/unemployment',
+    },
   ]
 
   const loadExample = async (endpoint, datasetName) => {
