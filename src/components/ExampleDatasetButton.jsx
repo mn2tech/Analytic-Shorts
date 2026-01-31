@@ -56,9 +56,19 @@ function ExampleDatasetButton({ onDatasetLoad, onError }) {
       endpoint: '/api/example/unemployment',
     },
     {
-      name: 'CDC Health Data',
-      description: 'Health statistics and disease surveillance data from CDC',
-      endpoint: '/api/example/cdc-health',
+      name: 'CDC Health Data - Death Rate',
+      description: 'Age-adjusted death rate per 100,000 population from CDC',
+      endpoint: '/api/example/cdc-health?metric=mortality',
+    },
+    {
+      name: 'CDC Health Data - Birth Rate',
+      description: 'Births per 1,000 population from CDC',
+      endpoint: '/api/example/cdc-health?metric=birth_rate',
+    },
+    {
+      name: 'CDC Health Data - Life Expectancy',
+      description: 'Life expectancy in years from CDC',
+      endpoint: '/api/example/cdc-health?metric=life_expectancy',
     },
   ]
 
