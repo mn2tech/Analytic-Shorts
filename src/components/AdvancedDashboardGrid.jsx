@@ -276,6 +276,93 @@ function AdvancedDashboardGrid({
           fixedLayouts[bp] = []
         }
       })
+      
+      // Check if budget-insights widget is suggested but not in saved layouts
+      // If so, add it to the layouts
+      if (dataAnalysis.suggestedWidgets.includes('budget-insights')) {
+        const breakpoints = ['lg', 'md', 'sm', 'xs', 'xxs']
+        let widgetAdded = false
+        
+        breakpoints.forEach(bp => {
+          const exists = fixedLayouts[bp]?.some(item => item.i === 'budget-insights')
+          if (!exists) {
+            widgetAdded = true
+            if (!fixedLayouts[bp]) {
+              fixedLayouts[bp] = []
+            }
+            
+            const config = WIDGET_CONFIGS['budget-insights']
+            if (config) {
+              // Find next available position (prefer top-left)
+              const cols = bp === 'lg' ? 12 : bp === 'md' ? 10 : 6
+              const width = config.defaultLayout?.w || 6
+              const height = config.defaultLayout?.h || 4
+              
+              // Try to place at top-left first
+              let foundPosition = false
+              let testY = 0
+              let testX = 0
+              
+              while (!foundPosition && testY < 50) {
+                const testItem = { x: testX, y: testY, w: width, h: height }
+                const overlaps = fixedLayouts[bp].some(item => {
+                  return !(
+                    testItem.x + testItem.w <= item.x ||
+                    item.x + item.w <= testItem.x ||
+                    testItem.y + testItem.h <= item.y ||
+                    item.y + item.h <= testItem.y
+                  )
+                })
+                
+                if (!overlaps) {
+                  foundPosition = true
+                } else {
+                  testX += width
+                  if (testX + width > cols) {
+                    testX = 0
+                    testY += height + 1
+                  }
+                }
+              }
+              
+              // Fallback: place at bottom if no position found
+              if (!foundPosition) {
+                let maxY = 0
+                fixedLayouts[bp].forEach(item => {
+                  if (item.y + item.h > maxY) {
+                    maxY = item.y + item.h
+                  }
+                })
+                testX = 0
+                testY = maxY + 1
+              }
+              
+              const newItem = {
+                i: 'budget-insights',
+                x: testX,
+                y: testY,
+                w: width,
+                h: height,
+                minW: config.minW,
+                minH: config.minH,
+                maxW: config.maxW,
+                maxH: config.maxH
+              }
+              
+              fixedLayouts[bp] = [...fixedLayouts[bp], newItem]
+            }
+          }
+        })
+        
+        // Set widget configs if widget was added
+        if (widgetAdded && dataAnalysis.widgetConfigs['budget-insights']) {
+          setWidgetConfigs(prev => ({
+            ...prev,
+            'budget-insights': dataAnalysis.widgetConfigs['budget-insights']
+          }))
+        }
+      }
+      
       setLayouts(fixedLayouts)
     } else if (dataAnalysis.suggestedWidgets.length > 0) {
       // Generate dynamic layouts based on data analysis
@@ -300,7 +387,12 @@ function AdvancedDashboardGrid({
     
     // Set widget visibility based on suggested widgets or saved state
     if (savedVisibility && typeof savedVisibility === 'object' && !Array.isArray(savedVisibility) && Object.keys(savedVisibility).length > 0) {
-      setWidgetVisibility(savedVisibility)
+      // Ensure budget-insights is visible if it's suggested
+      const updatedVisibility = { ...savedVisibility }
+      if (dataAnalysis.suggestedWidgets.includes('budget-insights')) {
+        updatedVisibility['budget-insights'] = true
+      }
+      setWidgetVisibility(updatedVisibility)
     } else if (dataAnalysis.suggestedWidgets.length > 0) {
       // Make suggested widgets visible
       const dynamicVisibility = {}
