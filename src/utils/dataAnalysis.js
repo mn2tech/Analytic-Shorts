@@ -106,6 +106,24 @@ export function analyzeDataAndSuggestWidgets(data, numericColumns, categoricalCo
     }
   }
 
+  // Detect if this is budget data
+  const isBudgetData = numericColumns?.some(col => 
+    col.toLowerCase().includes('budget') || col.toLowerCase().includes('amount')
+  ) && categoricalColumns?.some(col => 
+    col.toLowerCase().includes('budget') || col.toLowerCase().includes('category')
+  )
+
+  // Budget Insights Widget - automatically add FIRST for budget data
+  if (isBudgetData && hasNumeric && hasCategorical) {
+    suggestedWidgets.unshift('budget-insights') // Add to beginning so it appears first
+    widgetConfigs['budget-insights'] = {
+      title: 'Budget Insights',
+      selectedNumeric: numericCol,
+      selectedCategorical: categoricalCol,
+      selectedDate: dateCol
+    }
+  }
+
   // 3. Donut Chart - if we have categorical + numeric
   if (hasCategorical && hasNumeric) {
     suggestedWidgets.push('donut-chart')
@@ -205,6 +223,7 @@ export function generateDynamicLayouts(widgetIds) {
     'distribution-list': { w: 4, h: 5 },
     'sunburst-chart': { w: 4, h: 5 },
     'forecast-chart': { w: 12, h: 5 },
+    'budget-insights': { w: 4, h: 6 },
     'category-filter': { w: 3, h: 3 },
     'date-range-filter': { w: 3, h: 3 },
     'numeric-range-filter': { w: 3, h: 3 }

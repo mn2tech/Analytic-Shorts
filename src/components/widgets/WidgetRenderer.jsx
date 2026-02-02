@@ -4,6 +4,7 @@ import DistributionListWidget from './DistributionListWidget'
 import BarChartWidget from './BarChartWidget'
 import SunburstChart from '../SunburstChart'
 import ForecastChart from '../ForecastChart'
+import BudgetInsightsWidget from './BudgetInsightsWidget'
 
 /**
  * WidgetRenderer - Renders the appropriate widget component based on widget ID
@@ -71,6 +72,16 @@ function WidgetRenderer({
           selectedNumeric={selectedNumeric}
           selectedDate={selectedDate}
           forecastPeriods={6}
+        />
+      )
+    
+    case 'budget-insights':
+      return (
+        <BudgetInsightsWidget
+          data={filteredData || data}
+          selectedNumeric={selectedNumeric}
+          selectedCategorical={selectedCategorical}
+          selectedDate={selectedDate}
         />
       )
     

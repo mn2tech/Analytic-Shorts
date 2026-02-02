@@ -1,0 +1,222 @@
+import { useMemo } from 'react'
+import { parseNumericValue } from '../../utils/numberUtils'
+
+/**
+ * BudgetInsightsWidget - Automatically generates data stories and insights from budget data
+ * Shows key findings like spending priorities, trends, comparisons, and fiscal health
+ */
+function BudgetInsightsWidget({ data, selectedNumeric, selectedCategorical, selectedDate }) {
+  const insights = useMemo(() => {
+    if (!data || data.length === 0 || !selectedNumeric) {
+      return []
+    }
+
+    const insights = []
+    const numericColumn = selectedNumeric
+    const categoryColumn = selectedCategorical || 'Budget Category'
+    const dateColumn = selectedDate || 'Date' || 'Year' || 'Fiscal Year'
+
+    // Group data by category
+    const categoryTotals = {}
+    const categoryCounts = {}
+    const dateValues = new Map() // date -> { total, categories: {} }
+
+    data.forEach((row) => {
+      const category = row[categoryColumn] || 'Unknown'
+      const value = parseNumericValue(row[numericColumn])
+      const date = row[dateColumn]
+
+      if (!isNaN(value) && isFinite(value)) {
+        categoryTotals[category] = (categoryTotals[category] || 0) + value
+        categoryCounts[category] = (categoryCounts[category] || 0) + 1
+
+        if (date) {
+          if (!dateValues.has(date)) {
+            dateValues.set(date, { total: 0, categories: {} })
+          }
+          const dateData = dateValues.get(date)
+          dateData.total += value
+          dateData.categories[category] = (dateData.categories[category] || 0) + value
+        }
+      }
+    })
+
+    // Insight 1: Spending Priorities (Top Categories)
+    const sortedCategories = Object.entries(categoryTotals)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+
+    if (sortedCategories.length > 0) {
+      const total = Object.values(categoryTotals).reduce((sum, val) => sum + val, 0)
+      const topCategory = sortedCategories[0]
+      const topPercentage = ((topCategory[1] / total) * 100).toFixed(1)
+      
+      insights.push({
+        type: 'priority',
+        title: '💰 Spending Priority',
+        content: `${topCategory[0]} receives the largest allocation at $${topCategory[1].toLocaleString(undefined, { maximumFractionDigits: 0 })} billion (${topPercentage}% of total budget).`,
+        icon: '💰',
+        color: 'blue'
+      })
+    }
+
+    // Insight 2: Category Comparison
+    if (sortedCategories.length >= 2) {
+      const [first, second] = sortedCategories
+      const ratio = (first[1] / second[1]).toFixed(1)
+      insights.push({
+        type: 'comparison',
+        title: '📊 Category Comparison',
+        content: `${first[0]} spending is ${ratio}x larger than ${second[0]} ($${first[1].toLocaleString(undefined, { maximumFractionDigits: 0 })}B vs $${second[1].toLocaleString(undefined, { maximumFractionDigits: 0 })}B).`,
+        icon: '📊',
+        color: 'purple'
+      })
+    }
+
+    // Insight 3: Time Trends (if date data available)
+    if (dateValues.size >= 2) {
+      const sortedDates = Array.from(dateValues.entries()).sort()
+      const firstDate = sortedDates[0]
+      const lastDate = sortedDates[sortedDates.length - 1]
+      const firstTotal = firstDate[1].total
+      const lastTotal = lastDate[1].total
+      const change = lastTotal - firstTotal
+      const changePercent = ((change / firstTotal) * 100).toFixed(1)
+
+      if (Math.abs(changePercent) > 1) {
+        const trend = change > 0 ? 'increased' : 'decreased'
+        insights.push({
+          type: 'trend',
+          title: '📈 Budget Trend',
+          content: `Total budget ${trend} by ${Math.abs(changePercent)}% from ${firstDate[0]} to ${lastDate[0]} ($${Math.abs(change).toLocaleString(undefined, { maximumFractionDigits: 0 })}B ${change > 0 ? 'increase' : 'decrease'}).`,
+          icon: change > 0 ? '📈' : '📉',
+          color: change > 0 ? 'green' : 'red'
+        })
+      }
+    }
+
+    // Insight 4: Fastest Growing Category (if date data available)
+    if (dateValues.size >= 2 && sortedCategories.length > 0) {
+      const sortedDates = Array.from(dateValues.entries()).sort()
+      const categoryGrowth = {}
+
+      sortedCategories.forEach(([category]) => {
+        const firstValue = sortedDates[0][1].categories[category] || 0
+        const lastValue = sortedDates[sortedDates.length - 1][1].categories[category] || 0
+        
+        if (firstValue > 0) {
+          const growth = ((lastValue - firstValue) / firstValue) * 100
+          categoryGrowth[category] = growth
+        }
+      })
+
+      const fastestGrowing = Object.entries(categoryGrowth)
+        .sort((a, b) => b[1] - a[1])[0]
+
+      if (fastestGrowing && fastestGrowing[1] > 5) {
+        insights.push({
+          type: 'growth',
+          title: '🚀 Fastest Growing',
+          content: `${fastestGrowing[0]} shows the strongest growth at ${fastestGrowing[1].toFixed(1)}% increase over the period.`,
+          icon: '🚀',
+          color: 'green'
+        })
+      }
+    }
+
+    // Insight 5: Budget Distribution
+    if (sortedCategories.length >= 3) {
+      const total = Object.values(categoryTotals).reduce((sum, val) => sum + val, 0)
+      const topThreeTotal = sortedCategories.slice(0, 3).reduce((sum, [, val]) => sum + val, 0)
+      const topThreePercent = ((topThreeTotal / total) * 100).toFixed(1)
+      
+      insights.push({
+        type: 'distribution',
+        title: '🎯 Budget Concentration',
+        content: `The top 3 categories account for ${topThreePercent}% of total spending, indicating high budget concentration.`,
+        icon: '🎯',
+        color: 'orange'
+      })
+    }
+
+    // Insight 6: Fiscal Health (if Receipts/Outlays/Surplus data available)
+    const hasReceipts = categoryTotals['Receipts'] !== undefined
+    const hasOutlays = categoryTotals['Outlays'] !== undefined
+    const hasSurplus = categoryTotals['Surplus/Deficit'] !== undefined
+
+    if (hasReceipts && hasOutlays) {
+      const receipts = categoryTotals['Receipts']
+      const outlays = categoryTotals['Outlays']
+      const deficit = outlays - receipts
+      const deficitPercent = ((deficit / receipts) * 100).toFixed(1)
+
+      if (Math.abs(deficitPercent) > 1) {
+        insights.push({
+          type: 'fiscal',
+          title: '💳 Fiscal Health',
+          content: `Outlays exceed receipts by $${Math.abs(deficit).toLocaleString(undefined, { maximumFractionDigits: 0 })}B (${Math.abs(deficitPercent)}% deficit).`,
+          icon: deficit > 0 ? '⚠️' : '✅',
+          color: deficit > 0 ? 'red' : 'green'
+        })
+      }
+    }
+
+    return insights
+  }, [data, selectedNumeric, selectedCategorical, selectedDate])
+
+  if (insights.length === 0) {
+    return (
+      <div className="h-full flex items-center justify-center text-gray-400 text-sm p-4">
+        <div className="text-center">
+          <p>No insights available</p>
+          <p className="text-xs text-gray-400 mt-1">Ensure data has numeric and category columns</p>
+        </div>
+      </div>
+    )
+  }
+
+  const colorClasses = {
+    blue: 'bg-blue-50 border-blue-200 text-blue-900',
+    purple: 'bg-purple-50 border-purple-200 text-purple-900',
+    green: 'bg-green-50 border-green-200 text-green-900',
+    red: 'bg-red-50 border-red-200 text-red-900',
+    orange: 'bg-orange-50 border-orange-200 text-orange-900'
+  }
+
+  return (
+    <div className="h-full overflow-y-auto p-4 space-y-3">
+      <div className="mb-4">
+        <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+          <span>📖</span>
+          <span>Budget Insights</span>
+        </h3>
+        <p className="text-xs text-gray-500 mt-1">
+          Key stories and findings from your budget data
+        </p>
+      </div>
+
+      {insights.map((insight, index) => (
+        <div
+          key={index}
+          className={`border-l-4 rounded-lg p-4 ${colorClasses[insight.color] || colorClasses.blue}`}
+        >
+          <div className="flex items-start gap-3">
+            <span className="text-2xl flex-shrink-0">{insight.icon}</span>
+            <div className="flex-1">
+              <h4 className="font-semibold mb-1">{insight.title}</h4>
+              <p className="text-sm leading-relaxed">{insight.content}</p>
+            </div>
+          </div>
+        </div>
+      ))}
+
+      <div className="mt-4 pt-4 border-t border-gray-200">
+        <p className="text-xs text-gray-500 text-center">
+          💡 Tip: Use filters to explore different budget categories and time periods
+        </p>
+      </div>
+    </div>
+  )
+}
+
+export default BudgetInsightsWidget
