@@ -5,6 +5,9 @@ import BarChartWidget from './BarChartWidget'
 import SunburstChart from '../SunburstChart'
 import ForecastChart from '../ForecastChart'
 import BudgetInsightsWidget from './BudgetInsightsWidget'
+import UnemploymentInsightsWidget from './UnemploymentInsightsWidget'
+import HealthInsightsWidget from './HealthInsightsWidget'
+import SalesInsightsWidget from './SalesInsightsWidget'
 
 /**
  * WidgetRenderer - Renders the appropriate widget component based on widget ID
@@ -78,6 +81,36 @@ function WidgetRenderer({
     case 'budget-insights':
       return (
         <BudgetInsightsWidget
+          data={filteredData || data}
+          selectedNumeric={selectedNumeric}
+          selectedCategorical={selectedCategorical}
+          selectedDate={selectedDate}
+        />
+      )
+    
+    case 'unemployment-insights':
+      return (
+        <UnemploymentInsightsWidget
+          data={filteredData || data}
+          selectedNumeric={selectedNumeric}
+          selectedCategorical={selectedCategorical}
+          selectedDate={selectedDate}
+        />
+      )
+    
+    case 'health-insights':
+      return (
+        <HealthInsightsWidget
+          data={filteredData || data}
+          selectedNumeric={selectedNumeric}
+          selectedCategorical={selectedCategorical}
+          selectedDate={selectedDate}
+        />
+      )
+    
+    case 'sales-insights':
+      return (
+        <SalesInsightsWidget
           data={filteredData || data}
           selectedNumeric={selectedNumeric}
           selectedCategorical={selectedCategorical}

@@ -71,6 +71,36 @@ export const WIDGET_CONFIGS = {
     minH: 4,
     maxW: 6,
     maxH: 10
+  },
+  'unemployment-insights': {
+    id: 'unemployment-insights',
+    title: 'Unemployment Insights',
+    component: 'unemployment-insights',
+    defaultLayout: { i: 'unemployment-insights', x: 0, y: 0, w: 4, h: 6 },
+    minW: 3,
+    minH: 4,
+    maxW: 6,
+    maxH: 10
+  },
+  'health-insights': {
+    id: 'health-insights',
+    title: 'Health Insights',
+    component: 'health-insights',
+    defaultLayout: { i: 'health-insights', x: 0, y: 0, w: 4, h: 6 },
+    minW: 3,
+    minH: 4,
+    maxW: 6,
+    maxH: 10
+  },
+  'sales-insights': {
+    id: 'sales-insights',
+    title: 'Sales Insights',
+    component: 'sales-insights',
+    defaultLayout: { i: 'sales-insights', x: 0, y: 0, w: 4, h: 6 },
+    minW: 3,
+    minH: 4,
+    maxW: 6,
+    maxH: 10
   }
 }
 

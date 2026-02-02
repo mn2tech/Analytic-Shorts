@@ -4,6 +4,9 @@ import SunburstChart from './SunburstChart'
 import ForecastChart from './ForecastChart'
 import ChartInsights from './ChartInsights'
 import BudgetInsightsWidget from './widgets/BudgetInsightsWidget'
+import UnemploymentInsightsWidget from './widgets/UnemploymentInsightsWidget'
+import HealthInsightsWidget from './widgets/HealthInsightsWidget'
+import SalesInsightsWidget from './widgets/SalesInsightsWidget'
 import { parseNumericValue } from '../utils/numberUtils'
 
 const COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444', '#6366f1', '#14b8a6', '#f97316', '#06b6d4']
@@ -27,7 +30,7 @@ function AdvancedDashboard({ data, filteredData, selectedNumeric, selectedCatego
     ? categoricalColumns.find(col => col !== selectedCategorical) || categoricalColumns[1]
     : null
 
-  // Detect if this is budget data
+  // Detect data types for insights widgets
   const isBudgetData = useMemo(() => {
     return numericColumns?.some(col => 
       col.toLowerCase().includes('budget') || col.toLowerCase().includes('amount')
@@ -35,6 +38,33 @@ function AdvancedDashboard({ data, filteredData, selectedNumeric, selectedCatego
       col.toLowerCase().includes('budget') || col.toLowerCase().includes('category')
     )
   }, [numericColumns, categoricalColumns])
+
+  const isUnemploymentData = useMemo(() => {
+    return numericColumns?.some(col => 
+      col.toLowerCase().includes('unemployment') || col.toLowerCase().includes('unemployment rate')
+    ) || (selectedNumeric && selectedNumeric.toLowerCase().includes('unemployment'))
+  }, [numericColumns, selectedNumeric])
+
+  const isHealthData = useMemo(() => {
+    return numericColumns?.some(col => 
+      col.toLowerCase().includes('health') || col.toLowerCase().includes('death rate') || 
+      col.toLowerCase().includes('birth rate') || col.toLowerCase().includes('life expectancy')
+    ) || categoricalColumns?.some(col => 
+      col.toLowerCase().includes('metric') && (selectedNumeric?.toLowerCase().includes('health') || 
+      selectedNumeric?.toLowerCase().includes('death') || selectedNumeric?.toLowerCase().includes('birth') ||
+      selectedNumeric?.toLowerCase().includes('life'))
+    )
+  }, [numericColumns, categoricalColumns, selectedNumeric])
+
+  const isSalesData = useMemo(() => {
+    return numericColumns?.some(col => 
+      col.toLowerCase().includes('sales') || col.toLowerCase().includes('revenue') || 
+      col.toLowerCase().includes('amount') || col.toLowerCase().includes('price')
+    ) && (categoricalColumns?.some(col => 
+      col.toLowerCase().includes('product') || col.toLowerCase().includes('category') ||
+      col.toLowerCase().includes('region') || col.toLowerCase().includes('customer')
+    ) || selectedNumeric?.toLowerCase().includes('sales'))
+  }, [numericColumns, categoricalColumns, selectedNumeric])
 
   // Sample filtered data for chart processing
   const sampledFilteredData = useMemo(() => sampleDataForCharts(filteredData, 5000), [filteredData])
@@ -169,10 +199,40 @@ function AdvancedDashboard({ data, filteredData, selectedNumeric, selectedCatego
   return (
     <>
     <div className="space-y-6">
-      {/* Budget Insights Widget - Show at top if budget data detected */}
+      {/* Insights Widgets - Show at top based on data type */}
       {isBudgetData && selectedNumeric && selectedCategorical && (
         <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
           <BudgetInsightsWidget
+            data={filteredData || data}
+            selectedNumeric={selectedNumeric}
+            selectedCategorical={selectedCategorical}
+            selectedDate={selectedDate}
+          />
+        </div>
+      )}
+      {isUnemploymentData && selectedNumeric && selectedDate && (
+        <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
+          <UnemploymentInsightsWidget
+            data={filteredData || data}
+            selectedNumeric={selectedNumeric}
+            selectedCategorical={selectedCategorical}
+            selectedDate={selectedDate}
+          />
+        </div>
+      )}
+      {isHealthData && selectedNumeric && selectedCategorical && (
+        <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
+          <HealthInsightsWidget
+            data={filteredData || data}
+            selectedNumeric={selectedNumeric}
+            selectedCategorical={selectedCategorical}
+            selectedDate={selectedDate}
+          />
+        </div>
+      )}
+      {isSalesData && selectedNumeric && (selectedCategorical || selectedDate) && (
+        <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
+          <SalesInsightsWidget
             data={filteredData || data}
             selectedNumeric={selectedNumeric}
             selectedCategorical={selectedCategorical}

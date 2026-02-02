@@ -139,6 +139,66 @@ export function analyzeDataAndSuggestWidgets(data, numericColumns, categoricalCo
     })
   }
 
+  // Detect unemployment data
+  const isUnemploymentData = numericColumns?.some(col => 
+    col.toLowerCase().includes('unemployment') || col.toLowerCase().includes('unemployment rate')
+  ) || (numericCol && numericCol.toLowerCase().includes('unemployment'))
+
+  // Unemployment Insights Widget
+  if (isUnemploymentData && hasNumeric && hasDate) {
+    console.log('📊 Unemployment data detected!')
+    suggestedWidgets.unshift('unemployment-insights')
+    widgetConfigs['unemployment-insights'] = {
+      title: 'Unemployment Insights',
+      selectedNumeric: numericCol,
+      selectedCategorical: categoricalCol,
+      selectedDate: dateCol
+    }
+  }
+
+  // Detect health data
+  const isHealthData = numericColumns?.some(col => 
+    col.toLowerCase().includes('health') || col.toLowerCase().includes('death rate') || 
+    col.toLowerCase().includes('birth rate') || col.toLowerCase().includes('life expectancy')
+  ) || categoricalColumns?.some(col => 
+    col.toLowerCase().includes('metric') && (numericCol?.toLowerCase().includes('health') || 
+    numericCol?.toLowerCase().includes('death') || numericCol?.toLowerCase().includes('birth') ||
+    numericCol?.toLowerCase().includes('life'))
+  )
+
+  // Health Insights Widget
+  if (isHealthData && hasNumeric && hasCategorical) {
+    console.log('💚 Health data detected!')
+    suggestedWidgets.unshift('health-insights')
+    widgetConfigs['health-insights'] = {
+      title: 'Health Insights',
+      selectedNumeric: numericCol,
+      selectedCategorical: categoricalCol,
+      selectedDate: dateCol
+    }
+  }
+
+  // Detect sales data
+  const isSalesData = numericColumns?.some(col => 
+    col.toLowerCase().includes('sales') || col.toLowerCase().includes('revenue') || 
+    col.toLowerCase().includes('amount') || col.toLowerCase().includes('price')
+  ) && (categoricalColumns?.some(col => 
+    col.toLowerCase().includes('product') || col.toLowerCase().includes('category') ||
+    col.toLowerCase().includes('region') || col.toLowerCase().includes('customer')
+  ) || numericCol?.toLowerCase().includes('sales'))
+
+  // Sales Insights Widget
+  if (isSalesData && hasNumeric && (hasCategorical || hasDate)) {
+    console.log('💰 Sales data detected!')
+    suggestedWidgets.unshift('sales-insights')
+    widgetConfigs['sales-insights'] = {
+      title: 'Sales Insights',
+      selectedNumeric: numericCol,
+      selectedCategorical: categoricalCol,
+      selectedDate: dateCol
+    }
+  }
+
   // 3. Donut Chart - if we have categorical + numeric
   if (hasCategorical && hasNumeric) {
     suggestedWidgets.push('donut-chart')
