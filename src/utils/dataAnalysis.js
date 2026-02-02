@@ -115,6 +115,12 @@ export function analyzeDataAndSuggestWidgets(data, numericColumns, categoricalCo
 
   // Budget Insights Widget - automatically add FIRST for budget data
   if (isBudgetData && hasNumeric && hasCategorical) {
+    console.log('💰 Budget data detected!', {
+      numericColumns,
+      categoricalColumns,
+      numericCol,
+      categoricalCol
+    })
     suggestedWidgets.unshift('budget-insights') // Add to beginning so it appears first
     widgetConfigs['budget-insights'] = {
       title: 'Budget Insights',
@@ -122,6 +128,15 @@ export function analyzeDataAndSuggestWidgets(data, numericColumns, categoricalCo
       selectedCategorical: categoricalCol,
       selectedDate: dateCol
     }
+    console.log('✅ Budget Insights widget added to suggested widgets')
+  } else {
+    console.log('🔍 Budget data check:', {
+      isBudgetData,
+      hasNumeric,
+      hasCategorical,
+      numericColumns,
+      categoricalColumns
+    })
   }
 
   // 3. Donut Chart - if we have categorical + numeric

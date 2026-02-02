@@ -280,6 +280,7 @@ function AdvancedDashboardGrid({
       // Check if budget-insights widget is suggested but not in saved layouts
       // If so, add it to the layouts
       if (dataAnalysis.suggestedWidgets.includes('budget-insights')) {
+        console.log('💰 Budget Insights widget detected! Checking if it needs to be added to layouts...')
         const breakpoints = ['lg', 'md', 'sm', 'xs', 'xxs']
         let widgetAdded = false
         
@@ -356,11 +357,19 @@ function AdvancedDashboardGrid({
         
         // Set widget configs if widget was added
         if (widgetAdded && dataAnalysis.widgetConfigs['budget-insights']) {
+          console.log('✅ Budget Insights widget added to layouts!')
           setWidgetConfigs(prev => ({
             ...prev,
             'budget-insights': dataAnalysis.widgetConfigs['budget-insights']
           }))
+        } else if (dataAnalysis.suggestedWidgets.includes('budget-insights')) {
+          console.log('ℹ️ Budget Insights widget already exists in layouts')
         }
+      } else {
+        console.log('🔍 Checking for budget data...', {
+          suggestedWidgets: dataAnalysis.suggestedWidgets,
+          hasBudgetInsights: dataAnalysis.suggestedWidgets.includes('budget-insights')
+        })
       }
       
       setLayouts(fixedLayouts)
