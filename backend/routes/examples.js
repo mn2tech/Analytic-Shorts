@@ -1262,6 +1262,7 @@ router.get('/government-budget', async (req, res) => {
       console.warn('Failed to fetch from Treasury API, using fallback data:', apiError.message)
       
       // Fallback to demonstration data if API fails
+      // Generate monthly data for better time series visualization
       const budgetCategories = category === 'all' 
         ? ['Defense', 'Healthcare', 'Education', 'Infrastructure', 'Social Security', 'Interest on Debt']
         : [category]
@@ -1269,30 +1270,43 @@ router.get('/government-budget', async (req, res) => {
       for (let year = startYear; year <= endYear; year++) {
         if (year > currentYear) break
         
-        for (const budgetCategory of budgetCategories) {
-          // Simulate budget amounts in billions (fallback only)
-          let budgetAmount = 0
-          const baseAmounts = {
-            'Defense': 700,
-            'Healthcare': 1200,
-            'Education': 80,
-            'Infrastructure': 100,
-            'Social Security': 1100,
-            'Interest on Debt': 300
+        for (let month = 1; month <= 12; month++) {
+          // Skip future months
+          if (year === currentYear && month > new Date().getMonth() + 1) {
+            break
           }
           
-          const base = baseAmounts[budgetCategory] || 100
-          const growthFactor = 1 + (year - startYear) * 0.02
-          const variation = (Math.random() - 0.5) * 0.1
-          budgetAmount = base * growthFactor * (1 + variation)
+          const date = `${year}-${String(month).padStart(2, '0')}-01`
+          const monthName = new Date(year, month - 1).toLocaleString('default', { month: 'long' })
           
-          transformedData.push({
-            'Fiscal Year': year.toString(),
-            'Year': year.toString(),
-            'Budget Category': budgetCategory,
-            'Budget Amount (Billions $)': parseFloat(budgetAmount.toFixed(2)),
-            'Date': `${year}-01-01`
-          })
+          for (const budgetCategory of budgetCategories) {
+            // Simulate budget amounts in billions (fallback only)
+            // Annual amounts divided by 12 for monthly, with some variation
+            let budgetAmount = 0
+            const baseAmounts = {
+              'Defense': 700,
+              'Healthcare': 1200,
+              'Education': 80,
+              'Infrastructure': 100,
+              'Social Security': 1100,
+              'Interest on Debt': 300
+            }
+            
+            const base = baseAmounts[budgetCategory] || 100
+            const growthFactor = 1 + (year - startYear) * 0.02
+            const monthlyBase = (base * growthFactor) / 12 // Annual divided by 12
+            const variation = (Math.random() - 0.5) * 0.1 // ±5% variation
+            budgetAmount = monthlyBase * (1 + variation)
+            
+            transformedData.push({
+              'Fiscal Year': year.toString(),
+              'Year': year.toString(),
+              'Month': monthName,
+              'Budget Category': budgetCategory,
+              'Budget Amount (Billions $)': parseFloat(budgetAmount.toFixed(2)),
+              'Date': date
+            })
+          }
         }
       }
     }
