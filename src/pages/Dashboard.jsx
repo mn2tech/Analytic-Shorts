@@ -188,60 +188,127 @@ function Dashboard() {
       // Generate dashboard title based on data context
       const allColumns = parsedData.columns || []
       
-      // Detect domain from column names
-      const detectDomain = (columns) => {
-        const lowerColumns = columns.map(col => col.toLowerCase())
+      // First, check for specific dataset sources (API datasets)
+      const getDatasetTitleFromSource = (source) => {
+        if (!source) return null
         
-        // Medical/Healthcare indicators
-        if (lowerColumns.some(col => 
-          col.includes('patient') || col.includes('diagnosis') || 
-          col.includes('treatment') || col.includes('medication') ||
-          col.includes('department') && (col.includes('cardiology') || col.includes('orthopedic'))
-        )) {
-          return 'Medical Data'
+        const sourceLower = source.toLowerCase()
+        
+        // Government Budget
+        if (sourceLower.includes('treasury') || sourceLower.includes('fiscal data')) {
+          return 'Government Budget'
         }
         
-        // Sales indicators
-        if (lowerColumns.some(col => 
-          col.includes('sales') || col.includes('revenue') || 
-          col.includes('product') || col.includes('customer')
-        )) {
-          return 'Sales Data'
+        // USA Spending
+        if (sourceLower.includes('usaspending') || sourceLower.includes('usa spending')) {
+          return 'USA Spending'
         }
         
-        // Education indicators
-        if (lowerColumns.some(col => 
-          col.includes('student') || col.includes('school') || 
-          col.includes('grade') || col.includes('attendance')
-        )) {
-          return 'Education Data'
+        // Unemployment
+        if (sourceLower.includes('labor statistics') || sourceLower.includes('bls') || sourceLower.includes('unemployment')) {
+          return 'Unemployment Rate'
         }
         
-        // Financial indicators
-        if (lowerColumns.some(col => 
-          col.includes('donation') || col.includes('fund') || 
-          col.includes('amount') && col.includes('$')
-        )) {
-          return 'Financial Data'
+        // CDC Health Data
+        if (sourceLower.includes('cdc') || sourceLower.includes('disease control') || sourceLower.includes('centers for disease')) {
+          return 'CDC Health Data'
         }
         
         return null
       }
       
-      const domain = detectDomain(allColumns)
+      // Check for dataset name or source
+      const datasetTitle = parsedData.datasetName || getDatasetTitleFromSource(parsedData.source)
       
-      if (domain) {
-        setDashboardTitle(`${domain} Analytics`)
-      } else if (parsedData.categoricalColumns && parsedData.categoricalColumns.length > 0) {
-        // Use first categorical column as fallback
-        const firstCategory = parsedData.categoricalColumns[0]
-        const formattedTitle = firstCategory
-          .split(/[\s_]+/)
-          .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-          .join(' ')
-        setDashboardTitle(`${formattedTitle} Analytics`)
+      if (datasetTitle) {
+        setDashboardTitle(datasetTitle)
       } else {
-        setDashboardTitle('Analytics Dashboard')
+        // Detect domain from column names (fallback)
+        const detectDomain = (columns) => {
+          const lowerColumns = columns.map(col => col.toLowerCase())
+          
+          // Government Budget indicators
+          if (lowerColumns.some(col => 
+            (col.includes('budget') && col.includes('category')) || 
+            (col.includes('budget') && col.includes('amount'))
+          )) {
+            return 'Government Budget'
+          }
+          
+          // USA Spending indicators
+          if (lowerColumns.some(col => 
+            col.includes('award amount') || 
+            (col.includes('awarding agency') && col.includes('recipient'))
+          )) {
+            return 'USA Spending'
+          }
+          
+          // Unemployment indicators
+          if (lowerColumns.some(col => 
+            col.includes('unemployment rate') || col.includes('unemployment')
+          )) {
+            return 'Unemployment Rate'
+          }
+          
+          // CDC Health indicators
+          if (lowerColumns.some(col => 
+            col.includes('health metric') || 
+            (col.includes('metric') && (col.includes('death') || col.includes('birth') || col.includes('life expectancy')))
+          )) {
+            return 'CDC Health Data'
+          }
+          
+          // Medical/Healthcare indicators
+          if (lowerColumns.some(col => 
+            col.includes('patient') || col.includes('diagnosis') || 
+            col.includes('treatment') || col.includes('medication') ||
+            col.includes('department') && (col.includes('cardiology') || col.includes('orthopedic'))
+          )) {
+            return 'Medical Data'
+          }
+          
+          // Sales indicators
+          if (lowerColumns.some(col => 
+            col.includes('sales') || col.includes('revenue') || 
+            col.includes('product') || col.includes('customer')
+          )) {
+            return 'Sales Data'
+          }
+          
+          // Education indicators
+          if (lowerColumns.some(col => 
+            col.includes('student') || col.includes('school') || 
+            col.includes('grade') || col.includes('attendance')
+          )) {
+            return 'Education Data'
+          }
+          
+          // Financial indicators
+          if (lowerColumns.some(col => 
+            col.includes('donation') || col.includes('fund') || 
+            col.includes('amount') && col.includes('$')
+          )) {
+            return 'Financial Data'
+          }
+          
+          return null
+        }
+        
+        const domain = detectDomain(allColumns)
+        
+        if (domain) {
+          setDashboardTitle(domain)
+        } else if (parsedData.categoricalColumns && parsedData.categoricalColumns.length > 0) {
+          // Use first categorical column as fallback
+          const firstCategory = parsedData.categoricalColumns[0]
+          const formattedTitle = firstCategory
+            .split(/[\s_]+/)
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+            .join(' ')
+          setDashboardTitle(`${formattedTitle} Analytics`)
+        } else {
+          setDashboardTitle('Analytics Dashboard')
+        }
       }
 
       // Auto-select first columns

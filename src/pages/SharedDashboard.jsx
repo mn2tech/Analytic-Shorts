@@ -63,48 +63,118 @@ function SharedDashboard() {
 
     // Generate dashboard title
     const allColumns = sharedData.columns || []
-    const detectDomain = (columns) => {
-      const lowerColumns = columns.map(col => col.toLowerCase())
-      if (lowerColumns.some(col => 
-        col.includes('patient') || col.includes('diagnosis') || 
-        col.includes('treatment') || col.includes('medication') ||
-        col.includes('department') && (col.includes('cardiology') || col.includes('orthopedic'))
-      )) {
-        return 'Medical Data'
+    
+    // First, check for specific dataset sources (API datasets)
+    const getDatasetTitleFromSource = (source) => {
+      if (!source) return null
+      
+      const sourceLower = source.toLowerCase()
+      
+      // Government Budget
+      if (sourceLower.includes('treasury') || sourceLower.includes('fiscal data')) {
+        return 'Government Budget'
       }
-      if (lowerColumns.some(col => 
-        col.includes('sales') || col.includes('revenue') || 
-        col.includes('product') || col.includes('customer')
-      )) {
-        return 'Sales Data'
+      
+      // USA Spending
+      if (sourceLower.includes('usaspending') || sourceLower.includes('usa spending')) {
+        return 'USA Spending'
       }
-      if (lowerColumns.some(col => 
-        col.includes('student') || col.includes('school') || 
-        col.includes('grade') || col.includes('attendance')
-      )) {
-        return 'Education Data'
+      
+      // Unemployment
+      if (sourceLower.includes('labor statistics') || sourceLower.includes('bls') || sourceLower.includes('unemployment')) {
+        return 'Unemployment Rate'
       }
-      if (lowerColumns.some(col => 
-        col.includes('donation') || col.includes('fund') || 
-        col.includes('amount') && col.includes('$')
-      )) {
-        return 'Financial Data'
+      
+      // CDC Health Data
+      if (sourceLower.includes('cdc') || sourceLower.includes('disease control') || sourceLower.includes('centers for disease')) {
+        return 'CDC Health Data'
       }
+      
       return null
     }
     
-    const domain = detectDomain(allColumns)
-    if (domain) {
-      setDashboardTitle(`${domain} Analytics`)
-    } else if (sharedData.categoricalColumns && sharedData.categoricalColumns.length > 0) {
-      const firstCategory = sharedData.categoricalColumns[0]
-      const formattedTitle = firstCategory
-        .split(/[\s_]+/)
-        .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-        .join(' ')
-      setDashboardTitle(`${formattedTitle} Analytics`)
+    // Check for dataset name or source
+    const datasetTitle = sharedData.datasetName || getDatasetTitleFromSource(sharedData.source)
+    
+    if (datasetTitle) {
+      setDashboardTitle(datasetTitle)
     } else {
-      setDashboardTitle('Analytics Dashboard')
+      // Detect domain from column names (fallback)
+      const detectDomain = (columns) => {
+        const lowerColumns = columns.map(col => col.toLowerCase())
+        
+        // Government Budget indicators
+        if (lowerColumns.some(col => 
+          (col.includes('budget') && col.includes('category')) || 
+          (col.includes('budget') && col.includes('amount'))
+        )) {
+          return 'Government Budget'
+        }
+        
+        // USA Spending indicators
+        if (lowerColumns.some(col => 
+          col.includes('award amount') || 
+          (col.includes('awarding agency') && col.includes('recipient'))
+        )) {
+          return 'USA Spending'
+        }
+        
+        // Unemployment indicators
+        if (lowerColumns.some(col => 
+          col.includes('unemployment rate') || col.includes('unemployment')
+        )) {
+          return 'Unemployment Rate'
+        }
+        
+        // CDC Health indicators
+        if (lowerColumns.some(col => 
+          col.includes('health metric') || 
+          (col.includes('metric') && (col.includes('death') || col.includes('birth') || col.includes('life expectancy')))
+        )) {
+          return 'CDC Health Data'
+        }
+        
+        if (lowerColumns.some(col => 
+          col.includes('patient') || col.includes('diagnosis') || 
+          col.includes('treatment') || col.includes('medication') ||
+          col.includes('department') && (col.includes('cardiology') || col.includes('orthopedic'))
+        )) {
+          return 'Medical Data'
+        }
+        if (lowerColumns.some(col => 
+          col.includes('sales') || col.includes('revenue') || 
+          col.includes('product') || col.includes('customer')
+        )) {
+          return 'Sales Data'
+        }
+        if (lowerColumns.some(col => 
+          col.includes('student') || col.includes('school') || 
+          col.includes('grade') || col.includes('attendance')
+        )) {
+          return 'Education Data'
+        }
+        if (lowerColumns.some(col => 
+          col.includes('donation') || col.includes('fund') || 
+          col.includes('amount') && col.includes('$')
+        )) {
+          return 'Financial Data'
+        }
+        return null
+      }
+      
+      const domain = detectDomain(allColumns)
+      if (domain) {
+        setDashboardTitle(domain)
+      } else if (sharedData.categoricalColumns && sharedData.categoricalColumns.length > 0) {
+        const firstCategory = sharedData.categoricalColumns[0]
+        const formattedTitle = firstCategory
+          .split(/[\s_]+/)
+          .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+          .join(' ')
+        setDashboardTitle(`${formattedTitle} Analytics`)
+      } else {
+        setDashboardTitle('Analytics Dashboard')
+      }
     }
     
     setLoading(false)
