@@ -3,6 +3,7 @@ import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Cart
 import SunburstChart from './SunburstChart'
 import ForecastChart from './ForecastChart'
 import ChartInsights from './ChartInsights'
+import BudgetInsightsWidget from './widgets/BudgetInsightsWidget'
 import { parseNumericValue } from '../utils/numberUtils'
 
 const COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444', '#6366f1', '#14b8a6', '#f97316', '#06b6d4']
@@ -19,12 +20,21 @@ const sampleDataForCharts = (data, maxRows = 5000) => {
   return sampled
 }
 
-function AdvancedDashboard({ data, filteredData, selectedNumeric, selectedCategorical, selectedDate, onChartFilter, chartFilter, categoricalColumns }) {
+function AdvancedDashboard({ data, filteredData, selectedNumeric, selectedCategorical, selectedDate, onChartFilter, chartFilter, categoricalColumns, numericColumns = [], dateColumns = [] }) {
   const [chartInsights, setChartInsights] = useState(null)
   // Auto-select a secondary category for hierarchical view (use second categorical column if available)
   const secondaryCategory = categoricalColumns && categoricalColumns.length > 1 
     ? categoricalColumns.find(col => col !== selectedCategorical) || categoricalColumns[1]
     : null
+
+  // Detect if this is budget data
+  const isBudgetData = useMemo(() => {
+    return numericColumns?.some(col => 
+      col.toLowerCase().includes('budget') || col.toLowerCase().includes('amount')
+    ) && categoricalColumns?.some(col => 
+      col.toLowerCase().includes('budget') || col.toLowerCase().includes('category')
+    )
+  }, [numericColumns, categoricalColumns])
 
   // Sample filtered data for chart processing
   const sampledFilteredData = useMemo(() => sampleDataForCharts(filteredData, 5000), [filteredData])
@@ -159,6 +169,18 @@ function AdvancedDashboard({ data, filteredData, selectedNumeric, selectedCatego
   return (
     <>
     <div className="space-y-6">
+      {/* Budget Insights Widget - Show at top if budget data detected */}
+      {isBudgetData && selectedNumeric && selectedCategorical && (
+        <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
+          <BudgetInsightsWidget
+            data={filteredData || data}
+            selectedNumeric={selectedNumeric}
+            selectedCategorical={selectedCategorical}
+            selectedDate={selectedDate}
+          />
+        </div>
+      )}
+
       {/* Top Row - 2 Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Chart 1: Line Chart */}
