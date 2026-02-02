@@ -1178,45 +1178,122 @@ router.get('/government-budget', async (req, res) => {
     console.log('Fetching government budget data')
     console.log('Request parameters:', { startYear, endYear, category })
     
-    // Generate government budget data (in production, fetch from Treasury Fiscal Data API)
+    // Fetch real government budget data from Treasury Fiscal Data API
+    // Using Treasury's API for federal budget receipts and outlays
     const transformedData = []
     const currentYear = new Date().getFullYear()
     
-    // Budget categories
-    const budgetCategories = category === 'all' 
-      ? ['Defense', 'Healthcare', 'Education', 'Infrastructure', 'Social Security', 'Interest on Debt']
-      : [category]
-    
-    // Generate annual budget data for the requested range
-    for (let year = startYear; year <= endYear; year++) {
-      // Skip future years
-      if (year > currentYear) break
+    try {
+      // Treasury Fiscal Data API endpoint for federal budget
+      // Using the "Receipts, Outlays, and Surplus or Deficit" dataset
+      const treasuryApiUrl = 'https://api.fiscaldata.treasury.gov/services/api/v1/accounting/od/rcpt_outlays'
       
-      for (const budgetCategory of budgetCategories) {
-        // Simulate budget amounts in billions (in production, fetch from Treasury API)
-        let budgetAmount = 0
-        const baseAmounts = {
-          'Defense': 700,
-          'Healthcare': 1200,
-          'Education': 80,
-          'Infrastructure': 100,
-          'Social Security': 1100,
-          'Interest on Debt': 300
-        }
-        
-        const base = baseAmounts[budgetCategory] || 100
-        // Add growth trend and variation
-        const growthFactor = 1 + (year - startYear) * 0.02 // 2% annual growth
-        const variation = (Math.random() - 0.5) * 0.1 // ±5% variation
-        budgetAmount = base * growthFactor * (1 + variation)
-        
-        transformedData.push({
-          'Fiscal Year': year.toString(),
-          'Year': year.toString(),
-          'Budget Category': budgetCategory,
-          'Budget Amount (Billions $)': parseFloat(budgetAmount.toFixed(2)),
-          'Date': `${year}-01-01`
+      console.log('Fetching real budget data from Treasury API:', treasuryApiUrl)
+      
+      // Build query parameters for Treasury API
+      const treasuryParams = {
+        filter: `record_date:gte:${startYear}-01-01,record_date:lte:${endYear}-12-31`,
+        sort: 'record_date',
+        page: { size: 1000 } // Get up to 1000 records
+      }
+      
+      // Fetch from Treasury API
+      const treasuryResponse = await axios.get(treasuryApiUrl, {
+        params: treasuryParams,
+        headers: {
+          'Accept': 'application/json'
+        },
+        timeout: 30000
+      })
+      
+      if (treasuryResponse.data && treasuryResponse.data.data && treasuryResponse.data.data.length > 0) {
+        // Transform Treasury API data to our format
+        treasuryResponse.data.data.forEach((item) => {
+          const recordDate = item.record_date
+          const year = new Date(recordDate).getFullYear()
+          const month = new Date(recordDate).getMonth() + 1
+          const monthName = new Date(year, month - 1).toLocaleString('default', { month: 'long' })
+          
+          // Treasury API provides: receipts, outlays, surplus_or_deficit
+          // We'll create categories from these
+          const categories = []
+          
+          if (item.receipts) {
+            categories.push({
+              'Fiscal Year': year.toString(),
+              'Year': year.toString(),
+              'Month': monthName,
+              'Budget Category': 'Receipts',
+              'Budget Amount (Billions $)': parseFloat((parseFloat(item.receipts) / 1000).toFixed(2)), // Convert millions to billions
+              'Date': recordDate
+            })
+          }
+          
+          if (item.outlays) {
+            categories.push({
+              'Fiscal Year': year.toString(),
+              'Year': year.toString(),
+              'Month': monthName,
+              'Budget Category': 'Outlays',
+              'Budget Amount (Billions $)': parseFloat((parseFloat(item.outlays) / 1000).toFixed(2)),
+              'Date': recordDate
+            })
+          }
+          
+          if (item.surplus_or_deficit) {
+            categories.push({
+              'Fiscal Year': year.toString(),
+              'Year': year.toString(),
+              'Month': monthName,
+              'Budget Category': 'Surplus/Deficit',
+              'Budget Amount (Billions $)': parseFloat((parseFloat(item.surplus_or_deficit) / 1000).toFixed(2)),
+              'Date': recordDate
+            })
+          }
+          
+          transformedData.push(...categories)
         })
+        
+        console.log('Successfully fetched real budget data from Treasury API:', transformedData.length, 'records')
+      } else {
+        throw new Error('No data returned from Treasury API')
+      }
+    } catch (apiError) {
+      console.warn('Failed to fetch from Treasury API, using fallback data:', apiError.message)
+      
+      // Fallback to demonstration data if API fails
+      const budgetCategories = category === 'all' 
+        ? ['Defense', 'Healthcare', 'Education', 'Infrastructure', 'Social Security', 'Interest on Debt']
+        : [category]
+      
+      for (let year = startYear; year <= endYear; year++) {
+        if (year > currentYear) break
+        
+        for (const budgetCategory of budgetCategories) {
+          // Simulate budget amounts in billions (fallback only)
+          let budgetAmount = 0
+          const baseAmounts = {
+            'Defense': 700,
+            'Healthcare': 1200,
+            'Education': 80,
+            'Infrastructure': 100,
+            'Social Security': 1100,
+            'Interest on Debt': 300
+          }
+          
+          const base = baseAmounts[budgetCategory] || 100
+          const growthFactor = 1 + (year - startYear) * 0.02
+          const variation = (Math.random() - 0.5) * 0.1
+          budgetAmount = base * growthFactor * (1 + variation)
+          
+          transformedData.push({
+            'Fiscal Year': year.toString(),
+            'Year': year.toString(),
+            'Budget Category': budgetCategory,
+            'Budget Amount (Billions $)': parseFloat(budgetAmount.toFixed(2)),
+            'Date': `${year}-01-01`
+          })
+        }
       }
     }
     
@@ -1253,7 +1330,9 @@ router.get('/government-budget', async (req, res) => {
         end_year: endYear,
         category: category
       },
-      note: 'This is a demonstration endpoint. For production use, integrate with Treasury Fiscal Data API (https://fiscaldata.treasury.gov/) or USAspending.gov API for detailed budget data.'
+      note: transformedData.length > 0 && transformedData[0]['Budget Category'] === 'Receipts' 
+        ? 'Real data from U.S. Treasury Fiscal Data API (https://fiscaldata.treasury.gov/)'
+        : 'Using demonstration data. Real Treasury API data will be used when available.'
     })
   } catch (error) {
     console.error('Error fetching government budget data:', error.message)
