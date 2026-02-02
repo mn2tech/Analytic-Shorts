@@ -60,6 +60,11 @@ function ExampleDatasetButton({ onDatasetLoad, onError }) {
       description: 'Health metrics: Death Rate, Birth Rate, and Life Expectancy from CDC (filter by Metric column)',
       endpoint: '/api/example/cdc-health?metric=all',
     },
+    {
+      name: 'Government Budget',
+      description: 'Federal budget data by category: Defense, Healthcare, Education, Infrastructure, etc. (filter by Budget Category)',
+      endpoint: '/api/example/government-budget?category=all',
+    },
   ]
 
   const loadExample = async (endpoint, datasetName) => {

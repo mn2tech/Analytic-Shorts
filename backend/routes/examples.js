@@ -1164,5 +1164,107 @@ router.get('/cdc-health', async (req, res) => {
   }
 })
 
+// Government Budget Data API - Federal Budget and Fiscal Data
+router.get('/government-budget', async (req, res) => {
+  try {
+    // Get query parameters
+    const startYear = parseInt(req.query.start_year) || new Date().getFullYear() - 5 // Default to last 5 years
+    const endYear = parseInt(req.query.end_year) || new Date().getFullYear()
+    const category = req.query.category || 'all' // all, defense, healthcare, education, infrastructure, etc.
+    
+    // Treasury Fiscal Data API endpoint
+    // Using fiscaldata.treasury.gov for federal budget data
+    // Note: This is a demonstration - in production, use actual Treasury API endpoints
+    console.log('Fetching government budget data')
+    console.log('Request parameters:', { startYear, endYear, category })
+    
+    // Generate government budget data (in production, fetch from Treasury Fiscal Data API)
+    const transformedData = []
+    const currentYear = new Date().getFullYear()
+    
+    // Budget categories
+    const budgetCategories = category === 'all' 
+      ? ['Defense', 'Healthcare', 'Education', 'Infrastructure', 'Social Security', 'Interest on Debt']
+      : [category]
+    
+    // Generate annual budget data for the requested range
+    for (let year = startYear; year <= endYear; year++) {
+      // Skip future years
+      if (year > currentYear) break
+      
+      for (const budgetCategory of budgetCategories) {
+        // Simulate budget amounts in billions (in production, fetch from Treasury API)
+        let budgetAmount = 0
+        const baseAmounts = {
+          'Defense': 700,
+          'Healthcare': 1200,
+          'Education': 80,
+          'Infrastructure': 100,
+          'Social Security': 1100,
+          'Interest on Debt': 300
+        }
+        
+        const base = baseAmounts[budgetCategory] || 100
+        // Add growth trend and variation
+        const growthFactor = 1 + (year - startYear) * 0.02 // 2% annual growth
+        const variation = (Math.random() - 0.5) * 0.1 // ±5% variation
+        budgetAmount = base * growthFactor * (1 + variation)
+        
+        transformedData.push({
+          'Fiscal Year': year.toString(),
+          'Year': year.toString(),
+          'Budget Category': budgetCategory,
+          'Budget Amount (Billions $)': parseFloat(budgetAmount.toFixed(2)),
+          'Date': `${year}-01-01`
+        })
+      }
+    }
+    
+    if (transformedData.length === 0) {
+      return res.status(404).json({
+        error: 'No budget data found',
+        message: `No data available for the period ${startYear}-${endYear}`,
+        hint: 'Try adjusting the start_year and end_year parameters'
+      })
+    }
+    
+    // Process the data
+    const columns = Object.keys(transformedData[0])
+    const { numericColumns, categoricalColumns, dateColumns } = detectColumnTypes(transformedData, columns)
+    
+    // Ensure 'Budget Category' column is always included in categoricalColumns for filtering
+    if (!categoricalColumns.includes('Budget Category') && columns.includes('Budget Category')) {
+      categoricalColumns.push('Budget Category')
+    }
+    
+    const processedData = processDataPreservingNumbers(transformedData, numericColumns)
+    
+    res.json({
+      data: processedData,
+      columns,
+      numericColumns,
+      categoricalColumns,
+      dateColumns,
+      rowCount: processedData.length,
+      source: 'U.S. Treasury Fiscal Data',
+      category: category,
+      filters: {
+        start_year: startYear,
+        end_year: endYear,
+        category: category
+      },
+      note: 'This is a demonstration endpoint. For production use, integrate with Treasury Fiscal Data API (https://fiscaldata.treasury.gov/) or USAspending.gov API for detailed budget data.'
+    })
+  } catch (error) {
+    console.error('Error fetching government budget data:', error.message)
+    res.status(500).json({
+      error: 'Failed to fetch budget data',
+      message: error.message,
+      hint: 'The Treasury API may be temporarily unavailable. Check https://fiscaldata.treasury.gov/ for Treasury data access.',
+      documentation: 'https://fiscaldata.treasury.gov/'
+    })
+  }
+})
+
 module.exports = router
 

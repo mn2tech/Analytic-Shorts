@@ -249,11 +249,14 @@ function Dashboard() {
         setSelectedNumeric(parsedData.numericColumns[0])
       }
       if (parsedData.categoricalColumns && parsedData.categoricalColumns.length > 0) {
-        // Auto-select 'Metric' column if available (for CDC health data), otherwise first categorical
+        // Auto-select priority columns: Budget Category > Metric > first categorical
+        const budgetCategoryColumn = parsedData.categoricalColumns.find(col => 
+          col.toLowerCase().includes('budget') && col.toLowerCase().includes('category')
+        )
         const metricColumn = parsedData.categoricalColumns.find(col => 
           col.toLowerCase() === 'metric' || col === 'Metric'
         )
-        const columnToSelect = metricColumn || parsedData.categoricalColumns[0]
+        const columnToSelect = budgetCategoryColumn || metricColumn || parsedData.categoricalColumns[0]
         setSelectedCategorical(columnToSelect)
       }
       if (parsedData.dateColumns && parsedData.dateColumns.length > 0) {
