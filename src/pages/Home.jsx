@@ -46,7 +46,7 @@ function Home() {
     },
     {
       target: '.example-data-section',
-      content: 'Or try our example datasets to see how it works - no file needed!',
+      content: 'Or explore public data APIs to see how it works - no file needed!',
       placement: 'top',
     },
     {
@@ -202,7 +202,7 @@ function Home() {
           </div>
           
           <p className="text-sm text-gray-500">
-            No credit card required • Free plan available • Try example data instantly
+            No credit card required • Free plan available • Explore public data APIs instantly
           </p>
         </div>
 
@@ -255,7 +255,7 @@ function Home() {
               </div>
               <h3 className="text-lg font-semibold text-gray-900 mb-2">Upload Your Data</h3>
               <p className="text-gray-600">
-                Drag and drop your CSV or Excel file, or try our example datasets
+                Drag and drop your CSV or Excel file, or explore public data APIs
               </p>
             </div>
             <div className="text-center">
@@ -302,7 +302,7 @@ function Home() {
 
           <div className="bg-white rounded-xl shadow-lg p-8 animate-slide-up example-data-section">
             <h2 className="text-2xl font-semibold text-gray-900 mb-6 text-center">
-              Or Try Example Data
+              Or Explore Public Data APIs
             </h2>
             <ExampleDatasetButton onDatasetLoad={handleDatasetLoad} onError={handleError} />
           </div>

@@ -6,53 +6,13 @@ function ExampleDatasetButton({ onDatasetLoad, onError }) {
 
   const exampleDatasets = [
     {
-      name: 'Medical Data',
-      description: 'Patient records with departments, diagnoses, and vitals',
-      endpoint: '/api/example/medical',
-    },
-    {
-      name: 'Sales Data',
-      description: 'Monthly sales with products and regions',
-      endpoint: '/api/example/sales',
-    },
-    {
-      name: 'Business Expenses',
-      description: 'Business revenue, expenses, and financial transactions',
-      endpoint: '/api/example/banking',
-    },
-    {
-      name: 'Attendance Data',
-      description: 'Employee attendance records',
-      endpoint: '/api/example/attendance',
-    },
-    {
-      name: 'Donations Data',
-      description: 'Charity donations by category',
-      endpoint: '/api/example/donations',
-    },
-    {
-      name: 'Yearly Income',
-      description: 'Year-over-year income growth (2020-2025)',
-      endpoint: '/api/example/yearly-income',
-    },
-    {
-      name: 'USA Spending',
-      description: 'Federal government awards, contracts, and grants',
-      endpoint: '/api/example/usaspending',
-    },
-    {
       name: 'USA Spending (Live)',
-      description: 'Real-time data from USASpending.gov API',
+      description: 'Real-time federal government awards, contracts, and grants from USASpending.gov API',
       endpoint: '/api/example/usaspending/live',
     },
     {
-      name: 'Network Relationships',
-      description: 'Entity relationships ideal for network visualization (like SAS Visual Investigator)',
-      endpoint: '/api/example/network',
-    },
-    {
       name: 'Unemployment Rate (BLS)',
-      description: 'U.S. unemployment rate data from Bureau of Labor Statistics',
+      description: 'U.S. unemployment rate data from Bureau of Labor Statistics API',
       endpoint: '/api/example/unemployment',
     },
     {
@@ -62,7 +22,7 @@ function ExampleDatasetButton({ onDatasetLoad, onError }) {
     },
     {
       name: 'Government Budget',
-      description: 'Federal budget data by category: Defense, Healthcare, Education, Infrastructure, etc. (filter by Budget Category)',
+      description: 'Federal budget data by category from U.S. Treasury Fiscal Data API (filter by Budget Category)',
       endpoint: '/api/example/government-budget?category=all',
     },
   ]
@@ -144,7 +104,7 @@ function ExampleDatasetButton({ onDatasetLoad, onError }) {
 
   return (
     <div className="space-y-3">
-      <p className="text-sm font-medium text-gray-700 mb-2">Try Example Datasets:</p>
+      <p className="text-sm font-medium text-gray-700 mb-2">Public Data APIs:</p>
       {exampleDatasets.map((dataset) => {
         const isLoading = loadingDataset === dataset.name
         return (

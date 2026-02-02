@@ -19,11 +19,11 @@ function Help() {
         },
         {
           q: 'Do I need to create an account?',
-          a: 'You can try the service without an account using example datasets. However, to save dashboards, access advanced features, and manage subscriptions, you\'ll need to create a free account.'
+          a: 'You can try the service without an account using public data APIs. However, to save dashboards, access advanced features, and manage subscriptions, you\'ll need to create a free account.'
         },
         {
-          q: 'How do I get started with example data?',
-          a: 'On the home page, scroll down to "Or Try Example Data" section. Click on any example dataset (Sales, Medical, Business Expenses, etc.) to instantly load a sample dashboard and see how the platform works.'
+          q: 'How do I get started with public data?',
+          a: 'On the home page, scroll down to "Or Explore Public Data APIs" section. Click on any API dataset (USA Spending, Unemployment Rate, CDC Health Data, Government Budget) to instantly load a real-time dashboard and see how the platform works.'
         }
       ]
     },
