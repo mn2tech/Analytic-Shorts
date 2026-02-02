@@ -57,16 +57,6 @@ function AdvancedDashboard({ data, filteredData, selectedNumeric, selectedCatego
     )
   }, [numericColumns, categoricalColumns, selectedNumeric])
 
-  const isSalesData = useMemo(() => {
-    return numericColumns?.some(col => 
-      col.toLowerCase().includes('sales') || col.toLowerCase().includes('revenue') || 
-      col.toLowerCase().includes('amount') || col.toLowerCase().includes('price')
-    ) && (categoricalColumns?.some(col => 
-      col.toLowerCase().includes('product') || col.toLowerCase().includes('category') ||
-      col.toLowerCase().includes('region') || col.toLowerCase().includes('customer')
-    ) || selectedNumeric?.toLowerCase().includes('sales'))
-  }, [numericColumns, categoricalColumns, selectedNumeric])
-
   const isUSASpendingData = useMemo(() => {
     return numericColumns?.some(col => 
       col.toLowerCase().includes('award amount') || col.toLowerCase().includes('award_amount')
@@ -76,6 +66,20 @@ function AdvancedDashboard({ data, filteredData, selectedNumeric, selectedCatego
       col.toLowerCase().includes('recipient_name')
     ) || selectedNumeric?.toLowerCase().includes('award amount'))
   }, [numericColumns, categoricalColumns, selectedNumeric])
+
+  const isSalesData = useMemo(() => {
+    // Exclude USA Spending data from sales detection
+    if (isUSASpendingData) return false
+    
+    return numericColumns?.some(col => 
+      col.toLowerCase().includes('sales') || col.toLowerCase().includes('revenue') || 
+      (col.toLowerCase().includes('amount') && !col.toLowerCase().includes('award')) || 
+      col.toLowerCase().includes('price')
+    ) && (categoricalColumns?.some(col => 
+      col.toLowerCase().includes('product') || col.toLowerCase().includes('category') ||
+      col.toLowerCase().includes('region') || col.toLowerCase().includes('customer')
+    ) || selectedNumeric?.toLowerCase().includes('sales'))
+  }, [numericColumns, categoricalColumns, selectedNumeric, isUSASpendingData])
 
   // Sample filtered data for chart processing
   const sampledFilteredData = useMemo(() => sampleDataForCharts(filteredData, 5000), [filteredData])

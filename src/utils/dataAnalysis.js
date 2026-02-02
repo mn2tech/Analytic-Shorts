@@ -178,10 +178,20 @@ export function analyzeDataAndSuggestWidgets(data, numericColumns, categoricalCo
     }
   }
 
-  // Detect sales data
-  const isSalesData = numericColumns?.some(col => 
+  // Detect USA Spending data FIRST (before sales to avoid conflicts)
+  const isUSASpendingData = numericColumns?.some(col => 
+    col.toLowerCase().includes('award amount') || col.toLowerCase().includes('award_amount')
+  ) && (categoricalColumns?.some(col => 
+    col.toLowerCase().includes('awarding agency') || col.toLowerCase().includes('recipient name') ||
+    col.toLowerCase().includes('award type') || col.toLowerCase().includes('awarding_agency') ||
+    col.toLowerCase().includes('recipient_name')
+  ) || numericCol?.toLowerCase().includes('award amount'))
+
+  // Detect sales data (but exclude USA Spending data)
+  const isSalesData = !isUSASpendingData && numericColumns?.some(col => 
     col.toLowerCase().includes('sales') || col.toLowerCase().includes('revenue') || 
-    col.toLowerCase().includes('amount') || col.toLowerCase().includes('price')
+    (col.toLowerCase().includes('amount') && !col.toLowerCase().includes('award')) || 
+    col.toLowerCase().includes('price')
   ) && (categoricalColumns?.some(col => 
     col.toLowerCase().includes('product') || col.toLowerCase().includes('category') ||
     col.toLowerCase().includes('region') || col.toLowerCase().includes('customer')
@@ -198,15 +208,6 @@ export function analyzeDataAndSuggestWidgets(data, numericColumns, categoricalCo
       selectedDate: dateCol
     }
   }
-
-  // Detect USA Spending data
-  const isUSASpendingData = numericColumns?.some(col => 
-    col.toLowerCase().includes('award amount') || col.toLowerCase().includes('award_amount')
-  ) && (categoricalColumns?.some(col => 
-    col.toLowerCase().includes('awarding agency') || col.toLowerCase().includes('recipient name') ||
-    col.toLowerCase().includes('award type') || col.toLowerCase().includes('awarding_agency') ||
-    col.toLowerCase().includes('recipient_name')
-  ) || numericCol?.toLowerCase().includes('award amount'))
 
   // USA Spending Insights Widget
   if (isUSASpendingData && hasNumeric && (hasCategorical || hasDate)) {
