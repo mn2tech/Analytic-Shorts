@@ -101,6 +101,16 @@ export const WIDGET_CONFIGS = {
     minH: 4,
     maxW: 6,
     maxH: 10
+  },
+  'usaspending-insights': {
+    id: 'usaspending-insights',
+    title: 'USA Spending Insights',
+    component: 'usaspending-insights',
+    defaultLayout: { i: 'usaspending-insights', x: 0, y: 0, w: 4, h: 6 },
+    minW: 3,
+    minH: 4,
+    maxW: 6,
+    maxH: 10
   }
 }
 

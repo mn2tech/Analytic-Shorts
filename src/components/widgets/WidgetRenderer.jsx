@@ -8,6 +8,7 @@ import BudgetInsightsWidget from './BudgetInsightsWidget'
 import UnemploymentInsightsWidget from './UnemploymentInsightsWidget'
 import HealthInsightsWidget from './HealthInsightsWidget'
 import SalesInsightsWidget from './SalesInsightsWidget'
+import USASpendingInsightsWidget from './USASpendingInsightsWidget'
 
 /**
  * WidgetRenderer - Renders the appropriate widget component based on widget ID
@@ -111,6 +112,16 @@ function WidgetRenderer({
     case 'sales-insights':
       return (
         <SalesInsightsWidget
+          data={filteredData || data}
+          selectedNumeric={selectedNumeric}
+          selectedCategorical={selectedCategorical}
+          selectedDate={selectedDate}
+        />
+      )
+    
+    case 'usaspending-insights':
+      return (
+        <USASpendingInsightsWidget
           data={filteredData || data}
           selectedNumeric={selectedNumeric}
           selectedCategorical={selectedCategorical}

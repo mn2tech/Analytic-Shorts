@@ -199,6 +199,27 @@ export function analyzeDataAndSuggestWidgets(data, numericColumns, categoricalCo
     }
   }
 
+  // Detect USA Spending data
+  const isUSASpendingData = numericColumns?.some(col => 
+    col.toLowerCase().includes('award amount') || col.toLowerCase().includes('award_amount')
+  ) && (categoricalColumns?.some(col => 
+    col.toLowerCase().includes('awarding agency') || col.toLowerCase().includes('recipient name') ||
+    col.toLowerCase().includes('award type') || col.toLowerCase().includes('awarding_agency') ||
+    col.toLowerCase().includes('recipient_name')
+  ) || numericCol?.toLowerCase().includes('award amount'))
+
+  // USA Spending Insights Widget
+  if (isUSASpendingData && hasNumeric && (hasCategorical || hasDate)) {
+    console.log('🏛️ USA Spending data detected!')
+    suggestedWidgets.unshift('usaspending-insights')
+    widgetConfigs['usaspending-insights'] = {
+      title: 'USA Spending Insights',
+      selectedNumeric: numericCol,
+      selectedCategorical: categoricalCol,
+      selectedDate: dateCol
+    }
+  }
+
   // 3. Donut Chart - if we have categorical + numeric
   if (hasCategorical && hasNumeric) {
     suggestedWidgets.push('donut-chart')

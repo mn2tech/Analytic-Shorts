@@ -277,100 +277,99 @@ function AdvancedDashboardGrid({
         }
       })
       
-      // Check if budget-insights widget is suggested but not in saved layouts
-      // If so, add it to the layouts
-      if (dataAnalysis.suggestedWidgets.includes('budget-insights')) {
-        console.log('💰 Budget Insights widget detected! Checking if it needs to be added to layouts...')
-        const breakpoints = ['lg', 'md', 'sm', 'xs', 'xxs']
-        let widgetAdded = false
-        
-        breakpoints.forEach(bp => {
-          const exists = fixedLayouts[bp]?.some(item => item.i === 'budget-insights')
-          if (!exists) {
-            widgetAdded = true
-            if (!fixedLayouts[bp]) {
-              fixedLayouts[bp] = []
-            }
-            
-            const config = WIDGET_CONFIGS['budget-insights']
-            if (config) {
-              // Find next available position (prefer top-left)
-              const cols = bp === 'lg' ? 12 : bp === 'md' ? 10 : 6
-              const width = config.defaultLayout?.w || 6
-              const height = config.defaultLayout?.h || 4
+      // Check if insights widgets are suggested but not in saved layouts
+      // If so, add them to the layouts
+      const insightsWidgets = ['budget-insights', 'unemployment-insights', 'health-insights', 'sales-insights', 'usaspending-insights']
+      
+      insightsWidgets.forEach(widgetId => {
+        if (dataAnalysis.suggestedWidgets.includes(widgetId)) {
+          console.log(`💰 ${widgetId} widget detected! Checking if it needs to be added to layouts...`)
+          const breakpoints = ['lg', 'md', 'sm', 'xs', 'xxs']
+          let widgetAdded = false
+          
+          breakpoints.forEach(bp => {
+            const exists = fixedLayouts[bp]?.some(item => item.i === widgetId)
+            if (!exists) {
+              widgetAdded = true
+              if (!fixedLayouts[bp]) {
+                fixedLayouts[bp] = []
+              }
               
-              // Try to place at top-left first
-              let foundPosition = false
-              let testY = 0
-              let testX = 0
-              
-              while (!foundPosition && testY < 50) {
-                const testItem = { x: testX, y: testY, w: width, h: height }
-                const overlaps = fixedLayouts[bp].some(item => {
-                  return !(
-                    testItem.x + testItem.w <= item.x ||
-                    item.x + item.w <= testItem.x ||
-                    testItem.y + testItem.h <= item.y ||
-                    item.y + item.h <= testItem.y
-                  )
-                })
+              const config = WIDGET_CONFIGS[widgetId]
+              if (config) {
+                // Find next available position (prefer top-left)
+                const cols = bp === 'lg' ? 12 : bp === 'md' ? 10 : 6
+                const width = config.defaultLayout?.w || 6
+                const height = config.defaultLayout?.h || 4
                 
-                if (!overlaps) {
-                  foundPosition = true
-                } else {
-                  testX += width
-                  if (testX + width > cols) {
-                    testX = 0
-                    testY += height + 1
+                // Try to place at top-left first
+                let foundPosition = false
+                let testY = 0
+                let testX = 0
+                
+                while (!foundPosition && testY < 50) {
+                  const testItem = { x: testX, y: testY, w: width, h: height }
+                  const overlaps = fixedLayouts[bp].some(item => {
+                    return !(
+                      testItem.x + testItem.w <= item.x ||
+                      item.x + item.w <= testItem.x ||
+                      testItem.y + testItem.h <= item.y ||
+                      item.y + item.h <= testItem.y
+                    )
+                  })
+                  
+                  if (!overlaps) {
+                    foundPosition = true
+                  } else {
+                    testX += width
+                    if (testX + width > cols) {
+                      testX = 0
+                      testY += height + 1
+                    }
                   }
                 }
+                
+                // Fallback: place at bottom if no position found
+                if (!foundPosition) {
+                  let maxY = 0
+                  fixedLayouts[bp].forEach(item => {
+                    if (item.y + item.h > maxY) {
+                      maxY = item.y + item.h
+                    }
+                  })
+                  testX = 0
+                  testY = maxY + 1
+                }
+                
+                const newItem = {
+                  i: widgetId,
+                  x: testX,
+                  y: testY,
+                  w: width,
+                  h: height,
+                  minW: config.minW,
+                  minH: config.minH,
+                  maxW: config.maxW,
+                  maxH: config.maxH
+                }
+                
+                fixedLayouts[bp] = [...fixedLayouts[bp], newItem]
               }
-              
-              // Fallback: place at bottom if no position found
-              if (!foundPosition) {
-                let maxY = 0
-                fixedLayouts[bp].forEach(item => {
-                  if (item.y + item.h > maxY) {
-                    maxY = item.y + item.h
-                  }
-                })
-                testX = 0
-                testY = maxY + 1
-              }
-              
-              const newItem = {
-                i: 'budget-insights',
-                x: testX,
-                y: testY,
-                w: width,
-                h: height,
-                minW: config.minW,
-                minH: config.minH,
-                maxW: config.maxW,
-                maxH: config.maxH
-              }
-              
-              fixedLayouts[bp] = [...fixedLayouts[bp], newItem]
             }
+          })
+          
+          // Set widget configs if widget was added
+          if (widgetAdded && dataAnalysis.widgetConfigs[widgetId]) {
+            console.log(`✅ ${widgetId} widget added to layouts!`)
+            setWidgetConfigs(prev => ({
+              ...prev,
+              [widgetId]: dataAnalysis.widgetConfigs[widgetId]
+            }))
+          } else if (dataAnalysis.suggestedWidgets.includes(widgetId)) {
+            console.log(`ℹ️ ${widgetId} widget already exists in layouts`)
           }
-        })
-        
-        // Set widget configs if widget was added
-        if (widgetAdded && dataAnalysis.widgetConfigs['budget-insights']) {
-          console.log('✅ Budget Insights widget added to layouts!')
-          setWidgetConfigs(prev => ({
-            ...prev,
-            'budget-insights': dataAnalysis.widgetConfigs['budget-insights']
-          }))
-        } else if (dataAnalysis.suggestedWidgets.includes('budget-insights')) {
-          console.log('ℹ️ Budget Insights widget already exists in layouts')
         }
-      } else {
-        console.log('🔍 Checking for budget data...', {
-          suggestedWidgets: dataAnalysis.suggestedWidgets,
-          hasBudgetInsights: dataAnalysis.suggestedWidgets.includes('budget-insights')
-        })
-      }
+      })
       
       setLayouts(fixedLayouts)
     } else if (dataAnalysis.suggestedWidgets.length > 0) {
@@ -396,11 +395,14 @@ function AdvancedDashboardGrid({
     
     // Set widget visibility based on suggested widgets or saved state
     if (savedVisibility && typeof savedVisibility === 'object' && !Array.isArray(savedVisibility) && Object.keys(savedVisibility).length > 0) {
-      // Ensure budget-insights is visible if it's suggested
+      // Ensure insights widgets are visible if they're suggested
       const updatedVisibility = { ...savedVisibility }
-      if (dataAnalysis.suggestedWidgets.includes('budget-insights')) {
-        updatedVisibility['budget-insights'] = true
-      }
+      const insightsWidgets = ['budget-insights', 'unemployment-insights', 'health-insights', 'sales-insights', 'usaspending-insights']
+      insightsWidgets.forEach(widgetId => {
+        if (dataAnalysis.suggestedWidgets.includes(widgetId)) {
+          updatedVisibility[widgetId] = true
+        }
+      })
       setWidgetVisibility(updatedVisibility)
     } else if (dataAnalysis.suggestedWidgets.length > 0) {
       // Make suggested widgets visible

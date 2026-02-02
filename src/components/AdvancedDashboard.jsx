@@ -7,6 +7,7 @@ import BudgetInsightsWidget from './widgets/BudgetInsightsWidget'
 import UnemploymentInsightsWidget from './widgets/UnemploymentInsightsWidget'
 import HealthInsightsWidget from './widgets/HealthInsightsWidget'
 import SalesInsightsWidget from './widgets/SalesInsightsWidget'
+import USASpendingInsightsWidget from './widgets/USASpendingInsightsWidget'
 import { parseNumericValue } from '../utils/numberUtils'
 
 const COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444', '#6366f1', '#14b8a6', '#f97316', '#06b6d4']
@@ -64,6 +65,16 @@ function AdvancedDashboard({ data, filteredData, selectedNumeric, selectedCatego
       col.toLowerCase().includes('product') || col.toLowerCase().includes('category') ||
       col.toLowerCase().includes('region') || col.toLowerCase().includes('customer')
     ) || selectedNumeric?.toLowerCase().includes('sales'))
+  }, [numericColumns, categoricalColumns, selectedNumeric])
+
+  const isUSASpendingData = useMemo(() => {
+    return numericColumns?.some(col => 
+      col.toLowerCase().includes('award amount') || col.toLowerCase().includes('award_amount')
+    ) && (categoricalColumns?.some(col => 
+      col.toLowerCase().includes('awarding agency') || col.toLowerCase().includes('recipient name') ||
+      col.toLowerCase().includes('award type') || col.toLowerCase().includes('awarding_agency') ||
+      col.toLowerCase().includes('recipient_name')
+    ) || selectedNumeric?.toLowerCase().includes('award amount'))
   }, [numericColumns, categoricalColumns, selectedNumeric])
 
   // Sample filtered data for chart processing
@@ -233,6 +244,16 @@ function AdvancedDashboard({ data, filteredData, selectedNumeric, selectedCatego
       {isSalesData && selectedNumeric && (selectedCategorical || selectedDate) && (
         <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
           <SalesInsightsWidget
+            data={filteredData || data}
+            selectedNumeric={selectedNumeric}
+            selectedCategorical={selectedCategorical}
+            selectedDate={selectedDate}
+          />
+        </div>
+      )}
+      {isUSASpendingData && selectedNumeric && (selectedCategorical || selectedDate) && (
+        <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
+          <USASpendingInsightsWidget
             data={filteredData || data}
             selectedNumeric={selectedNumeric}
             selectedCategorical={selectedCategorical}
