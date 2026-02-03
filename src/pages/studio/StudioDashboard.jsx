@@ -729,6 +729,12 @@ function StudioDashboard() {
     }
   }
 
+  const handlePublish = async () => {
+    // For now, publish is the same as save
+    // In the future, this could mark the dashboard as published/shared
+    await handleSave()
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50">
@@ -765,8 +771,10 @@ function StudioDashboard() {
   const dashboardName = dashboard?.metadata?.name || dashboard?.name || 'Untitled Dashboard'
   const dashboardDescription = dashboard?.metadata?.description || dashboard?.description || ''
 
-  return (
-    <div className="min-h-screen bg-gray-50">
+  // Wrap render in try-catch to prevent blank screen on errors
+  try {
+    return (
+      <div className="min-h-screen bg-gray-50">
       <Navbar />
       
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
@@ -1017,7 +1025,32 @@ function StudioDashboard() {
         )}
       </div>
     </div>
-  )
+    )
+  } catch (error) {
+    console.error('Error rendering StudioDashboard:', error)
+    console.error('Error stack:', error.stack)
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Navbar />
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+          <div className="bg-red-50 border border-red-200 rounded-lg p-6">
+            <h2 className="text-xl font-semibold text-red-900 mb-2">Error Rendering Dashboard</h2>
+            <p className="text-red-800 mb-4">{error.message || 'Unknown error occurred'}</p>
+            <button
+              onClick={() => navigate('/studio')}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              Back to Studio
+            </button>
+            <details className="mt-4">
+              <summary className="cursor-pointer text-sm text-red-700 mb-2">Error Details (click to expand)</summary>
+              <pre className="text-xs bg-red-100 p-2 rounded overflow-auto max-h-64">{error.stack}</pre>
+            </details>
+          </div>
+        </div>
+      </div>
+    )
+  }
 }
 
 export default StudioDashboard
