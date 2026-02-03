@@ -5,7 +5,7 @@ import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, R
 import { parseNumericValue } from '../../utils/numberUtils'
 import sampleDashboardJson from '../../studio/examples/sample_dashboard.json'
 import apiClient from '../../config/api'
-import { getDashboard, saveDashboard } from '../api/studioClient'
+import { getDashboard, saveDashboard } from '../../studio/api/studioClient'
 
 // Studio Widget Components
 function StudioKPIWidget({ widget, queryData, format }) {

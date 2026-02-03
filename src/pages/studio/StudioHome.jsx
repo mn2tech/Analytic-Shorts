@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import Navbar from '../../components/Navbar'
 import Footer from '../../components/Footer'
-import { listDashboards, deleteDashboard } from '../api/studioClient'
+import { listDashboards, deleteDashboard } from '../../studio/api/studioClient'
 
 function StudioHome() {
   const navigate = useNavigate()
