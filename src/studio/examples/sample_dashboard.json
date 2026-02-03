@@ -1,0 +1,184 @@
+{
+  "version": "1.0",
+  "metadata": {
+    "id": "sample-dashboard-001",
+    "name": "Sales Performance Dashboard",
+    "description": "Sample dashboard showing sales metrics, trends, and breakdowns",
+    "created_at": "2024-01-15T10:00:00Z",
+    "updated_at": "2024-01-15T10:00:00Z",
+    "author": "Analytics Shorts Studio"
+  },
+  "data_source": {
+    "type": "api",
+    "endpoint": "/api/example/sales",
+    "refresh_interval": 3600
+  },
+  "filters": [
+    {
+      "id": "time_range",
+      "type": "time_range",
+      "label": "Date Range",
+      "default": {
+        "start": "2024-01-01",
+        "end": "2024-12-31"
+      },
+      "required": true
+    },
+    {
+      "id": "region",
+      "type": "dropdown",
+      "label": "Region",
+      "source": "dimension",
+      "dimension": "Region",
+      "default": "All",
+      "required": false,
+      "multi_select": false
+    }
+  ],
+  "queries": [
+    {
+      "id": "kpi_total_sales",
+      "type": "aggregation",
+      "metric": "Sales",
+      "aggregation": "sum",
+      "filters": {
+        "time_range": "{{filters.time_range}}",
+        "region": "{{filters.region}}"
+      }
+    },
+    {
+      "id": "trend_sales_over_time",
+      "type": "time_series",
+      "metric": "Sales",
+      "dimension": "Date",
+      "aggregation": "sum",
+      "group_by": ["Date"],
+      "order_by": "Date",
+      "filters": {
+        "time_range": "{{filters.time_range}}",
+        "region": "{{filters.region}}"
+      }
+    },
+    {
+      "id": "breakdown_by_product",
+      "type": "breakdown",
+      "metric": "Sales",
+      "dimension": "Product",
+      "aggregation": "sum",
+      "group_by": ["Product"],
+      "order_by": "Sales",
+      "order_direction": "desc",
+      "limit": 10,
+      "filters": {
+        "time_range": "{{filters.time_range}}",
+        "region": "{{filters.region}}"
+      }
+    }
+  ],
+  "sections": [
+    {
+      "id": "kpis",
+      "title": "Key Performance Indicators",
+      "layout": "grid",
+      "columns": 3,
+      "widgets": [
+        {
+          "id": "widget_total_sales",
+          "type": "kpi",
+          "title": "Total Sales",
+          "query_ref": "kpi_total_sales",
+          "format": {
+            "type": "currency",
+            "currency": "USD",
+            "decimals": 0
+          },
+          "trend": {
+            "enabled": true,
+            "period": "previous_period",
+            "format": "percentage"
+          }
+        }
+      ]
+    },
+    {
+      "id": "trends",
+      "title": "Sales Trends",
+      "layout": "grid",
+      "columns": 1,
+      "widgets": [
+        {
+          "id": "widget_sales_trend",
+          "type": "line_chart",
+          "title": "Sales Over Time",
+          "query_ref": "trend_sales_over_time",
+          "config": {
+            "x_axis": "Date",
+            "y_axis": "Sales",
+            "show_grid": true,
+            "show_legend": false,
+            "curve": "monotone"
+          },
+          "format": {
+            "y_axis": {
+              "type": "currency",
+              "currency": "USD",
+              "decimals": 0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "breakdowns",
+      "title": "Sales Breakdown",
+      "layout": "grid",
+      "columns": 1,
+      "widgets": [
+        {
+          "id": "widget_product_breakdown",
+          "type": "bar_chart",
+          "title": "Sales by Product",
+          "query_ref": "breakdown_by_product",
+          "config": {
+            "orientation": "horizontal",
+            "x_axis": "Sales",
+            "y_axis": "Product",
+            "show_grid": true,
+            "show_legend": false,
+            "sort": "desc"
+          },
+          "format": {
+            "x_axis": {
+              "type": "currency",
+              "currency": "USD",
+              "decimals": 0
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "layout": {
+    "type": "responsive",
+    "breakpoints": {
+      "mobile": {
+        "sections": ["kpis", "trends", "breakdowns"],
+        "columns": 1
+      },
+      "tablet": {
+        "sections": ["kpis", "trends", "breakdowns"],
+        "columns": 2
+      },
+      "desktop": {
+        "sections": ["kpis", "trends", "breakdowns"],
+        "columns": 3
+      }
+    }
+  },
+  "theme": {
+    "primary_color": "#3b82f6",
+    "secondary_color": "#8b5cf6",
+    "background_color": "#ffffff",
+    "text_color": "#1f2937"
+  }
+}
