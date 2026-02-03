@@ -712,6 +712,29 @@ function StudioDashboard() {
       setSaveError(null)
       setSaveSuccess(false)
 
+      // Update filters with current filter values as defaults
+      const updatedFilters = (dashboard.filters || []).map(filter => {
+        const currentValue = filterValues[filter.id]
+        if (currentValue !== undefined && currentValue !== null) {
+          // For time_range filters, save both start and end
+          if (filter.type === 'time_range' && typeof currentValue === 'object') {
+            return {
+              ...filter,
+              default: {
+                start: currentValue.start || filter.default?.start,
+                end: currentValue.end || filter.default?.end
+              }
+            }
+          }
+          // For other filters, save the current value
+          return {
+            ...filter,
+            default: currentValue
+          }
+        }
+        return filter
+      })
+
       // Update metadata with current timestamp
       const dashboardToSave = {
         ...dashboard,
@@ -719,7 +742,8 @@ function StudioDashboard() {
           ...dashboard.metadata,
           updated_at: new Date().toISOString(),
           id: currentDashboardId || dashboard.metadata?.id || `dashboard-${Date.now()}`
-        }
+        },
+        filters: updatedFilters
       }
 
       const saved = await saveDashboard(dashboardToSave, currentDashboardId)
