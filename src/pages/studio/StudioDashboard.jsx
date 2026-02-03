@@ -245,6 +245,12 @@ function StudioDashboard() {
   // Load dashboard schema
   useEffect(() => {
     const loadDashboardConfig = (dashboardConfig) => {
+      console.log('Loading dashboard config:', dashboardConfig)
+      if (!dashboardConfig) {
+        console.error('Dashboard config is null or undefined')
+        setLoading(false)
+        return
+      }
       setDashboard(dashboardConfig)
       setLoading(false)
       
@@ -265,9 +271,17 @@ function StudioDashboard() {
     const loadDashboard = async () => {
       try {
         setLoading(true)
+        console.log('Loading dashboard, dashboardId:', dashboardId)
+        console.log('Sample dashboard JSON available:', !!sampleDashboardJson)
         
         if (dashboardId === 'new' || dashboardId === 'sample') {
           // Load sample dashboard for new dashboards
+          if (!sampleDashboardJson) {
+            console.error('Sample dashboard JSON is not available')
+            setLoading(false)
+            return
+          }
+          console.log('Loading sample dashboard')
           loadDashboardConfig(sampleDashboardJson)
           setCurrentDashboardId(null)
         } else {
@@ -299,8 +313,13 @@ function StudioDashboard() {
       } catch (error) {
         console.error('Error in loadDashboard:', error)
         // Fallback to sample on any error
-        loadDashboardConfig(sampleDashboardJson)
-        setCurrentDashboardId(null)
+        if (sampleDashboardJson) {
+          loadDashboardConfig(sampleDashboardJson)
+          setCurrentDashboardId(null)
+        } else {
+          console.error('Cannot load sample dashboard - JSON not available')
+          setLoading(false)
+        }
       }
     }
 
