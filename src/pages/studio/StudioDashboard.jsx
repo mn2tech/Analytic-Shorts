@@ -238,6 +238,9 @@ function StudioDashboard() {
   const [queryResults, setQueryResults] = useState({})
   const [data, setData] = useState(null)
   const [currentDashboardId, setCurrentDashboardId] = useState(null)
+  const [recommendations, setRecommendations] = useState(null)
+  const [generatingRecommendations, setGeneratingRecommendations] = useState(false)
+  const [showRecommendations, setShowRecommendations] = useState(false)
 
   // Load dashboard schema
   useEffect(() => {
@@ -492,6 +495,144 @@ function StudioDashboard() {
     }))
   }
 
+  // Analyze data to detect column types
+  const detectColumnTypes = (data) => {
+    if (!data || data.length === 0) return { numeric: [], categorical: [], date: [] }
+    
+    const columns = Object.keys(data[0] || {})
+    const numeric = []
+    const categorical = []
+    const date = []
+    
+    columns.forEach(col => {
+      const values = data.slice(0, Math.min(100, data.length)).map(row => row[col]).filter(v => v !== null && v !== undefined && v !== '')
+      
+      if (values.length === 0) return
+      
+      // Check if it's a date
+      const datePattern = /^\d{4}-\d{2}-\d{2}|^\d{2}\/\d{2}\/\d{4}/
+      const isDate = values.some(v => {
+        const str = String(v)
+        return datePattern.test(str) || !isNaN(Date.parse(str))
+      })
+      
+      if (isDate) {
+        date.push(col)
+        return
+      }
+      
+      // Check if it's numeric
+      const numericCount = values.filter(v => {
+        const num = parseNumericValue(v)
+        return !isNaN(num) && isFinite(num)
+      }).length
+      
+      if (numericCount / values.length > 0.8) {
+        numeric.push(col)
+      } else {
+        categorical.push(col)
+      }
+    })
+    
+    return { numeric, categorical, date }
+  }
+
+  const handleGenerateDashboard = async () => {
+    if (!data || data.length === 0) return
+
+    try {
+      setGeneratingRecommendations(true)
+      setShowRecommendations(true)
+
+      // Detect column types
+      const { numeric, categorical, date } = detectColumnTypes(data)
+      const columns = Object.keys(data[0] || {})
+
+      // Call insights API for additional context
+      let insightsText = ''
+      try {
+        const insightsResponse = await apiClient.post('/api/insights', {
+          data: data.slice(0, 100), // Sample for insights
+          columns: columns,
+          isFiltered: false,
+          totalRows: data.length,
+          filteredRows: data.length,
+          analyzedRows: Math.min(100, data.length)
+        })
+        insightsText = insightsResponse.data.insights?.join('\n') || ''
+      } catch (error) {
+        console.warn('Insights API call failed, continuing with recommendations:', error)
+      }
+
+      // Analyze and recommend measures (numeric columns)
+      const recommendedMeasures = numeric
+        .map(col => {
+          const values = data.map(row => parseNumericValue(row[col])).filter(v => !isNaN(v) && isFinite(v))
+          const sum = values.reduce((a, b) => a + b, 0)
+          const avg = sum / values.length
+          const variance = values.reduce((acc, v) => acc + Math.pow(v - avg, 2), 0) / values.length
+          const stdDev = Math.sqrt(variance)
+          const cv = avg !== 0 ? (stdDev / avg) * 100 : 0 // Coefficient of variation
+          
+          // Prefer columns with meaningful names and good variance
+          const isMetric = /amount|total|sum|count|quantity|price|cost|revenue|sales|income|value|score|rating|rate|percent/i.test(col)
+          const score = (isMetric ? 10 : 0) + (cv > 10 ? 5 : 0) + (values.length > 0 ? 3 : 0)
+          
+          return { column: col, score, avg, sum, count: values.length }
+        })
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 5)
+        .map(item => item.column)
+
+      // Analyze and recommend dimensions (categorical columns)
+      const recommendedDimensions = categorical
+        .map(col => {
+          const uniqueValues = new Set(data.map(row => row[col]).filter(v => v !== null && v !== undefined && v !== ''))
+          const uniqueCount = uniqueValues.size
+          const totalCount = data.length
+          const ratio = uniqueCount / totalCount
+          
+          // Prefer columns with good cardinality (not too many, not too few unique values)
+          const isDimension = /category|type|status|name|label|group|class|department|region|country|city|state|product|item/i.test(col)
+          const score = (isDimension ? 10 : 0) + (ratio > 0.01 && ratio < 0.5 ? 5 : 0) + (uniqueCount > 2 && uniqueCount < 50 ? 3 : 0)
+          
+          return { column: col, score, uniqueCount, ratio }
+        })
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 5)
+        .map(item => item.column)
+
+      // Recommend filters (categorical and date columns with good cardinality)
+      const recommendedFilters = [
+        ...date.map(col => ({ column: col, type: 'date', priority: 10 })),
+        ...categorical
+          .filter(col => {
+            const uniqueValues = new Set(data.map(row => row[col]).filter(v => v !== null && v !== undefined && v !== ''))
+            const uniqueCount = uniqueValues.size
+            return uniqueCount > 2 && uniqueCount < 20 // Good for dropdown filters
+          })
+          .map(col => {
+            const isFilter = /region|state|country|category|type|status|department/i.test(col)
+            return { column: col, type: 'dropdown', priority: isFilter ? 8 : 5 }
+          })
+      ]
+        .sort((a, b) => b.priority - a.priority)
+        .slice(0, 5)
+
+      setRecommendations({
+        measures: recommendedMeasures,
+        dimensions: recommendedDimensions,
+        filters: recommendedFilters,
+        insights: insightsText
+      })
+    } catch (error) {
+      console.error('Error generating recommendations:', error)
+      alert('Failed to generate recommendations: ' + (error.message || 'Unknown error'))
+    } finally {
+      setGeneratingRecommendations(false)
+    }
+  }
+
   const handleSave = async () => {
     if (!dashboard) return
 
@@ -609,6 +750,102 @@ function StudioDashboard() {
         {saveError && (
           <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3">
             <p className="text-red-800 text-sm">{saveError}</p>
+          </div>
+        )}
+
+        {/* Recommendations Panel */}
+        {showRecommendations && recommendations && (
+          <div className="mb-6 bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold text-gray-900">Dashboard Recommendations</h2>
+              <button
+                onClick={() => setShowRecommendations(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {/* Recommended Measures */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                  <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                  </svg>
+                  Recommended Measures
+                </h3>
+                <ul className="space-y-2">
+                  {recommendations.measures.length > 0 ? (
+                    recommendations.measures.map((measure, index) => (
+                      <li key={measure} className="text-sm text-gray-600 flex items-center gap-2">
+                        <span className="text-blue-600 font-medium">{index + 1}.</span>
+                        <span className="font-mono text-xs bg-gray-100 px-2 py-1 rounded">{measure}</span>
+                      </li>
+                    ))
+                  ) : (
+                    <li className="text-sm text-gray-400 italic">No numeric columns found</li>
+                  )}
+                </ul>
+              </div>
+
+              {/* Recommended Dimensions */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                  <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                  </svg>
+                  Recommended Dimensions
+                </h3>
+                <ul className="space-y-2">
+                  {recommendations.dimensions.length > 0 ? (
+                    recommendations.dimensions.map((dimension, index) => (
+                      <li key={dimension} className="text-sm text-gray-600 flex items-center gap-2">
+                        <span className="text-purple-600 font-medium">{index + 1}.</span>
+                        <span className="font-mono text-xs bg-gray-100 px-2 py-1 rounded">{dimension}</span>
+                      </li>
+                    ))
+                  ) : (
+                    <li className="text-sm text-gray-400 italic">No categorical columns found</li>
+                  )}
+                </ul>
+              </div>
+
+              {/* Recommended Filters */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                  <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                  </svg>
+                  Recommended Filters
+                </h3>
+                <ul className="space-y-2">
+                  {recommendations.filters.length > 0 ? (
+                    recommendations.filters.map((filter, index) => (
+                      <li key={filter.column} className="text-sm text-gray-600 flex items-center gap-2">
+                        <span className="text-green-600 font-medium">{index + 1}.</span>
+                        <span className="font-mono text-xs bg-gray-100 px-2 py-1 rounded">{filter.column}</span>
+                        <span className="text-xs text-gray-400">({filter.type})</span>
+                      </li>
+                    ))
+                  ) : (
+                    <li className="text-sm text-gray-400 italic">No suitable filter columns found</li>
+                  )}
+                </ul>
+              </div>
+            </div>
+
+            {/* Insights Preview (if available) */}
+            {recommendations.insights && (
+              <div className="mt-6 pt-6 border-t border-gray-200">
+                <h3 className="text-sm font-semibold text-gray-700 mb-3">Data Insights</h3>
+                <div className="bg-gray-50 rounded-lg p-4 max-h-40 overflow-y-auto">
+                  <p className="text-sm text-gray-600 whitespace-pre-line">{recommendations.insights}</p>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
