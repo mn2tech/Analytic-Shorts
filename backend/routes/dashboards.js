@@ -134,21 +134,24 @@ router.post('/', getUserFromToken, checkDashboardLimit, async (req, res) => {
       selectedNumeric,
       selectedCategorical,
       selectedDate,
-      dashboardView
+      dashboardView,
+      schema
     } = req.body
     
-    if (!data) {
+    // For Studio dashboards, data can be empty (data comes from data_source)
+    // Only require data for non-studio dashboards
+    if (!data && dashboardView !== 'studio') {
       return res.status(400).json({ error: 'Dashboard data is required' })
     }
     
     const insertData = {
       user_id: req.user.id,
       name: name || 'Untitled Dashboard',
-      data: data,
-      columns: columns,
-      numeric_columns: numericColumns,
-      categorical_columns: categoricalColumns,
-      date_columns: dateColumns,
+      data: data || [], // Allow empty array for Studio dashboards
+      columns: columns || [],
+      numeric_columns: numericColumns || [],
+      categorical_columns: categoricalColumns || [],
+      date_columns: dateColumns || [],
       selected_numeric: selectedNumeric,
       selected_categorical: selectedCategorical,
       selected_date: selectedDate,
