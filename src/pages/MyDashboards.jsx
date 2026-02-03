@@ -216,9 +216,15 @@ function MyDashboards() {
                 </div>
 
                 <div className="flex items-center gap-2 pt-4 border-t border-gray-100">
-                  <span className="text-xs px-2 py-1 bg-blue-50 text-blue-700 rounded">
-                    {dashboard.dashboard_view === 'simple' ? 'Simple View' : 'Advanced View'}
-                  </span>
+                  {dashboard.dashboard_view === 'studio' || dashboard.schema ? (
+                    <span className="text-xs px-2 py-1 bg-purple-50 text-purple-700 rounded">
+                      Studio Dashboard
+                    </span>
+                  ) : (
+                    <span className="text-xs px-2 py-1 bg-blue-50 text-blue-700 rounded">
+                      {dashboard.dashboard_view === 'simple' ? 'Simple View' : 'Advanced View'}
+                    </span>
+                  )}
                   <span className="text-xs text-gray-500 ml-auto">Click to open →</span>
                 </div>
               </div>
