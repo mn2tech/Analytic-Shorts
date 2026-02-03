@@ -45,16 +45,6 @@ function SharedDashboard() {
         return
       }
 
-    // Check if this is a Studio dashboard
-    if (sharedData.dashboardType === 'studio') {
-      // For Studio dashboards, redirect to Studio dashboard view
-      // Note: We'll need to create a shared Studio dashboard view
-      // For now, show an error message
-      setError('Studio dashboards cannot be viewed in shared mode yet. Please contact the dashboard owner.')
-      setLoading(false)
-      return
-    }
-
       // Check if this is a Studio dashboard
       if (sharedData.dashboardType === 'studio') {
         // For Studio dashboards, redirect to Studio dashboard view
