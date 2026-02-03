@@ -4,6 +4,7 @@ import Navbar from '../../components/Navbar'
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { parseNumericValue } from '../../utils/numberUtils'
 import sampleDashboardJson from '../../studio/examples/sample_dashboard.json'
+import apiClient from '../../config/api'
 
 // Studio Widget Components
 function StudioKPIWidget({ widget, queryData, format }) {
@@ -253,14 +254,19 @@ function StudioDashboard() {
     const loadData = async () => {
       try {
         if (dashboard.data_source.type === 'api' && dashboard.data_source.endpoint) {
-          const response = await fetch(dashboard.data_source.endpoint)
-          const result = await response.json()
+          console.log('Loading data from:', dashboard.data_source.endpoint)
+          const response = await apiClient.get(dashboard.data_source.endpoint)
+          const result = response.data
+          console.log('Data loaded:', result?.data?.length || 0, 'rows')
           if (result.data) {
             setData(result.data)
+          } else {
+            console.error('No data in response:', result)
           }
         }
       } catch (error) {
         console.error('Error loading data:', error)
+        console.error('Error details:', error.response?.data || error.message)
       }
     }
 
@@ -269,7 +275,13 @@ function StudioDashboard() {
 
   // Execute queries based on filter values and data
   useEffect(() => {
-    if (!dashboard || !data || data.length === 0) return
+    if (!dashboard || !data || data.length === 0) {
+      console.log('Query execution skipped:', { hasDashboard: !!dashboard, hasData: !!data, dataLength: data?.length })
+      return
+    }
+
+    console.log('Executing queries with data:', data.length, 'rows')
+    console.log('Available columns:', data.length > 0 ? Object.keys(data[0]) : [])
 
     const executeQueries = () => {
       const results = {}
@@ -293,28 +305,41 @@ function StudioDashboard() {
           
           if (resolvedFilters.time_range?.start && resolvedFilters.time_range?.end) {
             filteredData = filteredData.filter(row => {
-              const rowDate = row['Date'] || row['date'] || row['Award Date']
+              // Try multiple date column name variations
+              const rowDate = row['Date'] || row['date'] || row['Award Date'] || row['award_date'] || row['Record Date'] || row['record_date']
               if (!rowDate) return false
-              const date = new Date(rowDate)
-              const start = new Date(resolvedFilters.time_range.start)
-              const end = new Date(resolvedFilters.time_range.end)
-              return date >= start && date <= end
+              try {
+                const date = new Date(rowDate)
+                const start = new Date(resolvedFilters.time_range.start)
+                const end = new Date(resolvedFilters.time_range.end)
+                return date >= start && date <= end
+              } catch {
+                return false
+              }
             })
           }
 
           if (resolvedFilters.region && resolvedFilters.region !== 'All') {
             filteredData = filteredData.filter(row => {
-              const region = row['Region'] || row['region']
+              const region = row['Region'] || row['region'] || row['State'] || row['state']
               return region === resolvedFilters.region
             })
           }
 
+          // Helper to find column name (case-insensitive)
+          const findColumn = (name) => {
+            const keys = Object.keys(filteredData[0] || {})
+            return keys.find(k => k.toLowerCase() === name.toLowerCase()) || name
+          }
+
           // Execute query based on type
           if (query.type === 'aggregation') {
-            const metric = query.metric
+            const metric = findColumn(query.metric)
             const values = filteredData
               .map(row => parseNumericValue(row[metric]))
               .filter(val => !isNaN(val) && isFinite(val))
+            
+            console.log(`Query ${query.id} (${query.type}): metric=${metric}, values found=${values.length}`)
             
             let value = 0
             if (query.aggregation === 'sum') {
@@ -331,12 +356,12 @@ function StudioDashboard() {
 
             results[query.id] = { value }
           } else if (query.type === 'time_series') {
-            const metric = query.metric
-            const dimension = query.dimension
+            const metric = findColumn(query.metric)
+            const dimension = findColumn(query.dimension)
             const grouped = {}
 
             filteredData.forEach(row => {
-              const key = row[dimension] || row[dimension.toLowerCase()]
+              const key = row[dimension]
               const value = parseNumericValue(row[metric])
               if (key && !isNaN(value) && isFinite(value)) {
                 grouped[key] = (grouped[key] || 0) + value
@@ -345,16 +370,23 @@ function StudioDashboard() {
 
             const data = Object.entries(grouped)
               .map(([key, value]) => ({ [dimension]: key, [metric]: value }))
-              .sort((a, b) => new Date(a[dimension]) - new Date(b[dimension]))
+              .sort((a, b) => {
+                try {
+                  return new Date(a[dimension]) - new Date(b[dimension])
+                } catch {
+                  return a[dimension].localeCompare(b[dimension])
+                }
+              })
 
+            console.log(`Query ${query.id} (${query.type}): metric=${metric}, dimension=${dimension}, data points=${data.length}`)
             results[query.id] = { data }
           } else if (query.type === 'breakdown') {
-            const metric = query.metric
-            const dimension = query.dimension
+            const metric = findColumn(query.metric)
+            const dimension = findColumn(query.dimension)
             const grouped = {}
 
             filteredData.forEach(row => {
-              const key = row[dimension] || row[dimension.toLowerCase()]
+              const key = row[dimension]
               const value = parseNumericValue(row[metric])
               if (key && !isNaN(value) && isFinite(value)) {
                 grouped[key] = (grouped[key] || 0) + value
@@ -365,9 +397,10 @@ function StudioDashboard() {
               .map(([key, value]) => ({ [dimension]: key, [metric]: value }))
 
             if (query.order_by) {
+              const orderByCol = findColumn(query.order_by)
               data.sort((a, b) => {
-                const aVal = a[query.order_by] || a[metric]
-                const bVal = b[query.order_by] || b[metric]
+                const aVal = a[orderByCol] || a[metric]
+                const bVal = b[orderByCol] || b[metric]
                 if (query.order_direction === 'desc') {
                   return bVal - aVal
                 }
@@ -379,6 +412,7 @@ function StudioDashboard() {
               data = data.slice(0, query.limit)
             }
 
+            console.log(`Query ${query.id} (${query.type}): metric=${metric}, dimension=${dimension}, data points=${data.length}`)
             results[query.id] = { data }
           }
         } catch (error) {
@@ -387,6 +421,7 @@ function StudioDashboard() {
         }
       })
 
+      console.log('Query results:', results)
       setQueryResults(results)
     }
 
