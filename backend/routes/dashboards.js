@@ -141,21 +141,28 @@ router.post('/', getUserFromToken, checkDashboardLimit, async (req, res) => {
       return res.status(400).json({ error: 'Dashboard data is required' })
     }
     
+    const insertData = {
+      user_id: req.user.id,
+      name: name || 'Untitled Dashboard',
+      data: data,
+      columns: columns,
+      numeric_columns: numericColumns,
+      categorical_columns: categoricalColumns,
+      date_columns: dateColumns,
+      selected_numeric: selectedNumeric,
+      selected_categorical: selectedCategorical,
+      selected_date: selectedDate,
+      dashboard_view: dashboardView || 'advanced'
+    }
+    
+    // Add schema if provided (for Studio dashboards)
+    if (schema !== undefined) {
+      insertData.schema = typeof schema === 'string' ? schema : JSON.stringify(schema)
+    }
+    
     const { data: dashboard, error } = await supabase
       .from('shorts_dashboards')
-      .insert({
-        user_id: req.user.id,
-        name: name || 'Untitled Dashboard',
-        data: data,
-        columns: columns,
-        numeric_columns: numericColumns,
-        categorical_columns: categoricalColumns,
-        date_columns: dateColumns,
-        selected_numeric: selectedNumeric,
-        selected_categorical: selectedCategorical,
-        selected_date: selectedDate,
-        dashboard_view: dashboardView || 'advanced'
-      })
+      .insert(insertData)
       .select()
       .single()
     
@@ -189,7 +196,8 @@ router.put('/:id', getUserFromToken, async (req, res) => {
       selectedNumeric,
       selectedCategorical,
       selectedDate,
-      dashboardView
+      dashboardView,
+      schema
     } = req.body
     
     // First verify the dashboard belongs to the user
@@ -215,6 +223,9 @@ router.put('/:id', getUserFromToken, async (req, res) => {
     if (selectedCategorical !== undefined) updateData.selected_categorical = selectedCategorical
     if (selectedDate !== undefined) updateData.selected_date = selectedDate
     if (dashboardView !== undefined) updateData.dashboard_view = dashboardView
+    if (schema !== undefined) {
+      updateData.schema = typeof schema === 'string' ? schema : JSON.stringify(schema)
+    }
     
     const { data: dashboard, error } = await supabase
       .from('shorts_dashboards')

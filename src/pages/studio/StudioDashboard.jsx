@@ -5,6 +5,7 @@ import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, R
 import { parseNumericValue } from '../../utils/numberUtils'
 import sampleDashboardJson from '../../studio/examples/sample_dashboard.json'
 import apiClient from '../../config/api'
+import { getDashboard, saveDashboard } from '../api/studioClient'
 
 // Studio Widget Components
 function StudioKPIWidget({ widget, queryData, format }) {
@@ -230,38 +231,77 @@ function StudioDashboard() {
   const navigate = useNavigate()
   const [dashboard, setDashboard] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState(null)
+  const [saveSuccess, setSaveSuccess] = useState(false)
   const [filterValues, setFilterValues] = useState({})
   const [queryResults, setQueryResults] = useState({})
   const [data, setData] = useState(null)
+  const [currentDashboardId, setCurrentDashboardId] = useState(null)
 
   // Load dashboard schema
   useEffect(() => {
-    // For now, load sample dashboard
-    // In production, this would fetch from API based on dashboardId
-    const loadDashboard = (dashboardConfig) => {
+    const loadDashboardConfig = (dashboardConfig) => {
       setDashboard(dashboardConfig)
       setLoading(false)
       
       // Initialize filter values from defaults
       const initialFilters = {}
-      dashboardConfig.filters.forEach(filter => {
-        if (filter.default) {
-          initialFilters[filter.id] = filter.default
-        } else {
-          initialFilters[filter.id] = filter.type === 'time_range' ? { start: '', end: '' } : ''
-        }
-      })
+      if (dashboardConfig.filters) {
+        dashboardConfig.filters.forEach(filter => {
+          if (filter.default) {
+            initialFilters[filter.id] = filter.default
+          } else {
+            initialFilters[filter.id] = filter.type === 'time_range' ? { start: '', end: '' } : ''
+          }
+        })
+      }
       setFilterValues(initialFilters)
     }
 
-    if (dashboardId === 'new' || dashboardId === 'sample' || dashboardId === '1') {
-      loadDashboard(sampleDashboardJson)
-    } else {
-      // Load dashboard by ID (placeholder - for now use sample)
-      setTimeout(() => {
-        loadDashboard(sampleDashboardJson)
-      }, 500)
+    const loadDashboard = async () => {
+      try {
+        setLoading(true)
+        
+        if (dashboardId === 'new' || dashboardId === 'sample') {
+          // Load sample dashboard for new dashboards
+          loadDashboardConfig(sampleDashboardJson)
+          setCurrentDashboardId(null)
+        } else {
+          // Try to load from backend
+          try {
+            const schema = await getDashboard(dashboardId)
+            if (schema) {
+              loadDashboardConfig(schema)
+              setCurrentDashboardId(dashboardId)
+            } else {
+              // Fallback to sample if not found
+              console.warn('Dashboard not found, loading sample')
+              loadDashboardConfig(sampleDashboardJson)
+              setCurrentDashboardId(null)
+            }
+          } catch (error) {
+            console.error('Error loading dashboard:', error)
+            // If it's a 404 or auth error, still load sample but show message
+            if (error.message?.includes('not found')) {
+              loadDashboardConfig(sampleDashboardJson)
+              setCurrentDashboardId(null)
+            } else {
+              // For other errors, still try to load sample
+              loadDashboardConfig(sampleDashboardJson)
+              setCurrentDashboardId(null)
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error in loadDashboard:', error)
+        // Fallback to sample on any error
+        loadDashboardConfig(sampleDashboardJson)
+        setCurrentDashboardId(null)
+      }
     }
+
+    loadDashboard()
   }, [dashboardId])
 
   // Load data from data source
@@ -452,6 +492,43 @@ function StudioDashboard() {
     }))
   }
 
+  const handleSave = async () => {
+    if (!dashboard) return
+
+    try {
+      setSaving(true)
+      setSaveError(null)
+      setSaveSuccess(false)
+
+      // Update metadata with current timestamp
+      const dashboardToSave = {
+        ...dashboard,
+        metadata: {
+          ...dashboard.metadata,
+          updated_at: new Date().toISOString(),
+          id: currentDashboardId || dashboard.metadata?.id || `dashboard-${Date.now()}`
+        }
+      }
+
+      const saved = await saveDashboard(dashboardToSave, currentDashboardId)
+      
+      // Update current dashboard ID if it was a new dashboard
+      if (!currentDashboardId && saved.id) {
+        setCurrentDashboardId(saved.id)
+        // Update URL without reload
+        window.history.replaceState({}, '', `/studio/${saved.id}`)
+      }
+
+      setSaveSuccess(true)
+      setTimeout(() => setSaveSuccess(false), 3000)
+    } catch (error) {
+      console.error('Error saving dashboard:', error)
+      setSaveError(error.message || 'Failed to save dashboard')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50">
@@ -522,6 +599,18 @@ function StudioDashboard() {
             </button>
           </div>
         </div>
+
+        {/* Save Status Messages */}
+        {saveSuccess && (
+          <div className="mb-4 bg-green-50 border border-green-200 rounded-lg p-3">
+            <p className="text-green-800 text-sm">Dashboard saved successfully!</p>
+          </div>
+        )}
+        {saveError && (
+          <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3">
+            <p className="text-red-800 text-sm">{saveError}</p>
+          </div>
+        )}
 
         {/* Filters */}
         {dashboard.filters && dashboard.filters.length > 0 && (
