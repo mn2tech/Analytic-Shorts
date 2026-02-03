@@ -943,7 +943,8 @@ function StudioDashboard() {
         )}
 
         {/* Sections */}
-        {dashboard.sections && dashboard.sections.map(section => (
+        {dashboard.sections && Array.isArray(dashboard.sections) && dashboard.sections.length > 0 ? (
+          dashboard.sections.map(section => (
           <div key={section.id} className="mb-8">
             <h2 className="text-xl font-semibold text-gray-900 mb-4">{section.title}</h2>
             <div 
