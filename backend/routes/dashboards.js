@@ -169,7 +169,12 @@ router.post('/', getUserFromToken, checkDashboardLimit, async (req, res) => {
       .select()
       .single()
     
-    if (error) throw error
+    if (error) {
+      console.error('Supabase insert error:', error)
+      console.error('Insert data keys:', Object.keys(insertData))
+      console.error('Schema type:', typeof insertData.schema)
+      throw error
+    }
     
     // Log usage
     await supabase.from('shorts_usage_logs').insert({
@@ -182,7 +187,17 @@ router.post('/', getUserFromToken, checkDashboardLimit, async (req, res) => {
     res.status(201).json(dashboard)
   } catch (error) {
     console.error('Error creating dashboard:', error)
-    res.status(500).json({ error: 'Failed to create dashboard' })
+    console.error('Error details:', {
+      message: error.message,
+      code: error.code,
+      details: error.details,
+      hint: error.hint
+    })
+    res.status(500).json({ 
+      error: 'Failed to create dashboard',
+      message: error.message || 'Unknown error',
+      details: error.details || error.hint || 'Check server logs for more information'
+    })
   }
 })
 

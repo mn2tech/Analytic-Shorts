@@ -108,13 +108,20 @@ export async function saveDashboard(dashboardJson, dashboardId = null) {
     return response.data
   } catch (error) {
     console.error('Error saving dashboard:', error)
+    console.error('Error response:', error.response?.data)
+    console.error('Error status:', error.response?.status)
+    
     if (error.response?.status === 401) {
       throw new Error('Authentication required. Please sign in to save dashboards.')
     }
     if (error.response?.status === 403) {
       throw new Error('Dashboard limit reached. Please upgrade your plan or delete existing dashboards.')
     }
-    throw error
+    if (error.response?.status === 500) {
+      const errorMessage = error.response?.data?.error || error.response?.data?.message || 'Server error occurred'
+      throw new Error(`Failed to save dashboard: ${errorMessage}`)
+    }
+    throw new Error(error.response?.data?.error || error.response?.data?.message || error.message || 'Failed to save dashboard')
   }
 }
 
