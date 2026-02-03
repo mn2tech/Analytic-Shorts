@@ -788,8 +788,60 @@ function StudioDashboard() {
 
       // First, save the dashboard to ensure it's persisted
       console.log('Step 1: Saving dashboard...')
-      await handleSave()
-      console.log('Step 1: Dashboard saved successfully')
+      try {
+        // Call handleSave logic directly to avoid state conflicts
+        if (!dashboard) {
+          throw new Error('Dashboard not loaded')
+        }
+
+        // Update filters with current filter values as defaults
+        const updatedFilters = (dashboard.filters || []).map(filter => {
+          const currentValue = filterValues[filter.id]
+          if (currentValue !== undefined && currentValue !== null) {
+            // For time_range filters, save both start and end
+            if (filter.type === 'time_range' && typeof currentValue === 'object') {
+              return {
+                ...filter,
+                default: {
+                  start: currentValue.start || filter.default?.start,
+                  end: currentValue.end || filter.default?.end
+                }
+              }
+            }
+            // For other filters, save the current value
+            return {
+              ...filter,
+              default: currentValue
+            }
+          }
+          return filter
+        })
+
+        // Update metadata with current timestamp
+        const dashboardToSave = {
+          ...dashboard,
+          metadata: {
+            ...dashboard.metadata,
+            updated_at: new Date().toISOString(),
+            id: currentDashboardId || dashboard.metadata?.id || `dashboard-${Date.now()}`
+          },
+          filters: updatedFilters
+        }
+
+        const saved = await saveDashboard(dashboardToSave, currentDashboardId)
+        
+        // Update current dashboard ID if it was a new dashboard
+        if (!currentDashboardId && saved.id) {
+          setCurrentDashboardId(saved.id)
+          // Update URL without reload
+          window.history.replaceState({}, '', `/studio/${saved.id}`)
+        }
+        
+        console.log('Step 1: Dashboard saved successfully, ID:', saved.id)
+      } catch (saveError) {
+        console.error('Step 1: Error saving dashboard:', saveError)
+        throw new Error(`Failed to save dashboard: ${saveError.message || 'Unknown error'}`)
+      }
 
       // Generate a share ID if we don't have one
       let newShareId = shareId
