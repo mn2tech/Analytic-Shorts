@@ -1,11 +1,25 @@
 // Utility functions for sharing dashboards
+import apiClient from '../config/api'
 
 export const generateShareId = () => {
   return `share_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
 }
 
-export const saveSharedDashboard = (shareId, dashboardData) => {
+export const saveSharedDashboard = async (shareId, dashboardData) => {
   try {
+    // First save to backend (database)
+    try {
+      const response = await apiClient.post('/api/shared', {
+        shareId,
+        dashboardData
+      })
+      console.log('Shared dashboard saved to backend:', response.data)
+    } catch (backendError) {
+      console.error('Error saving to backend, falling back to localStorage:', backendError)
+      // Fallback to localStorage if backend fails
+    }
+
+    // Also save to localStorage as backup
     const shareData = {
       ...dashboardData,
       sharedAt: new Date().toISOString(),
@@ -19,10 +33,24 @@ export const saveSharedDashboard = (shareId, dashboardData) => {
   }
 }
 
-export const loadSharedDashboard = (shareId) => {
+export const loadSharedDashboard = async (shareId) => {
   try {
+    // First try to load from backend
+    try {
+      const response = await apiClient.get(`/api/shared/${shareId}`)
+      if (response.data && response.data.dashboardData) {
+        console.log('Loaded shared dashboard from backend')
+        return response.data.dashboardData
+      }
+    } catch (backendError) {
+      console.log('Backend not available or dashboard not found, trying localStorage:', backendError.response?.status)
+      // Fallback to localStorage if backend fails or returns 404
+    }
+
+    // Fallback to localStorage
     const shareData = localStorage.getItem(`shared_dashboard_${shareId}`)
     if (shareData) {
+      console.log('Loaded shared dashboard from localStorage')
       return JSON.parse(shareData)
     }
     return null

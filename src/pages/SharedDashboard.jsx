@@ -31,18 +31,19 @@ function SharedDashboard() {
   const [dashboardTitle, setDashboardTitle] = useState('Analytics Dashboard')
 
   useEffect(() => {
-    if (!shareId) {
-      setError('Invalid share link')
-      setLoading(false)
-      return
-    }
+    const loadDashboard = async () => {
+      if (!shareId) {
+        setError('Invalid share link')
+        setLoading(false)
+        return
+      }
 
-    const sharedData = loadSharedDashboard(shareId)
-    if (!sharedData) {
-      setError('Shared dashboard not found or expired')
-      setLoading(false)
-      return
-    }
+      const sharedData = await loadSharedDashboard(shareId)
+      if (!sharedData) {
+        setError('Shared dashboard not found or expired')
+        setLoading(false)
+        return
+      }
 
     // Check if this is a Studio dashboard
     if (sharedData.dashboardType === 'studio') {
@@ -54,25 +55,35 @@ function SharedDashboard() {
       return
     }
 
-    // Initialize data from shared dashboard
-    setData(sharedData.data)
-    setFilteredData(sharedData.data)
-    setSidebarFilteredData(sharedData.data)
-    setColumns(sharedData.columns || [])
-    setNumericColumns(sharedData.numericColumns || [])
-    setCategoricalColumns(sharedData.categoricalColumns || [])
-    setDateColumns(sharedData.dateColumns || [])
-    setSelectedNumeric(sharedData.selectedNumeric || '')
-    setSelectedCategorical(sharedData.selectedCategorical || '')
-    setSelectedDate(sharedData.selectedDate || '')
-    
-    // Restore dashboard view if saved
-    if (sharedData.dashboardView) {
-      setDashboardView(sharedData.dashboardView)
-    }
+      // Check if this is a Studio dashboard
+      if (sharedData.dashboardType === 'studio') {
+        // For Studio dashboards, redirect to Studio dashboard view
+        // Note: We'll need to create a shared Studio dashboard view
+        // For now, show an error message
+        setError('Studio dashboards cannot be viewed in shared mode yet. Please contact the dashboard owner.')
+        setLoading(false)
+        return
+      }
 
-    // Generate dashboard title
-    const allColumns = sharedData.columns || []
+      // Initialize data from shared dashboard
+      setData(sharedData.data)
+      setFilteredData(sharedData.data)
+      setSidebarFilteredData(sharedData.data)
+      setColumns(sharedData.columns || [])
+      setNumericColumns(sharedData.numericColumns || [])
+      setCategoricalColumns(sharedData.categoricalColumns || [])
+      setDateColumns(sharedData.dateColumns || [])
+      setSelectedNumeric(sharedData.selectedNumeric || '')
+      setSelectedCategorical(sharedData.selectedCategorical || '')
+      setSelectedDate(sharedData.selectedDate || '')
+      
+      // Restore dashboard view if saved
+      if (sharedData.dashboardView) {
+        setDashboardView(sharedData.dashboardView)
+      }
+
+      // Generate dashboard title
+      const allColumns = sharedData.columns || []
     
     // First, check for specific dataset sources (API datasets)
     const getDatasetTitleFromSource = (source) => {

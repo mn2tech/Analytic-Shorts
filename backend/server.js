@@ -13,6 +13,7 @@ const subscriptionRoutes = require('./routes/subscription')
 const webhookRoutes = require('./routes/webhook')
 const analyticsRoutes = require('./routes/analytics')
 const studioRoutes = require('./routes/studio')
+const sharedRoutes = require('./routes/shared')
 const accessLogger = require('./middleware/accessLogger')
 
 const app = express()
@@ -64,6 +65,7 @@ app.use('/api/dashboards', dashboardRoutes)
 app.use('/api/subscription', subscriptionRoutes)
 app.use('/api/analytics', analyticsRoutes)
 app.use('/api/studio', studioRoutes)
+app.use('/api/shared', sharedRoutes)
 
 // Health check
 app.get('/api/health', (req, res) => {

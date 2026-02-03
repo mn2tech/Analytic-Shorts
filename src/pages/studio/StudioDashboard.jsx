@@ -872,9 +872,9 @@ function StudioDashboard() {
         shareId: sharedData.shareId
       })
 
-      // Save to localStorage for sharing
-      console.log('Step 4: Saving to localStorage...')
-      const saveResult = saveSharedDashboard(newShareId, sharedData)
+      // Save to backend and localStorage for sharing
+      console.log('Step 4: Saving to backend and localStorage...')
+      const saveResult = await saveSharedDashboard(newShareId, sharedData)
       console.log('Step 4: Save result:', saveResult)
       
       if (saveResult) {
