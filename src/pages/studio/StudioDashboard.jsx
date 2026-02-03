@@ -6,6 +6,7 @@ import { parseNumericValue } from '../../utils/numberUtils'
 import sampleDashboardJson from '../../studio/examples/sample_dashboard.json'
 import apiClient from '../../config/api'
 import { getDashboard, saveDashboard } from '../../studio/api/studioClient'
+import { generateShareId, saveSharedDashboard, getShareableUrl, copyToClipboard } from '../../utils/shareUtils'
 
 // Studio Widget Components
 function StudioKPIWidget({ widget, queryData, format }) {
@@ -241,6 +242,9 @@ function StudioDashboard() {
   const [recommendations, setRecommendations] = useState(null)
   const [generatingRecommendations, setGeneratingRecommendations] = useState(false)
   const [showRecommendations, setShowRecommendations] = useState(false)
+  const [shareId, setShareId] = useState(null)
+  const [shareLinkCopied, setShareLinkCopied] = useState(false)
+  const [publishing, setPublishing] = useState(false)
 
   // Load dashboard schema
   useEffect(() => {
@@ -766,9 +770,58 @@ function StudioDashboard() {
   }
 
   const handlePublish = async () => {
-    // For now, publish is the same as save
-    // In the future, this could mark the dashboard as published/shared
-    await handleSave()
+    if (!dashboard) return
+
+    try {
+      setPublishing(true)
+      setSaveError(null)
+      setSaveSuccess(false)
+
+      // First, save the dashboard to ensure it's persisted
+      await handleSave()
+
+      // Generate a share ID if we don't have one
+      let newShareId = shareId
+      if (!newShareId) {
+        newShareId = generateShareId()
+        setShareId(newShareId)
+      }
+
+      // Prepare shared dashboard data
+      const sharedData = {
+        dashboard: dashboard,
+        filterValues: filterValues,
+        queryResults: queryResults,
+        data: data,
+        sharedAt: new Date().toISOString(),
+        shareId: newShareId,
+        dashboardType: 'studio'
+      }
+
+      // Save to localStorage for sharing
+      if (saveSharedDashboard(newShareId, sharedData)) {
+        const shareUrl = getShareableUrl(newShareId)
+        
+        // Copy to clipboard
+        try {
+          await navigator.clipboard.writeText(shareUrl)
+          setShareLinkCopied(true)
+          setTimeout(() => setShareLinkCopied(false), 3000)
+        } catch (err) {
+          console.error('Failed to copy to clipboard:', err)
+        }
+
+        setSaveSuccess(true)
+        setTimeout(() => setSaveSuccess(false), 3000)
+      } else {
+        throw new Error('Failed to publish dashboard')
+      }
+    } catch (error) {
+      console.error('Error publishing dashboard:', error)
+      setSaveError(error.message || 'Failed to publish dashboard')
+    } finally {
+      setPublishing(false)
+    }
   }
 
   if (loading) {
