@@ -245,27 +245,32 @@ function StudioDashboard() {
   // Load dashboard schema
   useEffect(() => {
     const loadDashboardConfig = (dashboardConfig) => {
-      console.log('Loading dashboard config:', dashboardConfig)
-      if (!dashboardConfig) {
-        console.error('Dashboard config is null or undefined')
+      try {
+        console.log('Loading dashboard config:', dashboardConfig)
+        if (!dashboardConfig) {
+          console.error('Dashboard config is null or undefined')
+          setLoading(false)
+          return
+        }
+        setDashboard(dashboardConfig)
         setLoading(false)
-        return
+        
+        // Initialize filter values from defaults
+        const initialFilters = {}
+        if (dashboardConfig.filters && Array.isArray(dashboardConfig.filters)) {
+          dashboardConfig.filters.forEach(filter => {
+            if (filter.default) {
+              initialFilters[filter.id] = filter.default
+            } else {
+              initialFilters[filter.id] = filter.type === 'time_range' ? { start: '', end: '' } : ''
+            }
+          })
+        }
+        setFilterValues(initialFilters)
+      } catch (error) {
+        console.error('Error in loadDashboardConfig:', error)
+        setLoading(false)
       }
-      setDashboard(dashboardConfig)
-      setLoading(false)
-      
-      // Initialize filter values from defaults
-      const initialFilters = {}
-      if (dashboardConfig.filters) {
-        dashboardConfig.filters.forEach(filter => {
-          if (filter.default) {
-            initialFilters[filter.id] = filter.default
-          } else {
-            initialFilters[filter.id] = filter.type === 'time_range' ? { start: '', end: '' } : ''
-          }
-        })
-      }
-      setFilterValues(initialFilters)
     }
 
     const loadDashboard = async () => {
@@ -273,12 +278,33 @@ function StudioDashboard() {
         setLoading(true)
         console.log('Loading dashboard, dashboardId:', dashboardId)
         console.log('Sample dashboard JSON available:', !!sampleDashboardJson)
+        console.log('Sample dashboard JSON content:', sampleDashboardJson)
         
         if (dashboardId === 'new' || dashboardId === 'sample') {
           // Load sample dashboard for new dashboards
           if (!sampleDashboardJson) {
             console.error('Sample dashboard JSON is not available')
-            setLoading(false)
+            // Create a minimal dashboard as fallback
+            const fallbackDashboard = {
+              version: "1.0",
+              metadata: {
+                id: "new-dashboard",
+                name: "New Dashboard",
+                description: "Create your dashboard configuration",
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+              },
+              data_source: {
+                type: "api",
+                endpoint: "/api/example/sales",
+                refresh_interval: 3600
+              },
+              filters: [],
+              queries: [],
+              sections: []
+            }
+            loadDashboardConfig(fallbackDashboard)
+            setCurrentDashboardId(null)
             return
           }
           console.log('Loading sample dashboard')
@@ -312,14 +338,28 @@ function StudioDashboard() {
         }
       } catch (error) {
         console.error('Error in loadDashboard:', error)
-        // Fallback to sample on any error
-        if (sampleDashboardJson) {
-          loadDashboardConfig(sampleDashboardJson)
-          setCurrentDashboardId(null)
-        } else {
-          console.error('Cannot load sample dashboard - JSON not available')
-          setLoading(false)
+        console.error('Error stack:', error.stack)
+        // Fallback to minimal dashboard on any error
+        const fallbackDashboard = {
+          version: "1.0",
+          metadata: {
+            id: "error-dashboard",
+            name: "Dashboard",
+            description: "Error loading dashboard",
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          },
+          data_source: {
+            type: "api",
+            endpoint: "/api/example/sales",
+            refresh_interval: 3600
+          },
+          filters: [],
+          queries: [],
+          sections: []
         }
+        loadDashboardConfig(fallbackDashboard)
+        setCurrentDashboardId(null)
       }
     }
 
