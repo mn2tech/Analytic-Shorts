@@ -963,9 +963,47 @@ function StudioDashboard() {
         </div>
 
         {/* Save Status Messages */}
-        {saveSuccess && (
+        {saveSuccess && !shareLinkCopied && !shareId && (
           <div className="mb-4 bg-green-50 border border-green-200 rounded-lg p-3">
             <p className="text-green-800 text-sm">Dashboard saved successfully!</p>
+          </div>
+        )}
+        {shareLinkCopied && shareId && (
+          <div className="mb-4 bg-green-50 border border-green-200 rounded-lg p-3">
+            <p className="text-green-800 text-sm font-medium mb-2">✓ Dashboard published! Share link copied to clipboard.</p>
+            <div className="flex items-center gap-2 mt-2">
+              <code className="bg-white px-2 py-1 rounded text-xs border border-green-200 flex-1 break-all">{getShareableUrl(shareId)}</code>
+              <button
+                onClick={async () => {
+                  const shareUrl = getShareableUrl(shareId)
+                  await copyToClipboard(shareUrl)
+                  setShareLinkCopied(true)
+                  setTimeout(() => setShareLinkCopied(false), 2000)
+                }}
+                className="text-green-700 hover:text-green-800 underline text-xs whitespace-nowrap"
+              >
+                Copy again
+              </button>
+            </div>
+          </div>
+        )}
+        {shareId && !shareLinkCopied && !publishing && (
+          <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg p-3">
+            <p className="text-blue-800 text-sm font-medium mb-2">Dashboard is published. Share link:</p>
+            <div className="flex items-center gap-2 mt-2">
+              <code className="bg-white px-2 py-1 rounded text-xs border border-blue-200 flex-1 break-all">{getShareableUrl(shareId)}</code>
+              <button
+                onClick={async () => {
+                  const shareUrl = getShareableUrl(shareId)
+                  await copyToClipboard(shareUrl)
+                  setShareLinkCopied(true)
+                  setTimeout(() => setShareLinkCopied(false), 2000)
+                }}
+                className="text-blue-700 hover:text-blue-800 underline text-xs whitespace-nowrap"
+              >
+                Copy link
+              </button>
+            </div>
           </div>
         )}
         {saveError && (
