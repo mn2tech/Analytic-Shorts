@@ -770,24 +770,40 @@ function StudioDashboard() {
   }
 
   const handlePublish = async () => {
-    if (!dashboard) return
+    if (!dashboard) {
+      console.error('Cannot publish: dashboard is null')
+      setSaveError('Dashboard not loaded')
+      return
+    }
 
     try {
       setPublishing(true)
       setSaveError(null)
       setSaveSuccess(false)
+      setShareLinkCopied(false)
+
+      console.log('Starting publish process...')
+      console.log('Dashboard:', dashboard)
+      console.log('Current shareId:', shareId)
 
       // First, save the dashboard to ensure it's persisted
+      console.log('Step 1: Saving dashboard...')
       await handleSave()
+      console.log('Step 1: Dashboard saved successfully')
 
       // Generate a share ID if we don't have one
       let newShareId = shareId
       if (!newShareId) {
+        console.log('Step 2: Generating new share ID...')
         newShareId = generateShareId()
         setShareId(newShareId)
+        console.log('Step 2: Generated share ID:', newShareId)
+      } else {
+        console.log('Step 2: Using existing share ID:', newShareId)
       }
 
       // Prepare shared dashboard data
+      console.log('Step 3: Preparing shared dashboard data...')
       const sharedData = {
         dashboard: dashboard,
         filterValues: filterValues,
@@ -797,27 +813,44 @@ function StudioDashboard() {
         shareId: newShareId,
         dashboardType: 'studio'
       }
+      console.log('Step 3: Shared data prepared:', {
+        hasDashboard: !!sharedData.dashboard,
+        hasFilterValues: !!sharedData.filterValues,
+        hasData: !!sharedData.data,
+        shareId: sharedData.shareId
+      })
 
       // Save to localStorage for sharing
-      if (saveSharedDashboard(newShareId, sharedData)) {
+      console.log('Step 4: Saving to localStorage...')
+      const saveResult = saveSharedDashboard(newShareId, sharedData)
+      console.log('Step 4: Save result:', saveResult)
+      
+      if (saveResult) {
         const shareUrl = getShareableUrl(newShareId)
+        console.log('Step 5: Share URL generated:', shareUrl)
         
         // Copy to clipboard
+        console.log('Step 6: Copying to clipboard...')
         try {
           await navigator.clipboard.writeText(shareUrl)
           setShareLinkCopied(true)
-          setTimeout(() => setShareLinkCopied(false), 3000)
+          console.log('Step 6: Copied to clipboard successfully')
+          setTimeout(() => setShareLinkCopied(false), 5000)
         } catch (err) {
           console.error('Failed to copy to clipboard:', err)
+          // Don't fail the whole publish if clipboard fails
         }
 
         setSaveSuccess(true)
-        setTimeout(() => setSaveSuccess(false), 3000)
+        console.log('Publish completed successfully!')
+        setTimeout(() => setSaveSuccess(false), 5000)
       } else {
-        throw new Error('Failed to publish dashboard')
+        console.error('Failed to save shared dashboard to localStorage')
+        throw new Error('Failed to save shared dashboard. Please check browser console for details.')
       }
     } catch (error) {
       console.error('Error publishing dashboard:', error)
+      console.error('Error stack:', error.stack)
       setSaveError(error.message || 'Failed to publish dashboard')
     } finally {
       setPublishing(false)
