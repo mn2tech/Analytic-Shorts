@@ -34,6 +34,13 @@ function MyDashboards() {
   }
 
   const handleLoadDashboard = (dashboard) => {
+    // Check if this is a Studio dashboard
+    if (dashboard.dashboard_view === 'studio' || dashboard.schema) {
+      // Route to Studio dashboard
+      navigate(`/studio/${dashboard.id}`)
+      return
+    }
+
     // Prepare data in the format expected by Dashboard component
     const dashboardData = {
       data: dashboard.data,
