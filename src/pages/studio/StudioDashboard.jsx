@@ -702,6 +702,10 @@ function StudioDashboard() {
     )
   }
 
+  // Get dashboard name and description safely
+  const dashboardName = dashboard?.metadata?.name || dashboard?.name || 'Untitled Dashboard'
+  const dashboardDescription = dashboard?.metadata?.description || dashboard?.description || ''
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
@@ -719,10 +723,10 @@ function StudioDashboard() {
               </button>
             </div>
             <h1 className="text-3xl font-bold text-gray-900">
-              {dashboard.metadata.name}
+              {dashboardName}
             </h1>
-            {dashboard.metadata.description && (
-              <p className="text-gray-600 mt-1">{dashboard.metadata.description}</p>
+            {dashboardDescription && (
+              <p className="text-gray-600 mt-1">{dashboardDescription}</p>
             )}
           </div>
           <div className="flex items-center gap-3 mt-4 sm:mt-0">
