@@ -945,25 +945,36 @@ function StudioDashboard() {
         {/* Sections */}
         {dashboard.sections && Array.isArray(dashboard.sections) && dashboard.sections.length > 0 ? (
           dashboard.sections.map(section => (
-          <div key={section.id} className="mb-8">
-            <h2 className="text-xl font-semibold text-gray-900 mb-4">{section.title}</h2>
-            <div 
-              className={`grid gap-6 ${
-                section.columns === 3 ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3' :
-                section.columns === 2 ? 'grid-cols-1 md:grid-cols-2' :
-                'grid-cols-1'
-              }`}
-            >
-              {section.widgets.map(widget => (
-                <StudioWidget
-                  key={widget.id}
-                  widget={widget}
-                  queryResults={queryResults}
-                />
-              ))}
+            <div key={section.id} className="mb-8">
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">{section.title || 'Section'}</h2>
+              <div 
+                className={`grid gap-6 ${
+                  section.columns === 3 ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3' :
+                  section.columns === 2 ? 'grid-cols-1 md:grid-cols-2' :
+                  'grid-cols-1'
+                }`}
+              >
+                {section.widgets && Array.isArray(section.widgets) ? (
+                  section.widgets.map(widget => (
+                    <StudioWidget
+                      key={widget.id}
+                      widget={widget}
+                      queryResults={queryResults}
+                    />
+                  ))
+                ) : (
+                  <div className="text-gray-400 text-sm">No widgets in this section</div>
+                )}
+              </div>
             </div>
+          ))
+        ) : (
+          <div className="mb-8 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+            <p className="text-yellow-800 text-sm">
+              No sections defined in dashboard. Use "Generate Dashboard" to get recommendations.
+            </p>
           </div>
-        ))}
+        )}
       </div>
     </div>
   )
