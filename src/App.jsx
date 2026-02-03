@@ -13,6 +13,8 @@ import Help from './pages/Help'
 import Privacy from './pages/Privacy'
 import Terms from './pages/Terms'
 import AdminAnalytics from './pages/AdminAnalytics'
+import StudioHome from './pages/studio/StudioHome'
+import StudioDashboard from './pages/studio/StudioDashboard'
 
 // Track page views for Google Analytics
 function PageViewTracker() {
@@ -67,6 +69,8 @@ function App() {
           }
         />
         <Route path="/dashboard/shared/:shareId" element={<SharedDashboard />} />
+        <Route path="/studio" element={<StudioHome />} />
+        <Route path="/studio/:dashboardId" element={<StudioDashboard />} />
       </Routes>
     </AuthProvider>
   )
