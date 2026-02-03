@@ -9,7 +9,7 @@ import MetricCards from '../components/MetricCards'
 import Filters from '../components/Filters'
 import AIInsights from '../components/AIInsights'
 import { loadSharedDashboard } from '../utils/shareUtils'
-import StudioDashboard from './studio/StudioDashboard'
+import SharedStudioDashboardView from '../components/SharedStudioDashboardView'
 
 function SharedDashboard() {
   const navigate = useNavigate()
@@ -30,6 +30,7 @@ function SharedDashboard() {
   const [dashboardView, setDashboardView] = useState('advanced') // Default to advanced
   const [activeTab, setActiveTab] = useState('Overview')
   const [dashboardTitle, setDashboardTitle] = useState('Analytics Dashboard')
+  const [studioDashboardData, setStudioDashboardData] = useState(null)
 
   useEffect(() => {
     const loadDashboard = async () => {
@@ -48,10 +49,8 @@ function SharedDashboard() {
 
       // Check if this is a Studio dashboard
       if (sharedData.dashboardType === 'studio') {
-        // For Studio dashboards, redirect to Studio dashboard view
-        // Note: We'll need to create a shared Studio dashboard view
-        // For now, show an error message
-        setError('Studio dashboards cannot be viewed in shared mode yet. Please contact the dashboard owner.')
+        // Store Studio dashboard data for rendering
+        setStudioDashboardData(sharedData)
         setLoading(false)
         return
       }
