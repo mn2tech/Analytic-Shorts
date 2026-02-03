@@ -314,8 +314,20 @@ function StudioDashboard() {
           // Try to load from backend
           try {
             const schema = await getDashboard(dashboardId)
+            console.log('Loaded schema from backend:', schema)
             if (schema) {
-              loadDashboardConfig(schema)
+              // Schema might be a string (JSON) or already an object
+              let parsedSchema = schema
+              if (typeof schema === 'string') {
+                try {
+                  parsedSchema = JSON.parse(schema)
+                } catch (parseError) {
+                  console.error('Error parsing schema JSON:', parseError)
+                  throw new Error('Invalid dashboard schema format')
+                }
+              }
+              console.log('Parsed schema:', parsedSchema)
+              loadDashboardConfig(parsedSchema)
               setCurrentDashboardId(dashboardId)
             } else {
               // Fallback to sample if not found

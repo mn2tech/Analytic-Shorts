@@ -41,17 +41,22 @@ export async function getDashboard(id) {
       try {
         // Schema might be stored as JSON string or object
         if (typeof dashboard.schema === 'string') {
-          return JSON.parse(dashboard.schema)
+          const parsed = JSON.parse(dashboard.schema)
+          console.log('Parsed schema from string:', parsed)
+          return parsed
         }
+        console.log('Schema is already an object:', dashboard.schema)
         return dashboard.schema
       } catch (error) {
         console.error('Error parsing dashboard schema:', error)
+        console.error('Schema value:', dashboard.schema)
         return null
       }
     }
     
     // For Studio dashboards without schema, return null (will fallback to sample)
     if (dashboard.dashboard_view === 'studio') {
+      console.warn('Studio dashboard has no schema field')
       return null
     }
     
