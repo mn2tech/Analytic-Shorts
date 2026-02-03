@@ -1359,5 +1359,15 @@ router.get('/government-budget', async (req, res) => {
   }
 })
 
+// Export helper function to get dataset data (for use by other routes)
+function getExampleDatasetData(datasetId) {
+  const dataset = exampleDatasets[datasetId]
+  if (!dataset || !dataset.data) {
+    return null
+  }
+  return dataset.data
+}
+
 module.exports = router
+module.exports.getExampleDatasetData = getExampleDatasetData
 
