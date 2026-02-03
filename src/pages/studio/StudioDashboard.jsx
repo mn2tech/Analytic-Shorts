@@ -59,9 +59,10 @@ function StudioLineChartWidget({ widget, queryData, config, format }) {
   }
 
   return (
-    <div className="h-full p-4">
+    <div className="h-full p-4 flex flex-col">
       <h3 className="text-sm font-semibold text-gray-700 mb-4">{widget.title}</h3>
-      <ResponsiveContainer width="100%" height="100%">
+      <div className="flex-1 min-h-0">
+        <ResponsiveContainer width="100%" height="100%">
         <LineChart data={queryData.data}>
           <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
           <XAxis 
@@ -105,6 +106,7 @@ function StudioLineChartWidget({ widget, queryData, config, format }) {
           />
         </LineChart>
       </ResponsiveContainer>
+      </div>
     </div>
   )
 }
@@ -119,9 +121,10 @@ function StudioBarChartWidget({ widget, queryData, config, format }) {
   }
 
   return (
-    <div className="h-full p-4">
+    <div className="h-full p-4 flex flex-col">
       <h3 className="text-sm font-semibold text-gray-700 mb-4">{widget.title}</h3>
-      <ResponsiveContainer width="100%" height="100%">
+      <div className="flex-1 min-h-0">
+        <ResponsiveContainer width="100%" height="100%">
         <BarChart 
           data={queryData.data}
           layout={config.orientation === 'horizontal' ? 'vertical' : 'default'}
@@ -181,6 +184,7 @@ function StudioBarChartWidget({ widget, queryData, config, format }) {
           />
         </BarChart>
       </ResponsiveContainer>
+      </div>
     </div>
   )
 }
@@ -201,8 +205,21 @@ function StudioWidget({ widget, queryResults }) {
     }
   }
 
+  // Set appropriate height based on widget type
+  const getWidgetHeight = () => {
+    switch (widget.type) {
+      case 'kpi':
+        return 'h-32' // Smaller for KPIs
+      case 'line_chart':
+      case 'bar_chart':
+        return 'h-80' // Fixed height for charts (320px)
+      default:
+        return 'h-64'
+    }
+  }
+
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 h-full min-h-[300px]">
+    <div className={`bg-white rounded-lg shadow-sm border border-gray-200 ${getWidgetHeight()}`}>
       {renderWidget()}
     </div>
   )
