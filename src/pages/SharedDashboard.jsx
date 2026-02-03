@@ -9,6 +9,7 @@ import MetricCards from '../components/MetricCards'
 import Filters from '../components/Filters'
 import AIInsights from '../components/AIInsights'
 import { loadSharedDashboard } from '../utils/shareUtils'
+import StudioDashboard from './studio/StudioDashboard'
 
 function SharedDashboard() {
   const navigate = useNavigate()
