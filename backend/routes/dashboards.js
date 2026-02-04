@@ -247,8 +247,14 @@ router.put('/:id', getUserFromToken, async (req, res) => {
     if (selectedCategorical !== undefined) updateData.selected_categorical = selectedCategorical
     if (selectedDate !== undefined) updateData.selected_date = selectedDate
     if (dashboardView !== undefined) updateData.dashboard_view = dashboardView
-    if (schema !== undefined) {
-      updateData.schema = typeof schema === 'string' ? schema : JSON.stringify(schema)
+    // Only update schema if it's provided (to avoid cache issues)
+    if (schema !== undefined && schema !== null) {
+      try {
+        updateData.schema = typeof schema === 'string' ? schema : JSON.stringify(schema)
+      } catch (err) {
+        console.error('Error stringifying schema:', err)
+        // Continue without schema if stringification fails
+      }
     }
     
     const { data: dashboard, error } = await supabase
