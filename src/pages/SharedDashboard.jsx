@@ -213,6 +213,9 @@ function SharedDashboard() {
     }
     
     setLoading(false)
+    }
+    
+    loadDashboard()
   }, [shareId])
 
   const applyChartFilter = (baseData) => {
