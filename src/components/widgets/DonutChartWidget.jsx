@@ -83,17 +83,16 @@ function DonutChartWidget({ data, filteredData, selectedCategorical, selectedDat
         cx="50%"
         cy="50%"
         innerRadius={60}
-        outerRadius={100}
+        outerRadius={showValues ? 90 : 100}
         paddingAngle={2}
         dataKey="value"
         onClick={onChartFilter ? handlePieClick : undefined}
         style={onChartFilter ? { cursor: 'pointer' } : { cursor: 'default' }}
-              label={showValues ? (entry) => {
-                const percentage = ((entry.value / donutTotal) * 100).toFixed(1)
-                return `${entry.value.toLocaleString()} (${percentage}%)`
-              } : false}
-              labelLine={showValues}
-              outerRadius={showValues ? 90 : 100}
+        label={showValues ? (entry) => {
+          const percentage = ((entry.value / donutTotal) * 100).toFixed(1)
+          return `${entry.value.toLocaleString()} (${percentage}%)`
+        } : false}
+        labelLine={showValues}
             >
               {donutData.map((entry, index) => {
                 const isSelected = chartFilter?.type === 'category' && chartFilter.value === entry.name
