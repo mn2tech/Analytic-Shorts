@@ -612,12 +612,23 @@ function StudioDashboard() {
     }
 
     const datasetId = getDatasetId()
+    console.log('Query execution check:', { 
+      hasDashboard: !!dashboard, 
+      hasQueries: !!dashboard.queries, 
+      queriesCount: dashboard.queries?.length,
+      datasetId: datasetId,
+      hasData: !!data,
+      dataLength: data?.length
+    })
+
     if (!datasetId) {
-      console.log('Query execution skipped: no datasetId found')
+      console.log('Query execution skipped: no datasetId found, falling back to client-side')
       // Fallback to client-side execution if no datasetId
       if (data && data.length > 0) {
         console.log('Falling back to client-side query execution')
         executeQueriesClientSide()
+      } else {
+        console.log('No data available for client-side execution, waiting for data to load...')
       }
       return
     }
@@ -637,26 +648,48 @@ function StudioDashboard() {
             filterValues: filterValues
           })
 
+          console.log(`Query ${query.id} API response:`, response.data)
+
           if (response.data && response.data.result) {
             results[query.id] = response.data.result
             console.log(`Query ${query.id} completed:`, response.data.result)
           } else {
-            console.error(`Query ${query.id} returned no result`)
+            console.error(`Query ${query.id} returned no result, response:`, response.data)
             results[query.id] = { error: 'No result returned' }
           }
         } catch (error) {
           console.error(`Error executing query ${query.id} via API:`, error)
-          results[query.id] = { error: error.response?.data?.message || error.message || 'Query execution failed' }
+          console.error('Error details:', {
+            message: error.message,
+            response: error.response?.data,
+            status: error.response?.status
+          })
+          // Fallback to client-side if API fails and we have data
+          if (data && data.length > 0) {
+            console.log(`Falling back to client-side for query ${query.id}`)
+            // We'll handle this in the fallback below
+          } else {
+            results[query.id] = { error: error.response?.data?.message || error.message || 'Query execution failed' }
+          }
         }
       })
 
       await Promise.all(queryPromises)
+      
+      // If any queries failed and we have data, try client-side fallback
+      const failedQueries = Object.keys(results).filter(key => results[key].error)
+      if (failedQueries.length > 0 && data && data.length > 0) {
+        console.log('Some queries failed via API, trying client-side fallback for failed queries')
+        executeQueriesClientSide()
+        return // executeQueriesClientSide will set queryResults
+      }
+      
       console.log('All queries completed:', results)
       setQueryResults(results)
     }
 
     executeQueries()
-  }, [dashboard, filterValues, data, executeQueriesClientSide])
+  }, [dashboard, filterValues, executeQueriesClientSide])
 
   const handleFilterChange = (filterId, value) => {
     setFilterValues(prev => ({
