@@ -237,6 +237,7 @@ function StudioDashboard() {
   const [saveSuccess, setSaveSuccess] = useState(false)
   const [filterValues, setFilterValues] = useState({})
   const [queryResults, setQueryResults] = useState({})
+  const [dropdownOptions, setDropdownOptions] = useState({}) // { filterId: [options] }
   const [data, setData] = useState(null)
   const [currentDashboardId, setCurrentDashboardId] = useState(null)
   const [recommendations, setRecommendations] = useState(null)
@@ -284,7 +285,15 @@ function StudioDashboard() {
         console.log('Sample dashboard JSON available:', !!sampleDashboardJson)
         console.log('Sample dashboard JSON content:', sampleDashboardJson)
         
-        if (dashboardId === 'new' || dashboardId === 'sample') {
+        // Validate dashboardId - if it starts with ':' it's invalid (route parameter issue)
+        if (dashboardId && dashboardId.startsWith(':')) {
+          console.warn('Invalid dashboardId detected (starts with ":"), treating as new dashboard:', dashboardId)
+          loadDashboardConfig(sampleDashboardJson)
+          setCurrentDashboardId(null)
+          return
+        }
+        
+        if (dashboardId === 'new' || dashboardId === 'sample' || !dashboardId) {
           // Load sample dashboard for new dashboards
           if (!sampleDashboardJson) {
             console.error('Sample dashboard JSON is not available')
@@ -315,8 +324,17 @@ function StudioDashboard() {
           loadDashboardConfig(sampleDashboardJson)
           setCurrentDashboardId(null)
         } else {
+          // Validate dashboardId format (should be UUID or numeric, not starting with special chars)
+          if (!dashboardId || dashboardId.trim() === '' || dashboardId.startsWith(':') || dashboardId.includes('undefined')) {
+            console.warn('Invalid dashboardId format, treating as new dashboard:', dashboardId)
+            loadDashboardConfig(sampleDashboardJson)
+            setCurrentDashboardId(null)
+            return
+          }
+          
           // Try to load from backend
           try {
+            console.log('Fetching dashboard from backend with ID:', dashboardId)
             const schema = await getDashboard(dashboardId)
             console.log('Loaded schema from backend:', schema)
             if (schema) {
@@ -341,12 +359,23 @@ function StudioDashboard() {
             }
           } catch (error) {
             console.error('Error loading dashboard:', error)
+            console.error('Error details:', {
+              message: error.message,
+              status: error.response?.status,
+              data: error.response?.data
+            })
             // If it's a 404 or auth error, still load sample but show message
-            if (error.message?.includes('not found')) {
+            if (error.response?.status === 404 || error.message?.includes('not found')) {
+              console.warn('Dashboard not found (404), loading sample dashboard')
+              loadDashboardConfig(sampleDashboardJson)
+              setCurrentDashboardId(null)
+            } else if (error.response?.status === 401) {
+              console.warn('Authentication required, loading sample dashboard')
               loadDashboardConfig(sampleDashboardJson)
               setCurrentDashboardId(null)
             } else {
               // For other errors, still try to load sample
+              console.warn('Error loading dashboard, falling back to sample')
               loadDashboardConfig(sampleDashboardJson)
               setCurrentDashboardId(null)
             }
@@ -382,186 +411,252 @@ function StudioDashboard() {
     loadDashboard()
   }, [dashboardId])
 
-  // Load data from data source
-  useEffect(() => {
-    if (!dashboard?.data_source) return
-
-    const loadData = async () => {
-      try {
-        if (dashboard.data_source.type === 'api' && dashboard.data_source.endpoint) {
-          console.log('Loading data from:', dashboard.data_source.endpoint)
-          const response = await apiClient.get(dashboard.data_source.endpoint)
-          const result = response.data
-          console.log('Data loaded:', result?.data?.length || 0, 'rows')
-          if (result.data) {
-            setData(result.data)
-          } else {
-            console.error('No data in response:', result)
-          }
-        }
-      } catch (error) {
-        console.error('Error loading data:', error)
-        console.error('Error details:', error.response?.data || error.message)
-      }
+  // Extract datasetId from data_source endpoint
+  const getDatasetId = () => {
+    if (!dashboard?.data_source?.endpoint) return null
+    const endpoint = dashboard.data_source.endpoint
+    // Extract dataset ID from endpoint like "/api/example/sales" -> "sales"
+    const match = endpoint.match(/\/api\/example\/(.+)$/)
+    if (match) {
+      return match[1]
     }
+    // For uploaded data, we might need a different approach
+    return null
+  }
 
-    loadData()
-  }, [dashboard])
-
-  // Execute queries based on filter values and data
+  // Load dropdown options from API
   useEffect(() => {
-    if (!dashboard || !data || data.length === 0) {
-      console.log('Query execution skipped:', { hasDashboard: !!dashboard, hasData: !!data, dataLength: data?.length })
+    if (!dashboard?.filters || !dashboard?.data_source) return
+
+    const datasetId = getDatasetId()
+    if (!datasetId) {
+      // Fallback to extracting from data if no datasetId
       return
     }
 
-    console.log('Executing queries with data:', data.length, 'rows')
-    console.log('Available columns:', data.length > 0 ? Object.keys(data[0]) : [])
+    const loadDropdownOptions = async () => {
+      const optionsMap = {}
+      
+      for (const filter of dashboard.filters) {
+        if (filter.type === 'dropdown' && filter.dimension) {
+          try {
+            console.log(`Loading options for filter ${filter.id} (${filter.dimension}) from dataset ${datasetId}`)
+            const response = await apiClient.get('/api/studio/options', {
+              params: {
+                datasetId: datasetId,
+                field: filter.dimension
+              }
+            })
+            
+            if (response.data && response.data.values) {
+              optionsMap[filter.id] = response.data.values
+              console.log(`Loaded ${response.data.values.length} options for ${filter.id}`)
+            }
+          } catch (error) {
+            console.error(`Error loading options for filter ${filter.id}:`, error)
+            // Fallback: extract from data if available
+            if (data && data.length > 0) {
+              const uniqueValues = [...new Set(
+                data.map(row => row[filter.dimension] || row[filter.dimension?.toLowerCase()]).filter(Boolean)
+              )].sort()
+              optionsMap[filter.id] = uniqueValues
+            }
+          }
+        }
+      }
+      
+      setDropdownOptions(optionsMap)
+    }
 
-    const executeQueries = () => {
+    loadDropdownOptions()
+  }, [dashboard?.filters, dashboard?.data_source, data])
+
+  // Execute queries via API
+  useEffect(() => {
+    if (!dashboard || !dashboard.queries || dashboard.queries.length === 0) {
+      console.log('Query execution skipped: no queries defined')
+      return
+    }
+
+    const datasetId = getDatasetId()
+    if (!datasetId) {
+      console.log('Query execution skipped: no datasetId found')
+      // Fallback to client-side execution if no datasetId
+      if (data && data.length > 0) {
+        console.log('Falling back to client-side query execution')
+        executeQueriesClientSide()
+      }
+      return
+    }
+
+    console.log('Executing queries via API for dataset:', datasetId)
+
+    const executeQueries = async () => {
       const results = {}
 
-      dashboard.queries.forEach(query => {
+      // Execute all queries in parallel
+      const queryPromises = dashboard.queries.map(async (query) => {
         try {
-          // Replace filter references with actual values
-          const resolvedFilters = {}
-          Object.keys(query.filters || {}).forEach(key => {
-            const filterValue = query.filters[key]
-            if (typeof filterValue === 'string' && filterValue.startsWith('{{filters.')) {
-              const filterId = filterValue.replace('{{filters.', '').replace('}}', '')
-              resolvedFilters[key] = filterValues[filterId]
-            } else {
-              resolvedFilters[key] = filterValue
-            }
+          console.log(`Executing query ${query.id} (${query.type}) via API`)
+          const response = await apiClient.post('/api/studio/query', {
+            datasetId: datasetId,
+            query: query,
+            filterValues: filterValues
           })
 
-          // Apply filters to data
-          let filteredData = [...data]
-          
-          if (resolvedFilters.time_range?.start && resolvedFilters.time_range?.end) {
-            filteredData = filteredData.filter(row => {
-              // Try multiple date column name variations
-              const rowDate = row['Date'] || row['date'] || row['Award Date'] || row['award_date'] || row['Record Date'] || row['record_date']
-              if (!rowDate) return false
-              try {
-                const date = new Date(rowDate)
-                const start = new Date(resolvedFilters.time_range.start)
-                const end = new Date(resolvedFilters.time_range.end)
-                return date >= start && date <= end
-              } catch {
-                return false
-              }
-            })
-          }
-
-          if (resolvedFilters.region && resolvedFilters.region !== 'All') {
-            filteredData = filteredData.filter(row => {
-              const region = row['Region'] || row['region'] || row['State'] || row['state']
-              return region === resolvedFilters.region
-            })
-          }
-
-          // Helper to find column name (case-insensitive)
-          const findColumn = (name) => {
-            const keys = Object.keys(filteredData[0] || {})
-            return keys.find(k => k.toLowerCase() === name.toLowerCase()) || name
-          }
-
-          // Execute query based on type
-          if (query.type === 'aggregation') {
-            const metric = findColumn(query.metric)
-            const values = filteredData
-              .map(row => parseNumericValue(row[metric]))
-              .filter(val => !isNaN(val) && isFinite(val))
-            
-            console.log(`Query ${query.id} (${query.type}): metric=${metric}, values found=${values.length}`)
-            
-            let value = 0
-            if (query.aggregation === 'sum') {
-              value = values.reduce((a, b) => a + b, 0)
-            } else if (query.aggregation === 'avg') {
-              value = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0
-            } else if (query.aggregation === 'count') {
-              value = values.length
-            } else if (query.aggregation === 'min') {
-              value = values.length > 0 ? Math.min(...values) : 0
-            } else if (query.aggregation === 'max') {
-              value = values.length > 0 ? Math.max(...values) : 0
-            }
-
-            results[query.id] = { value }
-          } else if (query.type === 'time_series') {
-            const metric = findColumn(query.metric)
-            const dimension = findColumn(query.dimension)
-            const grouped = {}
-
-            filteredData.forEach(row => {
-              const key = row[dimension]
-              const value = parseNumericValue(row[metric])
-              if (key && !isNaN(value) && isFinite(value)) {
-                grouped[key] = (grouped[key] || 0) + value
-              }
-            })
-
-            const data = Object.entries(grouped)
-              .map(([key, value]) => ({ [dimension]: key, [metric]: value }))
-              .sort((a, b) => {
-                try {
-                  return new Date(a[dimension]) - new Date(b[dimension])
-                } catch {
-                  return a[dimension].localeCompare(b[dimension])
-                }
-              })
-
-            console.log(`Query ${query.id} (${query.type}): metric=${metric}, dimension=${dimension}, data points=${data.length}`)
-            results[query.id] = { data }
-          } else if (query.type === 'breakdown') {
-            const metric = findColumn(query.metric)
-            const dimension = findColumn(query.dimension)
-            const grouped = {}
-
-            filteredData.forEach(row => {
-              const key = row[dimension]
-              const value = parseNumericValue(row[metric])
-              if (key && !isNaN(value) && isFinite(value)) {
-                grouped[key] = (grouped[key] || 0) + value
-              }
-            })
-
-            let data = Object.entries(grouped)
-              .map(([key, value]) => ({ [dimension]: key, [metric]: value }))
-
-            if (query.order_by) {
-              const orderByCol = findColumn(query.order_by)
-              data.sort((a, b) => {
-                const aVal = a[orderByCol] || a[metric]
-                const bVal = b[orderByCol] || b[metric]
-                if (query.order_direction === 'desc') {
-                  return bVal - aVal
-                }
-                return aVal - bVal
-              })
-            }
-
-            if (query.limit) {
-              data = data.slice(0, query.limit)
-            }
-
-            console.log(`Query ${query.id} (${query.type}): metric=${metric}, dimension=${dimension}, data points=${data.length}`)
-            results[query.id] = { data }
+          if (response.data && response.data.result) {
+            results[query.id] = response.data.result
+            console.log(`Query ${query.id} completed:`, response.data.result)
+          } else {
+            console.error(`Query ${query.id} returned no result`)
+            results[query.id] = { error: 'No result returned' }
           }
         } catch (error) {
-          console.error(`Error executing query ${query.id}:`, error)
-          results[query.id] = { error: error.message }
+          console.error(`Error executing query ${query.id} via API:`, error)
+          results[query.id] = { error: error.response?.data?.message || error.message || 'Query execution failed' }
         }
       })
 
-      console.log('Query results:', results)
+      await Promise.all(queryPromises)
+      console.log('All queries completed:', results)
       setQueryResults(results)
     }
 
     executeQueries()
-  }, [dashboard, data, filterValues])
+  }, [dashboard, filterValues])
+
+  // Fallback: Client-side query execution (for uploaded data or when API fails)
+  const executeQueriesClientSide = () => {
+    if (!dashboard || !data || data.length === 0) return
+
+    console.log('Executing queries client-side with data:', data.length, 'rows')
+    const results = {}
+
+    dashboard.queries.forEach(query => {
+      try {
+        const resolvedFilters = {}
+        Object.keys(query.filters || {}).forEach(key => {
+          const filterValue = query.filters[key]
+          if (typeof filterValue === 'string' && filterValue.startsWith('{{filters.')) {
+            const filterId = filterValue.replace('{{filters.', '').replace('}}', '')
+            resolvedFilters[key] = filterValues[filterId]
+          } else {
+            resolvedFilters[key] = filterValue
+          }
+        })
+
+        let filteredData = [...data]
+        
+        if (resolvedFilters.time_range?.start && resolvedFilters.time_range?.end) {
+          filteredData = filteredData.filter(row => {
+            const rowDate = row['Date'] || row['date'] || row['Award Date'] || row['award_date'] || row['Record Date'] || row['record_date']
+            if (!rowDate) return false
+            try {
+              const date = new Date(rowDate)
+              const start = new Date(resolvedFilters.time_range.start)
+              const end = new Date(resolvedFilters.time_range.end)
+              return date >= start && date <= end
+            } catch {
+              return false
+            }
+          })
+        }
+
+        if (resolvedFilters.region && resolvedFilters.region !== 'All') {
+          filteredData = filteredData.filter(row => {
+            const region = row['Region'] || row['region'] || row['State'] || row['state']
+            return region === resolvedFilters.region
+          })
+        }
+
+        const findColumn = (name) => {
+          const keys = Object.keys(filteredData[0] || {})
+          return keys.find(k => k.toLowerCase() === name.toLowerCase()) || name
+        }
+
+        if (query.type === 'aggregation') {
+          const metric = findColumn(query.metric)
+          const values = filteredData
+            .map(row => parseNumericValue(row[metric]))
+            .filter(val => !isNaN(val) && isFinite(val))
+          
+          let value = 0
+          if (query.aggregation === 'sum') {
+            value = values.reduce((a, b) => a + b, 0)
+          } else if (query.aggregation === 'avg') {
+            value = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0
+          } else if (query.aggregation === 'count') {
+            value = values.length
+          } else if (query.aggregation === 'min') {
+            value = values.length > 0 ? Math.min(...values) : 0
+          } else if (query.aggregation === 'max') {
+            value = values.length > 0 ? Math.max(...values) : 0
+          }
+          results[query.id] = { value }
+        } else if (query.type === 'time_series') {
+          const metric = findColumn(query.metric)
+          const dimension = findColumn(query.dimension)
+          const grouped = {}
+
+          filteredData.forEach(row => {
+            const key = row[dimension]
+            const value = parseNumericValue(row[metric])
+            if (key && !isNaN(value) && isFinite(value)) {
+              grouped[key] = (grouped[key] || 0) + value
+            }
+          })
+
+          const data = Object.entries(grouped)
+            .map(([key, value]) => ({ [dimension]: key, [metric]: value }))
+            .sort((a, b) => {
+              try {
+                return new Date(a[dimension]) - new Date(b[dimension])
+              } catch {
+                return a[dimension].localeCompare(b[dimension])
+              }
+            })
+          results[query.id] = { data }
+        } else if (query.type === 'breakdown') {
+          const metric = findColumn(query.metric)
+          const dimension = findColumn(query.dimension)
+          const grouped = {}
+
+          filteredData.forEach(row => {
+            const key = row[dimension]
+            const value = parseNumericValue(row[metric])
+            if (key && !isNaN(value) && isFinite(value)) {
+              grouped[key] = (grouped[key] || 0) + value
+            }
+          })
+
+          let data = Object.entries(grouped)
+            .map(([key, value]) => ({ [dimension]: key, [metric]: value }))
+
+          if (query.order_by) {
+            const orderByCol = findColumn(query.order_by)
+            data.sort((a, b) => {
+              const aVal = a[orderByCol] || a[metric]
+              const bVal = b[orderByCol] || b[metric]
+              if (query.order_direction === 'desc') {
+                return bVal - aVal
+              }
+              return aVal - bVal
+            })
+          }
+
+          if (query.limit) {
+            data = data.slice(0, query.limit)
+          }
+          results[query.id] = { data }
+        }
+      } catch (error) {
+        console.error(`Error executing query ${query.id}:`, error)
+        results[query.id] = { error: error.message }
+      }
+    })
+
+    setQueryResults(results)
+  }
 
   const handleFilterChange = (filterId, value) => {
     setFilterValues(prev => ({
@@ -1198,12 +1293,9 @@ function StudioDashboard() {
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
                     >
                       <option value="All">All</option>
-                      {data && filter.dimension && (() => {
-                        const uniqueValues = [...new Set(data.map(row => row[filter.dimension] || row[filter.dimension.toLowerCase()]).filter(Boolean))]
-                        return uniqueValues.map(value => (
-                          <option key={value} value={value}>{value}</option>
-                        ))
-                      })()}
+                      {(dropdownOptions[filter.id] || []).map(value => (
+                        <option key={value} value={value}>{value}</option>
+                      ))}
                     </select>
                   ) : null}
                 </div>
