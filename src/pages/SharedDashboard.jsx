@@ -40,20 +40,44 @@ function SharedDashboard() {
         return
       }
 
+      console.log('Loading shared dashboard with shareId:', shareId)
       const sharedData = await loadSharedDashboard(shareId)
+      console.log('Loaded shared data:', {
+        hasData: !!sharedData,
+        dashboardType: sharedData?.dashboardType,
+        hasDashboard: !!sharedData?.dashboard,
+        keys: sharedData ? Object.keys(sharedData) : [],
+        fullData: sharedData
+      })
+      
       if (!sharedData) {
-        setError('Shared dashboard not found or expired')
+        console.error('Shared dashboard not found for shareId:', shareId)
+        setError(`Shared dashboard not found or expired. Share ID: ${shareId}. Please check the share link and try again. If you just published this dashboard, check the browser console for save errors.`)
         setLoading(false)
         return
       }
 
       // Check if this is a Studio dashboard
-      if (sharedData.dashboardType === 'studio') {
+      // Also check if it has a dashboard object with metadata (Studio dashboards have this structure)
+      const isStudioDashboard = sharedData.dashboardType === 'studio' || 
+                                 (sharedData.dashboard && sharedData.dashboard.metadata && sharedData.dashboard.sections)
+      
+      console.log('Dashboard type check:', {
+        dashboardType: sharedData.dashboardType,
+        hasDashboardMetadata: !!(sharedData.dashboard?.metadata),
+        hasDashboardSections: !!(sharedData.dashboard?.sections),
+        isStudioDashboard: isStudioDashboard
+      })
+
+      if (isStudioDashboard) {
+        console.log('Detected Studio dashboard, rendering SharedStudioDashboardView')
         // Store Studio dashboard data for rendering
         setStudioDashboardData(sharedData)
         setLoading(false)
         return
       }
+      
+      console.log('Regular dashboard detected, rendering standard view')
 
       // Initialize data from shared dashboard
       setData(sharedData.data)
