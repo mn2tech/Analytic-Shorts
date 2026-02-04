@@ -38,12 +38,23 @@ export const loadSharedDashboard = async (shareId) => {
     // First try to load from backend
     try {
       const response = await apiClient.get(`/api/shared/${shareId}`)
+      console.log('Backend response:', response.data)
       if (response.data && response.data.dashboardData) {
         console.log('Loaded shared dashboard from backend')
+        console.log('Dashboard data type:', typeof response.data.dashboardData)
+        console.log('Dashboard type:', response.data.dashboardData.dashboardType)
         return response.data.dashboardData
       }
+      // If dashboardData is at root level
+      if (response.data && response.data.dashboardType) {
+        console.log('Loaded shared dashboard from backend (root level)')
+        return response.data
+      }
     } catch (backendError) {
-      console.log('Backend not available or dashboard not found, trying localStorage:', backendError.response?.status)
+      console.error('Backend error loading shared dashboard:', backendError)
+      console.error('Error status:', backendError.response?.status)
+      console.error('Error data:', backendError.response?.data)
+      console.log('Falling back to localStorage...')
       // Fallback to localStorage if backend fails or returns 404
     }
 
