@@ -33,6 +33,13 @@ router.post('/', async (req, res) => {
   try {
     const { shareId, dashboardData } = req.body
 
+    console.log('POST /api/shared - Received request:', {
+      hasShareId: !!shareId,
+      shareId: shareId,
+      hasDashboardData: !!dashboardData,
+      dashboardDataType: typeof dashboardData
+    })
+
     if (!shareId) {
       return res.status(400).json({ error: 'shareId is required' })
     }
@@ -42,10 +49,12 @@ router.post('/', async (req, res) => {
     }
 
     if (!supabase) {
+      console.error('Supabase not configured')
       return res.status(500).json({ error: 'Database not configured' })
     }
 
     // Save shared dashboard to database
+    console.log('Saving to shared_dashboards table...')
     const { data, error } = await supabase
       .from('shared_dashboards')
       .upsert({
@@ -61,11 +70,20 @@ router.post('/', async (req, res) => {
 
     if (error) {
       console.error('Error saving shared dashboard:', error)
+      console.error('Error code:', error.code)
+      console.error('Error message:', error.message)
+      console.error('Error details:', error.details)
       return res.status(500).json({ 
         error: 'Failed to save shared dashboard',
-        details: error.message 
+        details: error.message,
+        code: error.code
       })
     }
+
+    console.log('Successfully saved shared dashboard:', {
+      shareId: data.share_id,
+      createdAt: data.created_at
+    })
 
     res.json({ 
       success: true, 
