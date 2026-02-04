@@ -159,8 +159,14 @@ router.post('/', getUserFromToken, checkDashboardLimit, async (req, res) => {
     }
     
     // Add schema if provided (for Studio dashboards)
-    if (schema !== undefined) {
-      insertData.schema = typeof schema === 'string' ? schema : JSON.stringify(schema)
+    // Only include schema if it's provided (to avoid cache issues)
+    if (schema !== undefined && schema !== null) {
+      try {
+        insertData.schema = typeof schema === 'string' ? schema : JSON.stringify(schema)
+      } catch (err) {
+        console.error('Error stringifying schema:', err)
+        // Continue without schema if stringification fails
+      }
     }
     
     const { data: dashboard, error } = await supabase
