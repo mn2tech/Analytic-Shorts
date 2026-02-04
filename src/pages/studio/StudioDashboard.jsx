@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import Navbar from '../../components/Navbar'
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
@@ -471,62 +471,8 @@ function StudioDashboard() {
     loadDropdownOptions()
   }, [dashboard?.filters, dashboard?.data_source, data])
 
-  // Execute queries via API
-  useEffect(() => {
-    if (!dashboard || !dashboard.queries || dashboard.queries.length === 0) {
-      console.log('Query execution skipped: no queries defined')
-      return
-    }
-
-    const datasetId = getDatasetId()
-    if (!datasetId) {
-      console.log('Query execution skipped: no datasetId found')
-      // Fallback to client-side execution if no datasetId
-      if (data && data.length > 0) {
-        console.log('Falling back to client-side query execution')
-        executeQueriesClientSide()
-      }
-      return
-    }
-
-    console.log('Executing queries via API for dataset:', datasetId)
-
-    const executeQueries = async () => {
-      const results = {}
-
-      // Execute all queries in parallel
-      const queryPromises = dashboard.queries.map(async (query) => {
-        try {
-          console.log(`Executing query ${query.id} (${query.type}) via API`)
-          const response = await apiClient.post('/api/studio/query', {
-            datasetId: datasetId,
-            query: query,
-            filterValues: filterValues
-          })
-
-          if (response.data && response.data.result) {
-            results[query.id] = response.data.result
-            console.log(`Query ${query.id} completed:`, response.data.result)
-          } else {
-            console.error(`Query ${query.id} returned no result`)
-            results[query.id] = { error: 'No result returned' }
-          }
-        } catch (error) {
-          console.error(`Error executing query ${query.id} via API:`, error)
-          results[query.id] = { error: error.response?.data?.message || error.message || 'Query execution failed' }
-        }
-      })
-
-      await Promise.all(queryPromises)
-      console.log('All queries completed:', results)
-      setQueryResults(results)
-    }
-
-    executeQueries()
-  }, [dashboard, filterValues])
-
   // Fallback: Client-side query execution (for uploaded data or when API fails)
-  const executeQueriesClientSide = () => {
+  const executeQueriesClientSide = useCallback(() => {
     if (!dashboard || !data || data.length === 0) return
 
     console.log('Executing queries client-side with data:', data.length, 'rows')
@@ -656,7 +602,61 @@ function StudioDashboard() {
     })
 
     setQueryResults(results)
-  }
+  }, [dashboard, data, filterValues])
+
+  // Execute queries via API
+  useEffect(() => {
+    if (!dashboard || !dashboard.queries || dashboard.queries.length === 0) {
+      console.log('Query execution skipped: no queries defined')
+      return
+    }
+
+    const datasetId = getDatasetId()
+    if (!datasetId) {
+      console.log('Query execution skipped: no datasetId found')
+      // Fallback to client-side execution if no datasetId
+      if (data && data.length > 0) {
+        console.log('Falling back to client-side query execution')
+        executeQueriesClientSide()
+      }
+      return
+    }
+
+    console.log('Executing queries via API for dataset:', datasetId)
+
+    const executeQueries = async () => {
+      const results = {}
+
+      // Execute all queries in parallel
+      const queryPromises = dashboard.queries.map(async (query) => {
+        try {
+          console.log(`Executing query ${query.id} (${query.type}) via API`)
+          const response = await apiClient.post('/api/studio/query', {
+            datasetId: datasetId,
+            query: query,
+            filterValues: filterValues
+          })
+
+          if (response.data && response.data.result) {
+            results[query.id] = response.data.result
+            console.log(`Query ${query.id} completed:`, response.data.result)
+          } else {
+            console.error(`Query ${query.id} returned no result`)
+            results[query.id] = { error: 'No result returned' }
+          }
+        } catch (error) {
+          console.error(`Error executing query ${query.id} via API:`, error)
+          results[query.id] = { error: error.response?.data?.message || error.message || 'Query execution failed' }
+        }
+      })
+
+      await Promise.all(queryPromises)
+      console.log('All queries completed:', results)
+      setQueryResults(results)
+    }
+
+    executeQueries()
+  }, [dashboard, filterValues, data, executeQueriesClientSide])
 
   const handleFilterChange = (filterId, value) => {
     setFilterValues(prev => ({
