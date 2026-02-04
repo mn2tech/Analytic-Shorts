@@ -560,16 +560,28 @@ export default function SharedStudioDashboardView({ sharedData }) {
                         className="flex-1 px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm hover:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
-                  ) : filter.type === 'select' && filter.options ? (
+                  ) : filter.type === 'dropdown' ? (
                     <select
                       value={filterValues[filter.id] || filter.default || 'All'}
                       onChange={(e) => handleFilterChange(filter.id, e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm hover:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="All">All</option>
-                      {filter.options.map(option => (
-                        <option key={option} value={option}>{option}</option>
-                      ))}
+                      {data && filter.dimension && (() => {
+                        const dimensionKey = filter.dimension
+                        const uniqueValues = [...new Set(
+                          data.map(row => {
+                            // Try multiple case variations
+                            return row[dimensionKey] || 
+                                   row[dimensionKey.toLowerCase()] || 
+                                   row[dimensionKey.toUpperCase()] ||
+                                   row[dimensionKey.charAt(0).toUpperCase() + dimensionKey.slice(1).toLowerCase()]
+                          }).filter(Boolean)
+                        )].sort()
+                        return uniqueValues.map(value => (
+                          <option key={value} value={value}>{value}</option>
+                        ))
+                      })()}
                     </select>
                   ) : (
                     <input
