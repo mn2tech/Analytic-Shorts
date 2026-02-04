@@ -274,6 +274,11 @@ function SharedDashboard() {
   const currentDate = new Date()
   const monthYear = currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
 
+  // Render Studio dashboard if it's a Studio dashboard
+  if (studioDashboardData && !loading) {
+    return <SharedStudioDashboardView sharedData={studioDashboardData} />
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50">
