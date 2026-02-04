@@ -81,20 +81,24 @@ router.post('/', async (req, res) => {
   }
 })
 
-// GET /api/shared/:shareId - Get a shared dashboard
+// GET /api/shared/:shareId - Get a shared dashboard (PUBLIC - no auth required)
 router.get('/:shareId', async (req, res) => {
   try {
     const { shareId } = req.params
+
+    console.log('Loading shared dashboard:', shareId)
 
     if (!shareId) {
       return res.status(400).json({ error: 'shareId is required' })
     }
 
     if (!supabase) {
+      console.error('Supabase not configured')
       return res.status(500).json({ error: 'Database not configured' })
     }
 
     // Load shared dashboard from database
+    console.log('Querying shared_dashboards table for share_id:', shareId)
     const { data, error } = await supabase
       .from('shared_dashboards')
       .select('*')
@@ -102,25 +106,52 @@ router.get('/:shareId', async (req, res) => {
       .single()
 
     if (error) {
+      console.error('Supabase query error:', error)
       if (error.code === 'PGRST116') {
         // Not found
+        console.log('Shared dashboard not found in database')
         return res.status(404).json({ error: 'Shared dashboard not found' })
       }
-      console.error('Error loading shared dashboard:', error)
       return res.status(500).json({ 
         error: 'Failed to load shared dashboard',
-        details: error.message 
+        details: error.message,
+        code: error.code
       })
     }
 
+    if (!data) {
+      console.log('No data returned from query')
+      return res.status(404).json({ error: 'Shared dashboard not found' })
+    }
+
+    console.log('Found shared dashboard:', {
+      shareId: data.share_id,
+      hasDashboardData: !!data.dashboard_data,
+      dashboardDataType: typeof data.dashboard_data,
+      createdAt: data.created_at,
+      expiresAt: data.expires_at
+    })
+
     // Check if expired
     if (data.expires_at && new Date(data.expires_at) < new Date()) {
+      console.log('Shared dashboard has expired')
       return res.status(410).json({ error: 'Shared dashboard has expired' })
+    }
+
+    // Parse dashboard_data if it's a string
+    let dashboardData = data.dashboard_data
+    if (typeof dashboardData === 'string') {
+      try {
+        dashboardData = JSON.parse(dashboardData)
+      } catch (parseError) {
+        console.error('Error parsing dashboard_data:', parseError)
+        return res.status(500).json({ error: 'Invalid dashboard data format' })
+      }
     }
 
     res.json({
       shareId: data.share_id,
-      dashboardData: data.dashboard_data,
+      dashboardData: dashboardData,
       createdAt: data.created_at,
       expiresAt: data.expires_at
     })
