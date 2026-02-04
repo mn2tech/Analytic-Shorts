@@ -99,6 +99,15 @@ router.post('/', async (req, res) => {
   }
 })
 
+// Health check endpoint (must be before /:shareId route)
+router.get('/health', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    message: 'Shared dashboard routes are working',
+    supabaseConfigured: !!supabase
+  })
+})
+
 // GET /api/shared/:shareId - Get a shared dashboard (PUBLIC - no auth required)
 router.get('/:shareId', async (req, res) => {
   try {
