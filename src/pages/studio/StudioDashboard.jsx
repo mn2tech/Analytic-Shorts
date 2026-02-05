@@ -9,11 +9,25 @@ import { getDashboard, saveDashboard } from '../../studio/api/studioClient'
 import { generateShareId, saveSharedDashboard, getShareableUrl, copyToClipboard } from '../../utils/shareUtils'
 
 // Studio Widget Components
-function StudioKPIWidget({ widget, queryData, format }) {
+function StudioKPIWidget({ widget, queryData, format, error }) {
+  if (error) {
+    return (
+      <div className="h-full flex items-center justify-center text-red-400 text-sm">
+        <div className="text-center">
+          <div className="text-xs mb-1">⚠️ Error</div>
+          <div className="text-xs">{error}</div>
+        </div>
+      </div>
+    )
+  }
+  
   if (!queryData || queryData.value === undefined) {
     return (
       <div className="h-full flex items-center justify-center text-gray-400 text-sm">
-        Loading...
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-gray-400 mb-2"></div>
+          <div className="text-xs">Loading...</div>
+        </div>
       </div>
     )
   }
@@ -51,11 +65,31 @@ function StudioKPIWidget({ widget, queryData, format }) {
   )
 }
 
-function StudioLineChartWidget({ widget, queryData, config, format }) {
+function StudioLineChartWidget({ widget, queryData, config, format, error }) {
+  if (error) {
+    return (
+      <div className="h-full flex items-center justify-center text-red-400 text-sm">
+        <div className="text-center">
+          <div className="text-xs mb-1">⚠️ Error</div>
+          <div className="text-xs">{error}</div>
+        </div>
+      </div>
+    )
+  }
+  
   if (!queryData || !queryData.data || queryData.data.length === 0) {
     return (
       <div className="h-full flex items-center justify-center text-gray-400 text-sm">
-        No data available
+        <div className="text-center">
+          {!queryData ? (
+            <>
+              <div className="inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-gray-400 mb-2"></div>
+              <div className="text-xs">Loading...</div>
+            </>
+          ) : (
+            <div className="text-xs">No data available</div>
+          )}
+        </div>
       </div>
     )
   }
@@ -113,11 +147,31 @@ function StudioLineChartWidget({ widget, queryData, config, format }) {
   )
 }
 
-function StudioBarChartWidget({ widget, queryData, config, format }) {
+function StudioBarChartWidget({ widget, queryData, config, format, error }) {
+  if (error) {
+    return (
+      <div className="h-full flex items-center justify-center text-red-400 text-sm">
+        <div className="text-center">
+          <div className="text-xs mb-1">⚠️ Error</div>
+          <div className="text-xs">{error}</div>
+        </div>
+      </div>
+    )
+  }
+  
   if (!queryData || !queryData.data || queryData.data.length === 0) {
     return (
       <div className="h-full flex items-center justify-center text-gray-400 text-sm">
-        No data available
+        <div className="text-center">
+          {!queryData ? (
+            <>
+              <div className="inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-gray-400 mb-2"></div>
+              <div className="text-xs">Loading...</div>
+            </>
+          ) : (
+            <div className="text-xs">No data available</div>
+          )}
+        </div>
       </div>
     )
   }
@@ -191,17 +245,18 @@ function StudioBarChartWidget({ widget, queryData, config, format }) {
   )
 }
 
-function StudioWidget({ widget, queryResults }) {
+function StudioWidget({ widget, queryResults, queryErrors }) {
   const queryData = queryResults[widget.query_ref]
+  const error = queryErrors[widget.query_ref] || (queryData?.error ? queryData.error : null)
 
   const renderWidget = () => {
     switch (widget.type) {
       case 'kpi':
-        return <StudioKPIWidget widget={widget} queryData={queryData} format={widget.format} />
+        return <StudioKPIWidget widget={widget} queryData={queryData} format={widget.format} error={error} />
       case 'line_chart':
-        return <StudioLineChartWidget widget={widget} queryData={queryData} config={widget.config} format={widget.format} />
+        return <StudioLineChartWidget widget={widget} queryData={queryData} config={widget.config} format={widget.format} error={error} />
       case 'bar_chart':
-        return <StudioBarChartWidget widget={widget} queryData={queryData} config={widget.config} format={widget.format} />
+        return <StudioBarChartWidget widget={widget} queryData={queryData} config={widget.config} format={widget.format} error={error} />
       default:
         return <div className="h-full flex items-center justify-center text-gray-400 text-sm">Unknown widget type: {widget.type}</div>
     }
@@ -246,6 +301,8 @@ function StudioDashboard() {
   const [shareId, setShareId] = useState(null)
   const [shareLinkCopied, setShareLinkCopied] = useState(false)
   const [publishing, setPublishing] = useState(false)
+  const [queryLoading, setQueryLoading] = useState(false)
+  const [queryErrors, setQueryErrors] = useState({}) // { queryId: errorMessage }
 
   // Load dashboard schema
   useEffect(() => {
@@ -636,7 +693,10 @@ function StudioDashboard() {
     console.log('Executing queries via API for dataset:', datasetId)
 
     const executeQueries = async () => {
+      setQueryLoading(true)
+      setQueryErrors({})
       const results = {}
+      const errors = {}
 
       // Execute all queries in parallel
       const queryPromises = dashboard.queries.map(async (query) => {
@@ -654,8 +714,10 @@ function StudioDashboard() {
             results[query.id] = response.data.result
             console.log(`Query ${query.id} completed:`, response.data.result)
           } else {
+            const errorMsg = 'No result returned from server'
             console.error(`Query ${query.id} returned no result, response:`, response.data)
-            results[query.id] = { error: 'No result returned' }
+            results[query.id] = { error: errorMsg }
+            errors[query.id] = errorMsg
           }
         } catch (error) {
           console.error(`Error executing query ${query.id} via API:`, error)
@@ -664,28 +726,61 @@ function StudioDashboard() {
             response: error.response?.data,
             status: error.response?.status
           })
-          // Fallback to client-side if API fails and we have data
-          if (data && data.length > 0) {
-            console.log(`Falling back to client-side for query ${query.id}`)
-            // We'll handle this in the fallback below
-          } else {
-            results[query.id] = { error: error.response?.data?.message || error.message || 'Query execution failed' }
+          
+          // Create user-friendly error message
+          let errorMessage = 'Query execution failed'
+          if (error.response?.data?.message) {
+            errorMessage = error.response.data.message
+          } else if (error.response?.data?.error) {
+            errorMessage = error.response.data.error
+          } else if (error.message) {
+            errorMessage = error.message
           }
+          
+          results[query.id] = { error: errorMessage }
+          errors[query.id] = errorMessage
         }
       })
 
       await Promise.all(queryPromises)
       
       // If any queries failed and we have data, try client-side fallback
-      const failedQueries = Object.keys(results).filter(key => results[key].error)
+      const failedQueries = Object.keys(results).filter(key => results[key]?.error)
       if (failedQueries.length > 0 && data && data.length > 0) {
         console.log('Some queries failed via API, trying client-side fallback for failed queries')
-        executeQueriesClientSide()
-        return // executeQueriesClientSide will set queryResults
+        try {
+          executeQueriesClientSide()
+          // Merge client-side results with API results (prefer API results if they succeeded)
+          const mergedResults = { ...queryResults }
+          Object.keys(results).forEach(key => {
+            if (!results[key]?.error) {
+              mergedResults[key] = results[key]
+            } else if (mergedResults[key] && !mergedResults[key].error) {
+              // Keep client-side result if it succeeded
+            } else {
+              mergedResults[key] = results[key]
+            }
+          })
+          // Update errors - remove errors for queries that succeeded client-side
+          const updatedErrors = { ...errors }
+          Object.keys(mergedResults).forEach(key => {
+            if (mergedResults[key] && !mergedResults[key].error) {
+              delete updatedErrors[key]
+            }
+          })
+          setQueryResults(mergedResults)
+          setQueryErrors(updatedErrors)
+          setQueryLoading(false)
+          return
+        } catch (fallbackError) {
+          console.error('Client-side fallback also failed:', fallbackError)
+        }
       }
       
       console.log('All queries completed:', results)
       setQueryResults(results)
+      setQueryErrors(errors)
+      setQueryLoading(false)
     }
 
     executeQueries()
@@ -1355,6 +1450,7 @@ function StudioDashboard() {
                       key={widget.id}
                       widget={widget}
                       queryResults={queryResults}
+                      queryErrors={queryErrors}
                     />
                   ))
                 ) : (
