@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import apiClient from '../../config/api'
 import { getPageFilters, getQueries } from '../utils/schemaUtils'
@@ -262,7 +262,8 @@ export default function PageRenderer({
               const isLoading = queryLoading[queryId]
               const error = queryErrors[queryId]
 
-              const widgetProps = useMemo(() => ({
+              // Create widget props object (no useMemo in map - violates Rules of Hooks)
+              const widgetProps = {
                 widget,
                 queryData,
                 isLoading,
@@ -270,7 +271,7 @@ export default function PageRenderer({
                 config: widget.config,
                 format: widget.format,
                 onDrilldown: widget.actions?.onClick ? (data) => handleWidgetClick(widget, data) : null
-              }), [widget, queryData, isLoading, error, handleWidgetClick])
+              }
 
               switch (widget.type) {
                 case 'kpi':
