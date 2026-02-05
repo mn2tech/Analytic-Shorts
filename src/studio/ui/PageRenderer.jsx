@@ -152,29 +152,13 @@ export default function PageRenderer({
         return
       }
 
-      // Wait a bit for filter values to initialize if they're empty
-      if (Object.keys(filterValues).length === 0) {
-        console.log('Filter values not initialized yet, waiting...')
-        // Give filters time to initialize (they should initialize in the previous useEffect)
-        const checkFilters = () => {
-          const hasFilters = Object.keys(filterValues).length > 0
-          if (!hasFilters) {
-            // If still no filters after a short delay, proceed anyway (queries might not need filters)
-            setTimeout(() => {
-              console.log('Proceeding with queries even without filters')
-              executeQueries()
-            }, 100)
-          }
-        }
-        setTimeout(checkFilters, 50)
-        return
-      }
-
       const widgets = page.sections?.flatMap(s => s.widgets || []) || []
       const queryIds = new Set(widgets.map(w => w.query_ref).filter(Boolean))
       
       console.log('Executing queries for page:', pageId, 'Query IDs:', Array.from(queryIds))
       console.log('Current filter values:', filterValues)
+      
+      // Note: Queries will execute even if filterValues is empty - backend handles empty filters
 
       if (queryIds.size === 0) {
         console.warn('No queries found for widgets on this page')
