@@ -19,6 +19,8 @@ export default function AppShell({
   onPageChange,
   onSave,
   onPublish,
+  onDuplicate,
+  onSaveAsTemplate,
   isPublished = false,
   isSaving = false,
   children
@@ -87,7 +89,33 @@ export default function AppShell({
 
             {/* Actions */}
             {!isPublished && (
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                {onDuplicate && (
+                  <button
+                    onClick={onDuplicate}
+                    disabled={isSaving}
+                    className="inline-flex items-center gap-2 px-3 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Duplicate this app"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                    Duplicate
+                  </button>
+                )}
+                {onSaveAsTemplate && (
+                  <button
+                    onClick={onSaveAsTemplate}
+                    disabled={isSaving}
+                    className="inline-flex items-center gap-2 px-3 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Save as reusable template"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                    </svg>
+                    Save as Template
+                  </button>
+                )}
                 <button
                   onClick={onSave}
                   disabled={isSaving}

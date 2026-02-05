@@ -9,6 +9,7 @@ function StudioHome() {
   const [dashboards, setDashboards] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [showTemplates, setShowTemplates] = useState(false)
 
   useEffect(() => {
     loadDashboards()
@@ -77,19 +78,39 @@ function StudioHome() {
         </div>
 
         {/* Actions */}
-        <div className="mb-8 flex flex-col sm:flex-row gap-4">
-          <button
-            onClick={() => navigate('/studio/new')}
-            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-semibold"
-          >
-            + Create New Dashboard
-          </button>
-          <Link
-            to="/"
-            className="px-6 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-semibold text-center"
-          >
-            Back to Analytics Shorts
-          </Link>
+        <div className="mb-8 flex flex-col sm:flex-row gap-4 items-center justify-between">
+          <div className="flex flex-col sm:flex-row gap-4">
+            <button
+              onClick={() => navigate('/studio/new')}
+              className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-semibold"
+            >
+              + Create New Dashboard
+            </button>
+            <button
+              onClick={() => navigate('/studio/app/new')}
+              className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-semibold"
+            >
+              + Create Multi-Page App
+            </button>
+            <Link
+              to="/"
+              className="px-6 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-semibold text-center"
+            >
+              Back to Analytics Shorts
+            </Link>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowTemplates(!showTemplates)}
+              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                showTemplates
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              {showTemplates ? 'Show All' : 'Show Templates'}
+            </button>
+          </div>
         </div>
 
         {/* Error State */}
@@ -107,26 +128,56 @@ function StudioHome() {
         )}
 
         {/* Dashboards Grid */}
-        {!loading && (
-          <>
-            {dashboards.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {dashboards.map((dashboard) => (
-                  <div
-                    key={dashboard.id}
-                    className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow relative group"
-                  >
+        {!loading && (() => {
+          const filteredDashboards = showTemplates
+            ? dashboards.filter(d => d.isTemplate)
+            : dashboards.filter(d => !d.isTemplate)
+          
+          return (
+            <>
+              {filteredDashboards.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {filteredDashboards.map((dashboard) => (
                     <div
-                      onClick={() => navigate(`/studio/${dashboard.id}`)}
-                      className="cursor-pointer"
+                      key={dashboard.id}
+                      className={`bg-white rounded-lg shadow-sm border p-6 hover:shadow-md transition-shadow relative group ${
+                        dashboard.isTemplate ? 'border-indigo-300 bg-indigo-50' : 'border-gray-200'
+                      }`}
                     >
-                      <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                        {dashboard.name || 'Untitled Dashboard'}
-                      </h3>
-                      <p className="text-sm text-gray-500 mb-1">
-                        {dashboard.schema?.metadata?.description || 'No description'}
-                      </p>
-                      <p className="text-xs text-gray-400">
+                      {dashboard.isTemplate && (
+                        <div className="absolute top-2 right-2">
+                          <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-indigo-100 text-indigo-800">
+                            <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                              <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" />
+                              <path fillRule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clipRule="evenodd" />
+                            </svg>
+                            Template
+                          </span>
+                        </div>
+                      )}
+                      <div
+                        onClick={() => {
+                          if (dashboard.isTemplate) {
+                            handleUseTemplate(dashboard.id)
+                          } else {
+                            // Check if it's a multi-page app
+                            const hasPages = dashboard.schema?.pages && dashboard.schema.pages.length > 0
+                            if (hasPages) {
+                              navigate(`/studio/app/${dashboard.id}`)
+                            } else {
+                              navigate(`/studio/${dashboard.id}`)
+                            }
+                          }
+                        }}
+                        className="cursor-pointer"
+                      >
+                        <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                          {dashboard.name || 'Untitled Dashboard'}
+                        </h3>
+                        <p className="text-sm text-gray-500 mb-1">
+                          {dashboard.schema?.metadata?.description || 'No description'}
+                        </p>
+                        <p className="text-xs text-gray-400">
                         Last modified: {formatDate(dashboard.updated_at || dashboard.created_at)}
                       </p>
                     </div>

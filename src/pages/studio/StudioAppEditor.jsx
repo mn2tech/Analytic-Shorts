@@ -82,6 +82,73 @@ export default function StudioAppEditor() {
     }
   }
 
+  // Handle duplicate app
+  const handleDuplicate = async () => {
+    if (!schema) return
+
+    try {
+      setSaving(true)
+      
+      // Generate new ID and update metadata
+      const newSchema = {
+        ...schema,
+        app_id: undefined, // Will be generated on save
+        metadata: {
+          ...schema.metadata,
+          id: undefined, // Will be generated on save
+          name: `${schema.metadata?.name || 'Untitled App'} (Copy)`,
+          description: schema.metadata?.description || '',
+          status: 'draft',
+          version: '1.0.0',
+          published_at: undefined,
+          is_template: false
+        }
+      }
+
+      // Save as new dashboard
+      const saved = await saveDashboard(newSchema, null)
+      
+      // Navigate to new app
+      navigate(`/studio/app/${saved.id}`, { replace: true })
+    } catch (err) {
+      console.error('Error duplicating app:', err)
+      setError(err.message || 'Failed to duplicate app')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Handle save as template
+  const handleSaveAsTemplate = async () => {
+    if (!schema) return
+
+    try {
+      setSaving(true)
+      
+      // Update schema to mark as template
+      const templateSchema = {
+        ...schema,
+        metadata: {
+          ...schema.metadata,
+          is_template: true,
+          name: schema.metadata?.name || 'Untitled Template',
+          description: schema.metadata?.description || 'A reusable app template'
+        }
+      }
+
+      // Save template
+      await saveDashboard(templateSchema, id === 'new' ? null : id)
+      
+      // Show success message
+      alert('App saved as template! Others can now use this as a starting point.')
+    } catch (err) {
+      console.error('Error saving template:', err)
+      setError(err.message || 'Failed to save template')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   // Handle publish
   const handlePublish = async () => {
     if (!schema) return
@@ -179,6 +246,8 @@ export default function StudioAppEditor() {
       onPageChange={handlePageChange}
       onSave={handleSave}
       onPublish={handlePublish}
+      onDuplicate={id !== 'new' ? handleDuplicate : null}
+      onSaveAsTemplate={handleSaveAsTemplate}
       isPublished={false}
       isSaving={saving}
     >
