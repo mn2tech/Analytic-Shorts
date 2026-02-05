@@ -127,21 +127,31 @@ export default function PageRenderer({
           const datasetId = getDatasetId(schema)
           if (datasetId) {
             // Use backend query API
+            console.log(`Executing query ${queryId} with filters:`, filterValues)
             const response = await apiClient.post('/api/studio/query', {
               datasetId,
               query,
               filterValues
             })
-            setQueryResults(prev => ({ ...prev, [queryId]: response.data }))
+            console.log(`Query ${queryId} response:`, response.data)
+            
+            // Extract result from response (backend returns { result: { data: [...] }, queryId, rowCount })
+            const queryResult = response.data?.result || response.data
+            setQueryResults(prev => ({ ...prev, [queryId]: queryResult }))
           } else {
             // Fallback to client-side (for uploaded data)
             console.warn('No datasetId found, skipping query:', queryId)
           }
         } catch (error) {
           console.error(`Error executing query ${queryId}:`, error)
+          console.error('Error details:', {
+            message: error.message,
+            response: error.response?.data,
+            status: error.response?.status
+          })
           setQueryErrors(prev => ({
             ...prev,
-            [queryId]: error.response?.data?.error || error.message || 'Query failed'
+            [queryId]: error.response?.data?.error || error.response?.data?.message || error.message || 'Query failed'
           }))
         } finally {
           setQueryLoading(prev => ({ ...prev, [queryId]: false }))
