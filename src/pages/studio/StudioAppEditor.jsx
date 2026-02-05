@@ -5,6 +5,7 @@ import { normalizeSchema, isPublished } from '../../studio/utils/schemaUtils'
 import AppShell from '../../studio/ui/AppShell'
 import PageRenderer from '../../studio/ui/PageRenderer'
 import apiClient from '../../config/api'
+import sampleApp2PageJson from '../../studio/examples/sample_app_2page.json'
 
 /**
  * StudioAppEditor - Editor mode for multi-page apps
@@ -29,8 +30,7 @@ export default function StudioAppEditor() {
 
         if (id === 'new') {
           // Create new app from sample
-          const sampleApp = await import('../../studio/examples/sample_app_2page.json')
-          const normalized = normalizeSchema(sampleApp.default)
+          const normalized = normalizeSchema(sampleApp2PageJson)
           setSchema(normalized)
           setCurrentPageId(normalized.pages[0]?.id || 'default')
         } else {
