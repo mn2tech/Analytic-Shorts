@@ -29,38 +29,46 @@ export default function FilterBar({ filters, values, options, onChange, isReadOn
             {filter.type === 'time_range' ? (
               <>
                 <label htmlFor={`${filter.id}-start`} className="block text-sm font-medium text-gray-700 mb-1">
-                  {filter.label} (Start)
+                  {filter.label}
                   {filter.required && <span className="text-red-500 ml-1">*</span>}
                 </label>
                 <div className="flex gap-2">
-                  <input
-                    id={`${filter.id}-start`}
-                    name={`${filter.id}-start`}
-                    type="date"
-                    value={values[filter.id]?.start || ''}
-                    onChange={(e) => handleFilterChange(filter.id, {
-                      ...values[filter.id],
-                      start: e.target.value
-                    })}
-                    disabled={isReadOnly}
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
-                  />
-                  <label htmlFor={`${filter.id}-end`} className="block text-sm font-medium text-gray-700 mb-1">
-                    {filter.label} (End)
-                    {filter.required && <span className="text-red-500 ml-1">*</span>}
-                  </label>
-                  <input
-                    id={`${filter.id}-end`}
-                    name={`${filter.id}-end`}
-                    type="date"
-                    value={values[filter.id]?.end || ''}
-                    onChange={(e) => handleFilterChange(filter.id, {
-                      ...values[filter.id],
-                      end: e.target.value
-                    })}
-                    disabled={isReadOnly}
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
-                  />
+                  <div className="flex-1">
+                    <label htmlFor={`${filter.id}-start`} className="sr-only">
+                      Start Date
+                    </label>
+                    <input
+                      id={`${filter.id}-start`}
+                      name={`${filter.id}-start`}
+                      type="date"
+                      value={values[filter.id]?.start || ''}
+                      onChange={(e) => handleFilterChange(filter.id, {
+                        ...values[filter.id],
+                        start: e.target.value
+                      })}
+                      disabled={isReadOnly}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
+                      aria-label="Start date"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <label htmlFor={`${filter.id}-end`} className="sr-only">
+                      End Date
+                    </label>
+                    <input
+                      id={`${filter.id}-end`}
+                      name={`${filter.id}-end`}
+                      type="date"
+                      value={values[filter.id]?.end || ''}
+                      onChange={(e) => handleFilterChange(filter.id, {
+                        ...values[filter.id],
+                        end: e.target.value
+                      })}
+                      disabled={isReadOnly}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
+                      aria-label="End date"
+                    />
+                  </div>
                 </div>
               </>
             ) : (
