@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import apiClient from '../../config/api'
+import apiClient, { API_BASE_URL } from '../../config/api'
 import { getPageFilters, getQueries } from '../utils/schemaUtils'
 import StudioKPIWidget from './widgets/StudioKPIWidget'
 import StudioLineChartWidget from './widgets/StudioLineChartWidget'
@@ -190,8 +190,10 @@ export default function PageRenderer({
           }
 
           // Use backend query API
+          const apiUrl = `${API_BASE_URL || ''}/api/studio/query`
           console.log(`Executing query ${queryId} with datasetId: ${datasetId}, filters:`, filterValues)
-          console.log('API Base URL:', apiClient.defaults.baseURL || 'Not set (using relative)')
+          console.log('API Base URL:', API_BASE_URL || 'Not set (using relative)')
+          console.log('Full API URL:', apiUrl)
           const response = await apiClient.post('/api/studio/query', {
             datasetId,
             query,
