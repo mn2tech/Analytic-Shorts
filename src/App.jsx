@@ -15,6 +15,8 @@ import Terms from './pages/Terms'
 import AdminAnalytics from './pages/AdminAnalytics'
 import StudioHome from './pages/studio/StudioHome'
 import StudioDashboard from './pages/studio/StudioDashboard'
+import StudioAppEditor from './pages/studio/StudioAppEditor'
+import StudioAppView from './pages/studio/StudioAppView'
 
 // Track page views for Google Analytics
 function PageViewTracker() {
@@ -71,6 +73,9 @@ function App() {
         <Route path="/dashboard/shared/:shareId" element={<SharedDashboard />} />
         <Route path="/studio" element={<StudioHome />} />
         <Route path="/studio/:dashboardId" element={<StudioDashboard />} />
+        <Route path="/studio/app/:id" element={<StudioAppEditor />} />
+        <Route path="/apps/:id" element={<StudioAppView />} />
+        <Route path="/apps/:id/:pageId" element={<StudioAppView />} />
       </Routes>
     </AuthProvider>
   )

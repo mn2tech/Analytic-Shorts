@@ -1,0 +1,324 @@
+{
+  "version": "2.0",
+  "app_id": "sales-analytics-app",
+  "app_title": "Sales Analytics",
+  "metadata": {
+    "id": "sales-analytics-app",
+    "name": "Sales Analytics",
+    "description": "Multi-page sales analytics dashboard with drilldown",
+    "created_at": "2024-01-15T10:00:00Z",
+    "updated_at": "2024-01-15T10:00:00Z",
+    "author": "Analytics Shorts Studio",
+    "status": "draft",
+    "version": "1.0.0"
+  },
+  "data_source": {
+    "type": "api",
+    "endpoint": "/api/example/sales",
+    "refresh_interval": 3600
+  },
+  "global_filters": [
+    {
+      "id": "time_range",
+      "type": "time_range",
+      "label": "Date Range",
+      "default": {
+        "start": "2024-01-01",
+        "end": "2024-12-31"
+      },
+      "required": true
+    },
+    {
+      "id": "region",
+      "type": "dropdown",
+      "label": "Region",
+      "source": "dimension",
+      "dimension": "Region",
+      "default": "All",
+      "required": false,
+      "multi_select": false
+    }
+  ],
+  "queries": [
+    {
+      "id": "kpi_total_sales",
+      "type": "aggregation",
+      "metric": "Sales",
+      "aggregation": "sum",
+      "filters": {
+        "time_range": "{{filters.time_range}}",
+        "region": "{{filters.region}}"
+      }
+    },
+    {
+      "id": "trend_sales_over_time",
+      "type": "time_series",
+      "metric": "Sales",
+      "dimension": "Date",
+      "aggregation": "sum",
+      "group_by": ["Date"],
+      "order_by": "Date",
+      "filters": {
+        "time_range": "{{filters.time_range}}",
+        "region": "{{filters.region}}"
+      }
+    },
+    {
+      "id": "breakdown_by_region",
+      "type": "breakdown",
+      "metric": "Sales",
+      "dimension": "Region",
+      "aggregation": "sum",
+      "group_by": ["Region"],
+      "order_by": "Sales",
+      "order_direction": "desc",
+      "filters": {
+        "time_range": "{{filters.time_range}}"
+      }
+    },
+    {
+      "id": "details_by_region",
+      "type": "breakdown",
+      "metric": "Sales",
+      "dimension": "Product",
+      "aggregation": "sum",
+      "group_by": ["Product"],
+      "order_by": "Sales",
+      "order_direction": "desc",
+      "limit": 20,
+      "filters": {
+        "time_range": "{{filters.time_range}}",
+        "region": "{{filters.region}}"
+      }
+    },
+    {
+      "id": "details_by_product",
+      "type": "time_series",
+      "metric": "Sales",
+      "dimension": "Date",
+      "aggregation": "sum",
+      "group_by": ["Date", "Product"],
+      "order_by": "Date",
+      "filters": {
+        "time_range": "{{filters.time_range}}",
+        "region": "{{filters.region}}",
+        "product": "{{filters.product}}"
+      }
+    }
+  ],
+  "pages": [
+    {
+      "id": "overview",
+      "title": "Overview",
+      "description": "Main dashboard overview with key metrics and regional breakdown",
+      "sections": [
+        {
+          "id": "kpis",
+          "title": "Key Performance Indicators",
+          "layout": "grid",
+          "columns": 1,
+          "widgets": [
+            {
+              "id": "widget_total_sales",
+              "type": "kpi",
+              "title": "Total Sales",
+              "query_ref": "kpi_total_sales",
+              "format": {
+                "type": "currency",
+                "currency": "USD",
+                "decimals": 0
+              },
+              "trend": {
+                "enabled": true,
+                "period": "previous_period",
+                "format": "percentage"
+              }
+            }
+          ]
+        },
+        {
+          "id": "trends",
+          "title": "Sales Trends",
+          "layout": "grid",
+          "columns": 1,
+          "widgets": [
+            {
+              "id": "widget_sales_trend",
+              "type": "line_chart",
+              "title": "Sales Over Time",
+              "query_ref": "trend_sales_over_time",
+              "config": {
+                "x_axis": "Date",
+                "y_axis": "Sales",
+                "show_grid": true,
+                "show_legend": false,
+                "curve": "monotone"
+              },
+              "format": {
+                "y_axis": {
+                  "type": "currency",
+                  "currency": "USD",
+                  "decimals": 0
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "breakdowns",
+          "title": "Sales by Region",
+          "layout": "grid",
+          "columns": 1,
+          "widgets": [
+            {
+              "id": "widget_sales_by_region",
+              "type": "bar_chart",
+              "title": "Sales by Region",
+              "query_ref": "breakdown_by_region",
+              "actions": {
+                "onClick": {
+                  "type": "navigate",
+                  "targetPageId": "details",
+                  "passFilters": ["time_range"],
+                  "passValueFrom": {
+                    "field": "Region",
+                    "as": "region"
+                  }
+                }
+              },
+              "config": {
+                "orientation": "vertical",
+                "x_axis": "Region",
+                "y_axis": "Sales",
+                "show_grid": true,
+                "show_legend": false,
+                "sort": "desc"
+              },
+              "format": {
+                "y_axis": {
+                  "type": "currency",
+                  "currency": "USD",
+                  "decimals": 0
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "details",
+      "title": "Region Details",
+      "description": "Detailed product sales breakdown for selected region",
+      "filters": [
+        {
+          "id": "product",
+          "type": "dropdown",
+          "label": "Product",
+          "source": "dimension",
+          "dimension": "Product",
+          "default": "All",
+          "required": false,
+          "multi_select": false
+        }
+      ],
+      "sections": [
+        {
+          "id": "region_details",
+          "title": "Product Sales by Region",
+          "layout": "grid",
+          "columns": 1,
+          "widgets": [
+            {
+              "id": "widget_product_details",
+              "type": "bar_chart",
+              "title": "Sales by Product",
+              "query_ref": "details_by_region",
+              "actions": {
+                "onClick": {
+                  "type": "navigate",
+                  "targetPageId": "drill",
+                  "passFilters": ["time_range", "region"],
+                  "passValueFrom": {
+                    "field": "Product",
+                    "as": "product"
+                  }
+                }
+              },
+              "config": {
+                "orientation": "horizontal",
+                "x_axis": "Sales",
+                "y_axis": "Product",
+                "show_grid": true,
+                "show_legend": false,
+                "sort": "desc"
+              },
+              "format": {
+                "x_axis": {
+                  "type": "currency",
+                  "currency": "USD",
+                  "decimals": 0
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "drill",
+      "title": "Product Drill-Down",
+      "description": "Time series view for selected product",
+      "sections": [
+        {
+          "id": "product_trend",
+          "title": "Product Sales Trend",
+          "layout": "grid",
+          "columns": 1,
+          "widgets": [
+            {
+              "id": "widget_product_trend",
+              "type": "line_chart",
+              "title": "Sales Over Time",
+              "query_ref": "details_by_product",
+              "config": {
+                "x_axis": "Date",
+                "y_axis": "Sales",
+                "show_grid": true,
+                "show_legend": true,
+                "curve": "monotone"
+              },
+              "format": {
+                "y_axis": {
+                  "type": "currency",
+                  "currency": "USD",
+                  "decimals": 0
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "layout": {
+    "type": "responsive",
+    "breakpoints": {
+      "mobile": {
+        "columns": 1
+      },
+      "tablet": {
+        "columns": 2
+      },
+      "desktop": {
+        "columns": 3
+      }
+    }
+  },
+  "theme": {
+    "primary_color": "#3b82f6",
+    "secondary_color": "#8b5cf6",
+    "background_color": "#ffffff",
+    "text_color": "#1f2937"
+  }
+}

@@ -275,6 +275,71 @@ router.put('/:id', getUserFromToken, async (req, res) => {
 })
 
 // Delete a dashboard
+// Publish a dashboard (locks version and sets status to published)
+router.post('/:id/publish', getUserFromToken, async (req, res) => {
+  try {
+    if (!supabase) {
+      return res.status(500).json({ error: 'Database not configured' })
+    }
+
+    const { id } = req.params
+    const { schema } = req.body
+
+    if (!schema) {
+      return res.status(400).json({ error: 'Schema is required' })
+    }
+
+    // Get current dashboard
+    const { data: dashboard, error: fetchError } = await supabase
+      .from('shorts_dashboards')
+      .select('*')
+      .eq('id', id)
+      .eq('user_id', req.user.id)
+      .single()
+
+    if (fetchError || !dashboard) {
+      return res.status(404).json({ error: 'Dashboard not found' })
+    }
+
+    // Update schema with published metadata
+    const updatedSchema = {
+      ...schema,
+      metadata: {
+        ...schema.metadata,
+        status: 'published',
+        version: schema.metadata?.version || '1.0.0',
+        published_at: new Date().toISOString()
+      }
+    }
+
+    // Update dashboard with published schema
+    const { data: updated, error: updateError } = await supabase
+      .from('shorts_dashboards')
+      .update({
+        schema: typeof updatedSchema === 'string' ? updatedSchema : JSON.stringify(updatedSchema),
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', id)
+      .eq('user_id', req.user.id)
+      .select()
+      .single()
+
+    if (updateError) {
+      console.error('Error publishing dashboard:', updateError)
+      return res.status(500).json({ error: 'Failed to publish dashboard' })
+    }
+
+    res.json({
+      success: true,
+      dashboard: updated,
+      message: 'Dashboard published successfully'
+    })
+  } catch (error) {
+    console.error('Error in publish endpoint:', error)
+    res.status(500).json({ error: 'Failed to publish dashboard' })
+  }
+})
+
 router.delete('/:id', getUserFromToken, async (req, res) => {
   try {
     const { error } = await supabase
