@@ -45,17 +45,31 @@ export default function PageRenderer({
     searchParams.forEach((value, key) => {
       if (key.startsWith('filter_')) {
         const filterId = key.replace('filter_', '')
-        initialFilters[filterId] = value
+        // Parse JSON strings (for time_range objects)
+        if (value.startsWith('{') || value.startsWith('[')) {
+          try {
+            initialFilters[filterId] = JSON.parse(value)
+          } catch {
+            initialFilters[filterId] = value
+          }
+        } else {
+          initialFilters[filterId] = value
+        }
       }
     })
 
     // Set defaults from filter definitions
     pageFilters.forEach(filter => {
       if (filter.default !== undefined && initialFilters[filter.id] === undefined) {
-        initialFilters[filter.id] = filter.default === 'All' ? null : filter.default
+        if (filter.type === 'time_range' && typeof filter.default === 'object') {
+          initialFilters[filter.id] = filter.default
+        } else {
+          initialFilters[filter.id] = filter.default === 'All' ? null : filter.default
+        }
       }
     })
 
+    console.log('Initialized filter values:', initialFilters)
     setFilterValues(initialFilters)
   }, [pageId, globalFilters, pageFilters, searchParams])
 
@@ -65,7 +79,12 @@ export default function PageRenderer({
     
     Object.entries(filterValues).forEach(([key, value]) => {
       if (value !== null && value !== undefined && value !== 'All') {
-        newParams.set(`filter_${key}`, String(value))
+        // Stringify objects (like time_range) for URL
+        if (typeof value === 'object' && !Array.isArray(value)) {
+          newParams.set(`filter_${key}`, JSON.stringify(value))
+        } else {
+          newParams.set(`filter_${key}`, String(value))
+        }
       } else {
         newParams.delete(`filter_${key}`)
       }
@@ -135,8 +154,10 @@ export default function PageRenderer({
             })
             console.log(`Query ${queryId} response:`, response.data)
             
-            // Extract result from response (backend returns { result: { data: [...] }, queryId, rowCount })
+            // Extract result from response (backend returns { result: { data: [...] } or { value: ... }, queryId, rowCount })
+            // The result object contains either { data: [...] } for charts or { value: ... } for KPIs
             const queryResult = response.data?.result || response.data
+            console.log(`Query ${queryId} extracted result:`, queryResult)
             setQueryResults(prev => ({ ...prev, [queryId]: queryResult }))
           } else {
             // Fallback to client-side (for uploaded data)
