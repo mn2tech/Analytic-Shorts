@@ -131,38 +131,66 @@ export default function PageRenderer({
   // Execute queries for current page
   useEffect(() => {
     const executeQueries = async () => {
-      if (!schema || !page) return
+      if (!schema || !page) {
+        console.log('Skipping query execution - missing schema or page:', { schema: !!schema, page: !!page })
+        return
+      }
 
       const widgets = page.sections?.flatMap(s => s.widgets || []) || []
       const queryIds = new Set(widgets.map(w => w.query_ref).filter(Boolean))
+      
+      console.log('Executing queries for page:', pageId, 'Query IDs:', Array.from(queryIds))
+      console.log('Current filter values:', filterValues)
+
+      if (queryIds.size === 0) {
+        console.warn('No queries found for widgets on this page')
+        return
+      }
 
       for (const queryId of queryIds) {
         const query = queries.find(q => q.id === queryId)
-        if (!query) continue
+        if (!query) {
+          console.warn(`Query ${queryId} not found in queries array`)
+          continue
+        }
 
         setQueryLoading(prev => ({ ...prev, [queryId]: true }))
         setQueryErrors(prev => ({ ...prev, [queryId]: null }))
 
         try {
           const datasetId = getDatasetId(schema)
-          if (datasetId) {
-            // Use backend query API
-            console.log(`Executing query ${queryId} with filters:`, filterValues)
-            const response = await apiClient.post('/api/studio/query', {
-              datasetId,
-              query,
-              filterValues
-            })
-            console.log(`Query ${queryId} response:`, response.data)
-            
-            // Extract result from response (backend returns { result: { data: [...] } or { value: ... }, queryId, rowCount })
-            // The result object contains either { data: [...] } for charts or { value: ... } for KPIs
-            const queryResult = response.data?.result || response.data
-            console.log(`Query ${queryId} extracted result:`, queryResult)
+          if (!datasetId) {
+            console.warn(`No datasetId found for query ${queryId}, skipping`)
+            setQueryLoading(prev => ({ ...prev, [queryId]: false }))
+            setQueryErrors(prev => ({
+              ...prev,
+              [queryId]: 'No dataset configured'
+            }))
+            continue
+          }
+
+          // Use backend query API
+          console.log(`Executing query ${queryId} with datasetId: ${datasetId}, filters:`, filterValues)
+          const response = await apiClient.post('/api/studio/query', {
+            datasetId,
+            query,
+            filterValues
+          })
+          console.log(`Query ${queryId} response:`, response.data)
+          
+          // Extract result from response (backend returns { result: { data: [...] } or { value: ... }, queryId, rowCount })
+          // The result object contains either { data: [...] } for charts or { value: ... } for KPIs
+          const queryResult = response.data?.result || response.data
+          console.log(`Query ${queryId} extracted result:`, queryResult)
+          
+          if (queryResult) {
             setQueryResults(prev => ({ ...prev, [queryId]: queryResult }))
           } else {
-            // Fallback to client-side (for uploaded data)
-            console.warn('No datasetId found, skipping query:', queryId)
+            console.warn(`Query ${queryId} returned no result`)
+            setQueryErrors(prev => ({
+              ...prev,
+              [queryId]: 'Query returned no data'
+            }))
           }
         } catch (error) {
           console.error(`Error executing query ${queryId}:`, error)
@@ -182,7 +210,7 @@ export default function PageRenderer({
     }
 
     executeQueries()
-  }, [schema, page, queries, filterValues])
+  }, [schema, page, queries, filterValues, pageId])
 
   const handleFilterChange = (filterId, value) => {
     setFilterValues(prev => ({ ...prev, [filterId]: value }))
