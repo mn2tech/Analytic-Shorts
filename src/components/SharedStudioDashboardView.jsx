@@ -314,10 +314,14 @@ export default function SharedStudioDashboardView({ sharedData }) {
 
   // Load dropdown options from API or extract from data
   useEffect(() => {
-    if (!dashboard?.filters) return
+    if (!dashboard?.filters || dashboard.filters.length === 0) {
+      console.log('No filters to load options for')
+      return
+    }
 
     console.log('Loading dropdown options:', {
       hasFilters: !!dashboard.filters,
+      filtersCount: dashboard.filters.length,
       hasDataSource: !!dashboard?.data_source,
       hasData: !!data,
       dataLength: data?.length
