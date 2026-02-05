@@ -262,6 +262,18 @@ export default function SharedStudioDashboardView({ sharedData }) {
     queryResultsKeys: Object.keys(sharedData?.queryResults || {})
   })
 
+  // Extract datasetId from data_source endpoint
+  const getDatasetId = () => {
+    if (!dashboard?.data_source?.endpoint) return null
+    const endpoint = dashboard.data_source.endpoint
+    // Extract dataset ID from endpoint like "/api/example/sales" -> "sales"
+    const match = endpoint.match(/\/api\/example\/(.+)$/)
+    if (match) {
+      return match[1]
+    }
+    return null
+  }
+
   // Load data from data_source if available
   useEffect(() => {
     if (!dashboard?.data_source) {
@@ -300,30 +312,57 @@ export default function SharedStudioDashboardView({ sharedData }) {
     loadData()
   }, [dashboard?.data_source, sharedData?.data])
 
-  // Load dropdown options from API
+  // Load dropdown options from API or extract from data
   useEffect(() => {
-    if (!dashboard?.filters || !dashboard?.data_source) return
+    if (!dashboard?.filters) return
+
+    console.log('Loading dropdown options:', {
+      hasFilters: !!dashboard.filters,
+      hasDataSource: !!dashboard?.data_source,
+      hasData: !!data,
+      dataLength: data?.length
+    })
 
     const datasetId = getDatasetId()
+    console.log('DatasetId extracted:', datasetId)
+
+    // If no datasetId, extract from data (fallback)
     if (!datasetId) {
-      // Fallback: extract from data if available
+      console.log('No datasetId, extracting options from data')
       if (data && data.length > 0) {
         const optionsMap = {}
         dashboard.filters.forEach(filter => {
           if (filter.type === 'dropdown' && filter.dimension) {
             const dimensionKey = filter.dimension
+            console.log(`Extracting options for filter ${filter.id} (${dimensionKey}) from data`)
+            
+            // Try to find the actual column name in the data
+            const dataColumns = Object.keys(data[0] || {})
+            const actualColumn = dataColumns.find(col => 
+              col.toLowerCase() === dimensionKey.toLowerCase()
+            ) || dimensionKey
+            
+            console.log(`Using column: ${actualColumn} (from ${dimensionKey})`)
+            
             const uniqueValues = [...new Set(
               data.map(row => {
-                return row[dimensionKey] || 
-                       row[dimensionKey.toLowerCase()] || 
-                       row[dimensionKey.toUpperCase()] ||
-                       row[dimensionKey.charAt(0).toUpperCase() + dimensionKey.slice(1).toLowerCase()]
-              }).filter(Boolean)
+                const value = row[actualColumn] || 
+                             row[dimensionKey] || 
+                             row[dimensionKey.toLowerCase()] || 
+                             row[dimensionKey.toUpperCase()] ||
+                             row[dimensionKey.charAt(0).toUpperCase() + dimensionKey.slice(1).toLowerCase()]
+                return value
+              }).filter(v => v !== null && v !== undefined && v !== '')
             )].sort()
+            
+            console.log(`Found ${uniqueValues.length} unique values for ${filter.id}:`, uniqueValues)
             optionsMap[filter.id] = uniqueValues
           }
         })
         setDropdownOptions(optionsMap)
+        console.log('Dropdown options set from data:', optionsMap)
+      } else {
+        console.log('No data available yet for extracting options')
       }
       return
     }
