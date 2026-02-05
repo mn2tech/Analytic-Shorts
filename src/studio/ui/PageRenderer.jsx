@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import apiClient from '../../config/api'
 import { getPageFilters, getQueries } from '../utils/schemaUtils'
