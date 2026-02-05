@@ -71,9 +71,30 @@ function App() {
           }
         />
         <Route path="/dashboard/shared/:shareId" element={<SharedDashboard />} />
-        <Route path="/studio" element={<StudioHome />} />
-        <Route path="/studio/:dashboardId" element={<StudioDashboard />} />
-        <Route path="/studio/app/:id" element={<StudioAppEditor />} />
+        <Route
+          path="/studio"
+          element={
+            <ProtectedRoute>
+              <StudioHome />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/studio/:dashboardId"
+          element={
+            <ProtectedRoute>
+              <StudioDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/studio/app/:id"
+          element={
+            <ProtectedRoute>
+              <StudioAppEditor />
+            </ProtectedRoute>
+          }
+        />
         <Route path="/apps/:id" element={<StudioAppView />} />
         <Route path="/apps/:id/:pageId" element={<StudioAppView />} />
       </Routes>

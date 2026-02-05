@@ -20,7 +20,24 @@ function StudioHome() {
       setLoading(true)
       setError(null)
       const data = await listDashboards()
-      setDashboards(data)
+      
+      // Parse schema to check for templates
+      const parsedData = data.map(dashboard => {
+        try {
+          const schema = typeof dashboard.schema === 'string' 
+            ? JSON.parse(dashboard.schema) 
+            : dashboard.schema
+          return {
+            ...dashboard,
+            schema,
+            isTemplate: schema?.metadata?.is_template || false
+          }
+        } catch {
+          return { ...dashboard, isTemplate: false }
+        }
+      })
+      
+      setDashboards(parsedData)
     } catch (err) {
       console.error('Error loading dashboards:', err)
       setError(err.message || 'Failed to load dashboards')
@@ -30,6 +47,40 @@ function StudioHome() {
       }
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleUseTemplate = async (templateId) => {
+    try {
+      // Load template schema
+      const { getDashboard } = await import('../../studio/api/studioClient')
+      const templateSchema = await getDashboard(templateId)
+      
+      if (!templateSchema) {
+        alert('Template not found')
+        return
+      }
+
+      // Create new app from template
+      const { saveDashboard } = await import('../../studio/api/studioClient')
+      const newSchema = {
+        ...templateSchema,
+        app_id: undefined,
+        metadata: {
+          ...templateSchema.metadata,
+          id: undefined,
+          name: `${templateSchema.metadata?.name || 'Untitled'} (Copy)`,
+          status: 'draft',
+          is_template: false,
+          published_at: undefined
+        }
+      }
+
+      const saved = await saveDashboard(newSchema, null)
+      navigate(`/studio/app/${saved.id}`)
+    } catch (err) {
+      console.error('Error using template:', err)
+      alert(err.message || 'Failed to create app from template')
     }
   }
 

@@ -49,7 +49,10 @@ export default function StudioAppEditor() {
 
           const normalized = normalizeSchema(dashboardSchema)
           setSchema(normalized)
-          setCurrentPageId(normalized.pages[0]?.id || 'default')
+          // Get initial page from URL or use first page
+          const urlParams = new URLSearchParams(window.location.search)
+          const pageParam = urlParams.get('page')
+          setCurrentPageId(pageParam || normalized.pages[0]?.id || 'default')
         }
       } catch (err) {
         console.error('Error loading app:', err)
