@@ -36,6 +36,9 @@ export default function PageRenderer({
   const page = schema?.pages?.find(p => p.id === pageId) || schema?.pages?.[0]
   const pageFilters = getPageFilters(schema, pageId)
   const queries = getQueries(schema)
+  
+  // Also get global filters for initialization
+  const globalFiltersFromSchema = schema?.global_filters || []
 
   // Initialize filter values from URL params and global filters
   useEffect(() => {
@@ -58,7 +61,18 @@ export default function PageRenderer({
       }
     })
 
-    // Set defaults from filter definitions
+    // Set defaults from global filters first (they apply to all pages)
+    globalFiltersFromSchema.forEach(filter => {
+      if (filter.default !== undefined && initialFilters[filter.id] === undefined) {
+        if (filter.type === 'time_range' && typeof filter.default === 'object') {
+          initialFilters[filter.id] = filter.default
+        } else {
+          initialFilters[filter.id] = filter.default === 'All' ? null : filter.default
+        }
+      }
+    })
+
+    // Then set defaults from page-specific filters
     pageFilters.forEach(filter => {
       if (filter.default !== undefined && initialFilters[filter.id] === undefined) {
         if (filter.type === 'time_range' && typeof filter.default === 'object') {
@@ -70,8 +84,10 @@ export default function PageRenderer({
     })
 
     console.log('Initialized filter values:', initialFilters)
+    console.log('Global filters from schema:', globalFiltersFromSchema)
+    console.log('Page filters:', pageFilters)
     setFilterValues(initialFilters)
-  }, [pageId, globalFilters, pageFilters, searchParams])
+  }, [pageId, globalFilters, pageFilters, globalFiltersFromSchema, searchParams])
 
   // Update URL params when filters change
   useEffect(() => {
