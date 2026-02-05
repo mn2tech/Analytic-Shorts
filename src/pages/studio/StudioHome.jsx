@@ -21,19 +21,26 @@ function StudioHome() {
       setError(null)
       const data = await listDashboards()
       
-      // Parse schema to check for templates
+      // Parse schema to check for templates and determine if multi-page
       const parsedData = data.map(dashboard => {
         try {
           const schema = typeof dashboard.schema === 'string' 
             ? JSON.parse(dashboard.schema) 
             : dashboard.schema
+          
+          // Check if it's a true multi-page app (more than 1 page, or has app_id/app_title indicating v2.0)
+          // Single-page dashboards that were normalized will have 1 page, but shouldn't be treated as multi-page
+          const isMultiPage = (schema?.pages && schema.pages.length > 1) || 
+                             (schema?.app_id && schema?.app_title && schema?.pages && schema.pages.length > 0)
+          
           return {
             ...dashboard,
             schema,
-            isTemplate: schema?.metadata?.is_template || false
+            isTemplate: schema?.metadata?.is_template || false,
+            isMultiPage: isMultiPage
           }
         } catch {
-          return { ...dashboard, isTemplate: false }
+          return { ...dashboard, isTemplate: false, isMultiPage: false }
         }
       })
       
@@ -210,9 +217,8 @@ function StudioHome() {
                         if (dashboard.isTemplate) {
                           handleUseTemplate(dashboard.id)
                         } else {
-                          // Check if it's a multi-page app
-                          const hasPages = dashboard.schema?.pages && dashboard.schema.pages.length > 0
-                          if (hasPages) {
+                          // Check if it's a true multi-page app
+                          if (dashboard.isMultiPage) {
                             navigate(`/studio/app/${dashboard.id}`)
                           } else {
                             navigate(`/studio/${dashboard.id}`)
@@ -252,8 +258,7 @@ function StudioHome() {
                           <button
                             onClick={(e) => {
                               e.stopPropagation()
-                              const hasPages = dashboard.schema?.pages && dashboard.schema.pages.length > 0
-                              if (hasPages) {
+                              if (dashboard.isMultiPage) {
                                 navigate(`/studio/app/${dashboard.id}`)
                               } else {
                                 navigate(`/studio/${dashboard.id}`)
