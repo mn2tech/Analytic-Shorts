@@ -243,6 +243,7 @@ function StudioHome() {
         })()}
       )}
 
+      </div>
       <Footer />
     </div>
   )
