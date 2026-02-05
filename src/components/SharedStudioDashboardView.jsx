@@ -300,6 +300,77 @@ export default function SharedStudioDashboardView({ sharedData }) {
     loadData()
   }, [dashboard?.data_source, sharedData?.data])
 
+  // Load dropdown options from API
+  useEffect(() => {
+    if (!dashboard?.filters || !dashboard?.data_source) return
+
+    const datasetId = getDatasetId()
+    if (!datasetId) {
+      // Fallback: extract from data if available
+      if (data && data.length > 0) {
+        const optionsMap = {}
+        dashboard.filters.forEach(filter => {
+          if (filter.type === 'dropdown' && filter.dimension) {
+            const dimensionKey = filter.dimension
+            const uniqueValues = [...new Set(
+              data.map(row => {
+                return row[dimensionKey] || 
+                       row[dimensionKey.toLowerCase()] || 
+                       row[dimensionKey.toUpperCase()] ||
+                       row[dimensionKey.charAt(0).toUpperCase() + dimensionKey.slice(1).toLowerCase()]
+              }).filter(Boolean)
+            )].sort()
+            optionsMap[filter.id] = uniqueValues
+          }
+        })
+        setDropdownOptions(optionsMap)
+      }
+      return
+    }
+
+    const loadDropdownOptions = async () => {
+      const optionsMap = {}
+      
+      for (const filter of dashboard.filters) {
+        if (filter.type === 'dropdown' && filter.dimension) {
+          try {
+            console.log(`Loading options for filter ${filter.id} (${filter.dimension}) from dataset ${datasetId}`)
+            const response = await apiClient.get('/api/studio/options', {
+              params: {
+                datasetId: datasetId,
+                field: filter.dimension
+              }
+            })
+            
+            if (response.data && response.data.values) {
+              optionsMap[filter.id] = response.data.values
+              console.log(`Loaded ${response.data.values.length} options for ${filter.id}`)
+            }
+          } catch (error) {
+            console.error(`Error loading options for filter ${filter.id}:`, error)
+            // Fallback: extract from data if available
+            if (data && data.length > 0) {
+              const dimensionKey = filter.dimension
+              const uniqueValues = [...new Set(
+                data.map(row => {
+                  return row[dimensionKey] || 
+                         row[dimensionKey.toLowerCase()] || 
+                         row[dimensionKey.toUpperCase()] ||
+                         row[dimensionKey.charAt(0).toUpperCase() + dimensionKey.slice(1).toLowerCase()]
+                }).filter(Boolean)
+              )].sort()
+              optionsMap[filter.id] = uniqueValues
+            }
+          }
+        }
+      }
+      
+      setDropdownOptions(optionsMap)
+    }
+
+    loadDropdownOptions()
+  }, [dashboard?.filters, dashboard?.data_source, data])
+
   // Execute queries based on filter values and data
   useEffect(() => {
     const savedQueryResults = sharedData?.queryResults
