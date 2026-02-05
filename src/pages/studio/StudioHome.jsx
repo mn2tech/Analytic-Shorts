@@ -184,115 +184,114 @@ function StudioHome() {
             ? dashboards.filter(d => d.isTemplate)
             : dashboards.filter(d => !d.isTemplate)
           
-          return (
-            <>
-              {filteredDashboards.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {filteredDashboards.map((dashboard) => (
-                    <div
-                      key={dashboard.id}
-                      className={`bg-white rounded-lg shadow-sm border p-6 hover:shadow-md transition-shadow relative group ${
-                        dashboard.isTemplate ? 'border-indigo-300 bg-indigo-50' : 'border-gray-200'
-                      }`}
-                    >
-                      {dashboard.isTemplate && (
-                        <div className="absolute top-2 right-2">
-                          <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-indigo-100 text-indigo-800">
-                            <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                              <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" />
-                              <path fillRule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clipRule="evenodd" />
-                            </svg>
-                            Template
-                          </span>
-                        </div>
-                      )}
-                      <div
-                        onClick={() => {
-                          if (dashboard.isTemplate) {
-                            handleUseTemplate(dashboard.id)
-                          } else {
-                            // Check if it's a multi-page app
-                            const hasPages = dashboard.schema?.pages && dashboard.schema.pages.length > 0
-                            if (hasPages) {
-                              navigate(`/studio/app/${dashboard.id}`)
-                            } else {
-                              navigate(`/studio/${dashboard.id}`)
-                            }
-                          }
-                        }}
-                        className="cursor-pointer"
-                      >
-                        <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                          {dashboard.name || 'Untitled Dashboard'}
-                        </h3>
-                        <p className="text-sm text-gray-500 mb-1">
-                          {dashboard.schema?.metadata?.description || 'No description'}
-                        </p>
-                        <p className="text-xs text-gray-400">
-                          Last modified: {formatDate(dashboard.updated_at || dashboard.created_at)}
-                        </p>
-                        {dashboard.schema?.pages && dashboard.schema.pages.length > 1 && (
-                          <p className="text-xs text-indigo-600 mt-1">
-                            {dashboard.schema.pages.length} pages
-                          </p>
-                        )}
+          if (filteredDashboards.length > 0) {
+            return (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredDashboards.map((dashboard) => (
+                  <div
+                    key={dashboard.id}
+                    className={`bg-white rounded-lg shadow-sm border p-6 hover:shadow-md transition-shadow relative group ${
+                      dashboard.isTemplate ? 'border-indigo-300 bg-indigo-50' : 'border-gray-200'
+                    }`}
+                  >
+                    {dashboard.isTemplate && (
+                      <div className="absolute top-2 right-2">
+                        <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-indigo-100 text-indigo-800">
+                          <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" />
+                            <path fillRule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clipRule="evenodd" />
+                          </svg>
+                          Template
+                        </span>
                       </div>
-                      <div className="mt-4 flex gap-2">
-                        {dashboard.isTemplate ? (
+                    )}
+                    <div
+                      onClick={() => {
+                        if (dashboard.isTemplate) {
+                          handleUseTemplate(dashboard.id)
+                        } else {
+                          // Check if it's a multi-page app
+                          const hasPages = dashboard.schema?.pages && dashboard.schema.pages.length > 0
+                          if (hasPages) {
+                            navigate(`/studio/app/${dashboard.id}`)
+                          } else {
+                            navigate(`/studio/${dashboard.id}`)
+                          }
+                        }
+                      }}
+                      className="cursor-pointer"
+                    >
+                      <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                        {dashboard.name || 'Untitled Dashboard'}
+                      </h3>
+                      <p className="text-sm text-gray-500 mb-1">
+                        {dashboard.schema?.metadata?.description || 'No description'}
+                      </p>
+                      <p className="text-xs text-gray-400">
+                        Last modified: {formatDate(dashboard.updated_at || dashboard.created_at)}
+                      </p>
+                      {dashboard.schema?.pages && dashboard.schema.pages.length > 1 && (
+                        <p className="text-xs text-indigo-600 mt-1">
+                          {dashboard.schema.pages.length} pages
+                        </p>
+                      )}
+                    </div>
+                    <div className="mt-4 flex gap-2">
+                      {dashboard.isTemplate ? (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleUseTemplate(dashboard.id)
+                          }}
+                          className="flex-1 px-3 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition-colors text-sm font-medium"
+                        >
+                          Use Template
+                        </button>
+                      ) : (
+                        <>
                           <button
                             onClick={(e) => {
                               e.stopPropagation()
-                              handleUseTemplate(dashboard.id)
+                              const hasPages = dashboard.schema?.pages && dashboard.schema.pages.length > 0
+                              if (hasPages) {
+                                navigate(`/studio/app/${dashboard.id}`)
+                              } else {
+                                navigate(`/studio/${dashboard.id}`)
+                              }
                             }}
-                            className="flex-1 px-3 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition-colors text-sm font-medium"
+                            className="flex-1 px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-sm font-medium"
                           >
-                            Use Template
+                            Edit
                           </button>
-                        ) : (
-                          <>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                const hasPages = dashboard.schema?.pages && dashboard.schema.pages.length > 0
-                                if (hasPages) {
-                                  navigate(`/studio/app/${dashboard.id}`)
-                                } else {
-                                  navigate(`/studio/${dashboard.id}`)
-                                }
-                              }}
-                              className="flex-1 px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-sm font-medium"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              onClick={(e) => handleDelete(e, dashboard.id)}
-                              className="px-3 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors text-sm font-medium"
-                            >
-                              Delete
-                            </button>
-                          </>
-                        )}
-                      </div>
+                          <button
+                            onClick={(e) => handleDelete(e, dashboard.id)}
+                            className="px-3 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors text-sm font-medium"
+                          >
+                            Delete
+                          </button>
+                        </>
+                      )}
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-12">
-                  <p className="text-gray-500 mb-4">
-                    {showTemplates ? 'No templates found' : 'No dashboards found'}
-                  </p>
-                  <button
-                    onClick={() => navigate('/studio/new')}
-                    className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-semibold"
-                  >
-                    Create Your First Dashboard
-                  </button>
-                </div>
-              )}
-            </>
-          )
+                  </div>
+                ))}
+              </div>
+            )
+          } else {
+            return (
+              <div className="text-center py-12">
+                <p className="text-gray-500 mb-4">
+                  {showTemplates ? 'No templates found' : 'No dashboards found'}
+                </p>
+                <button
+                  onClick={() => navigate('/studio/new')}
+                  className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-semibold"
+                >
+                  Create Your First Dashboard
+                </button>
+              </div>
+            )
+          }
         })()}
-      )}
 
       </div>
       <Footer />
