@@ -286,15 +286,19 @@ export default function PageRenderer({
           >
             {section.widgets?.map((widget) => {
               const queryId = widget.query_ref
-              const queryData = queryResults[queryId]
+              const queryResult = queryResults[queryId]
               const isLoading = queryLoading[queryId]
               const error = queryErrors[queryId]
+
+              // Extract data from query result - backend returns { result: { data: [...] } or { value: ... } }
+              // We already extracted result in executeQueries, so queryResult should be { data: [...] } or { value: ... }
+              const queryData = queryResult || null
 
               // Create widget props object (no useMemo in map - violates Rules of Hooks)
               const widgetProps = {
                 widget,
                 queryData,
-                isLoading,
+                isLoading: isLoading || false,
                 error,
                 config: widget.config,
                 format: widget.format,
