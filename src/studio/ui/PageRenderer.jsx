@@ -110,7 +110,8 @@ export default function PageRenderer({
                   field: filter.dimension
                 }
               })
-              options[filter.id] = response.data.options || []
+              // Backend returns { values: [...] } not { options: [...] }
+              options[filter.id] = response.data.values || response.data.options || []
             }
           } catch (error) {
             console.error(`Error loading options for ${filter.id}:`, error)
