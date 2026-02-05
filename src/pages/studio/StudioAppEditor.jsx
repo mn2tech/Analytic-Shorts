@@ -30,9 +30,30 @@ export default function StudioAppEditor() {
 
         if (id === 'new') {
           // Create new app from sample
+          console.log('Creating new multi-page app from sample')
           const normalized = normalizeSchema(sampleApp2PageJson)
+          console.log('Normalized schema:', normalized)
+          console.log('Pages:', normalized.pages?.length, normalized.pages?.map(p => p.id))
           setSchema(normalized)
-          setCurrentPageId(normalized.pages[0]?.id || 'default')
+          const firstPageId = normalized.pages[0]?.id || 'default'
+          console.log('Setting current page to:', firstPageId)
+          setCurrentPageId(firstPageId)
+          
+          // Initialize global filters from schema defaults
+          const initialFilters = {}
+          if (normalized.global_filters && Array.isArray(normalized.global_filters)) {
+            normalized.global_filters.forEach(filter => {
+              if (filter.default !== undefined) {
+                initialFilters[filter.id] = filter.default
+              } else if (filter.type === 'time_range') {
+                initialFilters[filter.id] = { start: '', end: '' }
+              } else {
+                initialFilters[filter.id] = null
+              }
+            })
+          }
+          console.log('Initialized global filters:', initialFilters)
+          setGlobalFilters(initialFilters)
         } else {
           // Load existing app
           const dashboardSchema = await getDashboard(id)
@@ -53,6 +74,40 @@ export default function StudioAppEditor() {
           const urlParams = new URLSearchParams(window.location.search)
           const pageParam = urlParams.get('page')
           setCurrentPageId(pageParam || normalized.pages[0]?.id || 'default')
+          
+          // Initialize global filters from URL params or schema defaults
+          const initialFilters = {}
+          urlParams.forEach((value, key) => {
+            if (key.startsWith('filter_')) {
+              const filterId = key.replace('filter_', '')
+              // Parse JSON strings (for time_range objects)
+              if (value.startsWith('{') || value.startsWith('[')) {
+                try {
+                  initialFilters[filterId] = JSON.parse(value)
+                } catch {
+                  initialFilters[filterId] = value
+                }
+              } else {
+                initialFilters[filterId] = value
+              }
+            }
+          })
+          
+          // Fill in defaults from schema if not in URL
+          if (normalized.global_filters && Array.isArray(normalized.global_filters)) {
+            normalized.global_filters.forEach(filter => {
+              if (!initialFilters.hasOwnProperty(filter.id)) {
+                if (filter.default !== undefined) {
+                  initialFilters[filter.id] = filter.default
+                } else if (filter.type === 'time_range') {
+                  initialFilters[filter.id] = { start: '', end: '' }
+                } else {
+                  initialFilters[filter.id] = null
+                }
+              }
+            })
+          }
+          setGlobalFilters(initialFilters)
         }
       } catch (err) {
         console.error('Error loading app:', err)
