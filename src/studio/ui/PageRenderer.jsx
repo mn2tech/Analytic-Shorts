@@ -194,7 +194,16 @@ export default function PageRenderer({
           console.log(`Executing query ${queryId} with datasetId: ${datasetId}, filters:`, filterValues)
           console.log('API Base URL:', API_BASE_URL || 'Not set (using relative)')
           console.log('Full API URL:', apiUrl)
-          const response = await apiClient.post('/api/studio/query', {
+          console.log('apiClient baseURL:', apiClient.defaults.baseURL)
+          
+          // Ensure we're using the correct endpoint (not a React Router path)
+          const endpoint = '/api/studio/query'
+          if (endpoint.startsWith('/studio') || endpoint.startsWith('/apps')) {
+            console.error('ERROR: API endpoint looks like a React Router path!', endpoint)
+            throw new Error('Invalid API endpoint - looks like a route path')
+          }
+          
+          const response = await apiClient.post(endpoint, {
             datasetId,
             query,
             filterValues

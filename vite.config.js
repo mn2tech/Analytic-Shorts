@@ -54,7 +54,21 @@ export default defineConfig({
               expiration: {
                 maxEntries: 50,
                 maxAgeSeconds: 60 * 60 * 24 // 24 hours
-              }
+              },
+              networkTimeoutSeconds: 10 // Fail fast if network is slow
+            }
+          },
+          {
+            // Don't cache API errors (404, 500, etc.)
+            urlPattern: ({ url }) => url.pathname.startsWith('/api/'),
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'api-cache',
+              expiration: {
+                maxEntries: 50,
+                maxAgeSeconds: 0 // Don't cache API responses
+              },
+              networkTimeoutSeconds: 10
             }
           },
           {
