@@ -148,7 +148,7 @@ export default function PageRenderer({
   useEffect(() => {
     const executeQueries = async () => {
       if (!schema || !page) {
-        console.log('Skipping query execution - missing schema or page:', { schema: !!schema, page: !!page })
+        console.log('Skipping query execution - missing schema or page:', { hasSchema: !!schema, hasPage: !!page })
         return
       }
 
