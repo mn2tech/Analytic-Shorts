@@ -120,6 +120,8 @@ export default function PageRenderer({
           try {
             const datasetId = getDatasetId(schema)
             if (datasetId) {
+              console.log(`Loading options for filter ${filter.id}, datasetId: ${datasetId}, field: ${filter.dimension}`)
+              console.log('API Base URL:', apiClient.defaults.baseURL || 'Not set (using relative)')
               const response = await apiClient.get('/api/studio/options', {
                 params: {
                   datasetId,
@@ -189,6 +191,7 @@ export default function PageRenderer({
 
           // Use backend query API
           console.log(`Executing query ${queryId} with datasetId: ${datasetId}, filters:`, filterValues)
+          console.log('API Base URL:', apiClient.defaults.baseURL || 'Not set (using relative)')
           const response = await apiClient.post('/api/studio/query', {
             datasetId,
             query,
