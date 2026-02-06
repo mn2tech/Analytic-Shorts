@@ -154,11 +154,28 @@ export default function PageRenderer({
         return
       }
 
+      // Wait for filter initialization to complete
+      // If there are filters defined in schema, wait until they're initialized
+      // If no filters are defined, proceed immediately
+      const hasFiltersDefined = globalFiltersFromSchema.length > 0 || pageFilters.length > 0
+      const filtersInitialized = !hasFiltersDefined || Object.keys(filterValues).length > 0
+      
+      if (!filtersInitialized) {
+        console.log('Waiting for filters to initialize before executing queries...', {
+          hasFiltersDefined,
+          filterValuesKeys: Object.keys(filterValues),
+          globalFiltersCount: globalFiltersFromSchema.length,
+          pageFiltersCount: pageFilters.length
+        })
+        return
+      }
+
       const widgets = page.sections?.flatMap(s => s.widgets || []) || []
       const queryIds = new Set(widgets.map(w => w.query_ref).filter(Boolean))
       
       console.log('Executing queries for page:', pageId, 'Query IDs:', Array.from(queryIds))
       console.log('Current filter values:', filterValues)
+      console.log('Filters initialized:', filtersInitialized)
       
       // Note: Queries will execute even if filterValues is empty - backend handles empty filters
 
@@ -245,7 +262,12 @@ export default function PageRenderer({
   }, [schema, page, queries, filterValues, pageId])
 
   const handleFilterChange = (filterId, value) => {
-    setFilterValues(prev => ({ ...prev, [filterId]: value }))
+    const updatedFilters = { ...filterValues, [filterId]: value }
+    setFilterValues(updatedFilters)
+    // Also notify parent component
+    if (onFilterChange) {
+      onFilterChange(updatedFilters)
+    }
   }
 
   const handleWidgetClick = (widget, data) => {
