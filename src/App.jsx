@@ -97,6 +97,7 @@ function App() {
         />
         <Route path="/apps/:id" element={<StudioAppView />} />
         <Route path="/apps/:id/:pageId" element={<StudioAppView />} />
+        {/* Network view removed */}
       </Routes>
     </AuthProvider>
   )
