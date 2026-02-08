@@ -2,6 +2,7 @@ import { Routes, Route, useLocation, Navigate, useParams } from 'react-router-do
 import { useEffect } from 'react'
 import { AuthProvider } from './contexts/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
+import BrandWatermark from './components/BrandWatermark'
 import Home from './pages/Home'
 import Login from './pages/Login'
 import Signup from './pages/Signup'
@@ -113,6 +114,7 @@ function App() {
         <Route path="/apps/:id/:pageId" element={<StudioAppView />} />
         {/* Network view removed */}
       </Routes>
+      <BrandWatermark />
     </AuthProvider>
   )
 }

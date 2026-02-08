@@ -358,6 +358,37 @@ function DateRangeSliderInline({ data, field, value, onChange, theme }) {
   const endPercent = dateToPercent(endVal)
 
   const [dragging, setDragging] = useState(null)
+  const [playing, setPlaying] = useState(false)
+  const [playSpeed, setPlaySpeed] = useState('normal') // 'slow' | 'normal' | 'fast'
+  const valueRef = useRef(value)
+  useEffect(() => { valueRef.current = value }, [value])
+
+  const playIntervalMs = playSpeed === 'slow' ? 800 : playSpeed === 'fast' ? 200 : 400
+
+  // Animate: start moves from min toward max, end fixed at max (e.g. 1966→2025 with 2025 fixed)
+  useEffect(() => {
+    if (!playing || !dateRange.min || !dateRange.max) return
+    const rangeSpanMs = dateRange.maxTs - dateRange.minTs
+    const isYearLike = rangeSpanMs > 10 * 365.25 * 24 * 60 * 60 * 1000
+    const stepMs = isYearLike
+      ? 365.25 * 24 * 60 * 60 * 1000
+      : 30 * 24 * 60 * 60 * 1000
+    const fixedEnd = dateRange.max
+    const fixedEndTs = dateRange.maxTs
+    const interval = setInterval(() => {
+      const v = valueRef.current
+      const startTs = valueToTimestamp(v?.start || dateRange.min)
+      let newStartTs = startTs + stepMs
+      if (newStartTs >= fixedEndTs) {
+        newStartTs = fixedEndTs
+        setPlaying(false)
+      }
+      const newStart = new Date(newStartTs).toISOString().split('T')[0]
+      onChange({ start: newStart, end: fixedEnd })
+      valueRef.current = { start: newStart, end: fixedEnd }
+    }, playIntervalMs)
+    return () => clearInterval(interval)
+  }, [playing, playIntervalMs, dateRange.minTs, dateRange.maxTs, dateRange.min, dateRange.max, onChange])
 
   useEffect(() => {
     if (!dragging) return
@@ -400,8 +431,46 @@ function DateRangeSliderInline({ data, field, value, onChange, theme }) {
 
   return (
     <div className="flex flex-col gap-1 w-full min-w-0">
-      <div className={`text-sm mb-0.5 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-        {formatDate(startVal)} – {formatDate(endVal)}
+      <div className="flex items-center justify-between gap-2 mb-0.5 flex-wrap">
+        <span className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+          {formatDate(startVal)} – {formatDate(endVal)}
+        </span>
+        <div className="flex items-center gap-1 shrink-0">
+          <select
+            value={playSpeed}
+            onChange={(e) => setPlaySpeed(e.target.value)}
+            className={`text-xs rounded border px-1.5 py-0.5 ${isDark ? 'bg-gray-700 border-gray-600 text-gray-200' : 'bg-white border-gray-300 text-gray-700'}`}
+            title="Animation speed"
+            aria-label="Play speed"
+          >
+            <option value="slow">Slow</option>
+            <option value="normal">Normal</option>
+            <option value="fast">Fast</option>
+          </select>
+          <button
+            type="button"
+            onClick={() => {
+              if (!playing) {
+                const v = valueRef.current
+                const endTs = valueToTimestamp(v?.end || dateRange.max)
+                if (endTs < dateRange.maxTs) {
+                  onChange({ start: dateRange.min, end: dateRange.max })
+                  valueRef.current = { start: dateRange.min, end: dateRange.max }
+                }
+              }
+              setPlaying((p) => !p)
+            }}
+            className={`flex items-center justify-center w-8 h-8 rounded-full ${playing ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'bg-blue-500 hover:bg-blue-600 text-white'}`}
+            title={playing ? 'Pause animation' : 'Play: animate date range forward'}
+            aria-label={playing ? 'Pause' : 'Play'}
+          >
+            {playing ? (
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" /></svg>
+            ) : (
+              <svg className="w-4 h-4 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+            )}
+          </button>
+        </div>
       </div>
       <div
         id={`date-slider-track-${field}`}
@@ -414,13 +483,13 @@ function DateRangeSliderInline({ data, field, value, onChange, theme }) {
         <div
           className={`absolute w-4 h-4 ${thumbBg} rounded-full shadow cursor-grab active:cursor-grabbing -translate-x-1/2 -translate-y-1 top-1/2 border-2 border-white`}
           style={{ left: `${startPercent}%`, zIndex: 20 }}
-          onMouseDown={(e) => { e.preventDefault(); setDragging('start') }}
+          onMouseDown={(e) => { e.preventDefault(); setPlaying(false); setDragging('start') }}
           title={formatDate(startVal)}
         />
         <div
           className={`absolute w-4 h-4 ${thumbBg} rounded-full shadow cursor-grab active:cursor-grabbing -translate-x-1/2 -translate-y-1 top-1/2 border-2 border-white`}
           style={{ left: `${endPercent}%`, zIndex: 21 }}
-          onMouseDown={(e) => { e.preventDefault(); setDragging('end') }}
+          onMouseDown={(e) => { e.preventDefault(); setPlaying(false); setDragging('end') }}
           title={formatDate(endVal)}
         />
       </div>
@@ -496,6 +565,7 @@ export default function DashboardRenderer({ spec, data, filterValues, onFilterCh
   const [openPieFilterChartId, setOpenPieFilterChartId] = useState(null)
   const [insightCollapsed, setInsightCollapsed] = useState(false)
   const [filtersCollapsed, setFiltersCollapsed] = useState(false)
+  const [dateSortOrder, setDateSortOrder] = useState('') // '' | 'asc' | 'desc'
   const chartRefs = useRef({})
 
   const filterState = useMemo(() => ({ ...localFilters, ...filterValues }), [localFilters, filterValues])
@@ -610,11 +680,26 @@ export default function DashboardRenderer({ spec, data, filterValues, onFilterCh
     () => applyFilters(data, spec?.filters || [], filterState),
     [data, spec?.filters, filterState]
   )
+  const dateFilterField = useMemo(
+    () => spec?.filters?.find((f) => f.type === 'date_range')?.field || null,
+    [spec?.filters]
+  )
   const filteredData = useMemo(() => {
-    if (!chartFilter?.field) return baseFilteredData
-    const firstRow = baseFilteredData?.[0]
-    return applyChartFilter(baseFilteredData, chartFilter, firstRow)
-  }, [baseFilteredData, chartFilter])
+    let out = baseFilteredData
+    if (chartFilter?.field) {
+      const firstRow = baseFilteredData?.[0]
+      out = applyChartFilter(baseFilteredData, chartFilter, firstRow)
+    }
+    if (dateSortOrder && dateFilterField && out?.length) {
+      out = [...out].sort((a, b) => {
+        const ta = valueToTimestamp(a[dateFilterField])
+        const tb = valueToTimestamp(b[dateFilterField])
+        if (Number.isNaN(ta) || Number.isNaN(tb)) return 0
+        return dateSortOrder === 'asc' ? ta - tb : tb - ta
+      })
+    }
+    return out
+  }, [baseFilteredData, chartFilter, dateSortOrder, dateFilterField])
 
   const handleFilterChange = (id, value) => {
     setLocalFilters((prev) => ({ ...prev, [id]: value }))
@@ -747,6 +832,21 @@ export default function DashboardRenderer({ spec, data, filterValues, onFilterCh
           </button>
           {!filtersCollapsed && (
             <div className="px-4 pb-4 pt-0">
+              {dateFilterField && (
+                <div className="flex items-center gap-2 mb-3">
+                  <label className={`text-sm font-medium shrink-0 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Sort date</label>
+                  <select
+                    value={dateSortOrder}
+                    onChange={(e) => setDateSortOrder(e.target.value)}
+                    className={`text-sm rounded border px-2 py-1 ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-gray-200' : 'bg-white border-gray-300 text-gray-700'}`}
+                    title="Sort data by date"
+                  >
+                    <option value="">None</option>
+                    <option value="asc">Oldest first</option>
+                    <option value="desc">Newest first</option>
+                  </select>
+                </div>
+              )}
               <div className="flex flex-wrap gap-4 items-end">
                 {spec.filters.map((f) => (
                   <div key={f.id} className={`flex flex-col gap-1 ${f.type === 'date_range' ? 'w-full min-w-0' : ''}`}>
@@ -1446,6 +1546,11 @@ export default function DashboardRenderer({ spec, data, filterValues, onFilterCh
           No charts or KPIs in spec. Try refining your prompt.
         </div>
       )}
+
+      {/* Report watermark */}
+      <div className={`pt-4 pb-1 text-center text-xs ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
+        NM2TECH – Analytics Short
+      </div>
     </div>
   )
 }

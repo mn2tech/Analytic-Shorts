@@ -4,7 +4,12 @@ const multer = require('multer')
 const path = require('path')
 const fs = require('fs')
 // Load .env from backend directory so it works when started from project root or backend/
-require('dotenv').config({ path: path.join(__dirname, '.env') })
+const envPath = path.join(__dirname, '.env')
+require('dotenv').config({ path: envPath })
+if (!process.env.OPENAI_API_KEY && !process.env.LAMBDA_TASK_ROOT) {
+  console.warn('[server] OPENAI_API_KEY not set. AI Visual Builder (POST /api/ai/dashboard-spec) will return 503.')
+  console.warn('[server] Add OPENAI_API_KEY=sk-... to', envPath)
+}
 
 const uploadRoutes = require('./routes/upload')
 const insightsRoutes = require('./routes/insights')
@@ -82,6 +87,7 @@ if (typeof handleDashboardSpec !== 'function') {
   console.error('[server] aiDashboardSpec.handleDashboardSpec missing; POST /api/ai/dashboard-spec will return 503')
 }
 const dashboardSpecHandler = (req, res, next) => {
+  console.log('[server] POST /api/ai/dashboard-spec hit')
   if (typeof handleDashboardSpec !== 'function') {
     return res.status(503).json({ error: 'AI dashboard-spec handler not loaded' })
   }
@@ -89,6 +95,9 @@ const dashboardSpecHandler = (req, res, next) => {
 }
 app.post('/api/ai/dashboard-spec', dashboardSpecHandler)
 app.post('/api/ai/dashboard-spec/', dashboardSpecHandler)
+app.get('/api/ai/dashboard-spec', (req, res) => {
+  res.status(405).json({ error: 'Method not allowed', hint: 'Use POST to generate a dashboard spec' })
+})
 app.use('/api/ai', aiDashboardSpecRoutes)
 if (typeof handleDashboardSpec === 'function') {
   console.log('[server] POST /api/ai/dashboard-spec registered')
@@ -152,8 +161,11 @@ if (!process.env.LAMBDA_TASK_ROOT) {
   server.on('error', (err) => {
     if (err.code === 'EADDRINUSE') {
       console.error(`\n❌ Port ${PORT} is already in use. Another process (often a previous Node server) is using it.`)
-      console.error('   On Windows, free the port with: netstat -ano | findstr :' + PORT)
-      console.error('   Then: taskkill /PID <PID> /F')
+      console.error('   On Linux/macOS, find and stop the process:')
+      console.error('     lsof -i :' + PORT + '   # then: kill <PID>')
+      console.error('   On Windows:')
+      console.error('     netstat -ano | findstr :' + PORT)
+      console.error('     taskkill /PID <PID> /F')
       console.error('   Or close the other app using port ' + PORT + ' and restart.\n')
     }
     throw err

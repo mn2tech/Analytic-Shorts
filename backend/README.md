@@ -12,6 +12,48 @@ npm start
 
 Server runs on `http://localhost:5000`
 
+## After clone / pull (e.g. on Linux)
+
+If the frontend shows **"Cannot load dataset"** or data never loads:
+
+1. **Start the backend** on the same machine that serves (or will serve) the frontend:
+   ```bash
+   cd backend
+   npm install
+   node server.js
+   ```
+   You should see: `[server] POST /api/ai/dashboard-spec registered` and `Server running on http://localhost:5000`.
+
+2. **Start the frontend** from the project root (so the dev server can proxy `/api` to the backend):
+   ```bash
+   npm run dev
+   ```
+   Open the app at the URL shown (e.g. `http://localhost:3000`). Dataset dropdown and AI Visual Builder will work when the backend is reachable.
+
+3. If the frontend is on a **different host** (e.g. you open the app at `http://<server-ip>:3000`), the backend must be running on that server and the firewall must allow port 5000. For a production build, set `VITE_API_URL=http://<backend-host>:5000` when building so the app calls the correct API.
+
+### If you see "Cannot POST /api/ai/dashboard-spec"
+
+The 404 means the request is not handled by this backend. On the **same machine** where the app runs, check:
+
+1. **Free port 5000 and start this backend only:**
+   ```bash
+   fuser -k 5000/tcp    # Linux: kill whatever uses 5000
+   cd backend && node server.js
+   ```
+   You must see in the terminal: `[server] POST /api/ai/dashboard-spec registered`.
+
+2. **Confirm this backend is the one on 5000** (run in another terminal on the same machine):
+   ```bash
+   curl -s http://localhost:5000/api/ai/dashboard-spec
+   ```
+   - If you get `{"error":"Method not allowed","hint":"Use POST..."}` → this backend is running; the browser request is likely going somewhere else (wrong URL or no proxy).
+   - If you get `{"error":"Route not found","message":"Cannot GET ..."}` → the process on 5000 is **not** this backend (old or different app). Stop it, then start again from step 1.
+
+3. **Frontend must use this backend:**
+   - Dev: run `npm run dev` from the **project root** so Vite proxies `/api` to `http://localhost:5000`. Open the app at the URL Vite shows (e.g. `http://localhost:3000` or `http://0.0.0.0:3000`).
+   - If you serve a built app (e.g. nginx), configure the server to proxy `/api` to `http://localhost:5000`, or build with `VITE_API_URL=http://your-backend-url:5000`.
+
 ## Environment Variables
 
 Create a `.env` file in the `backend` directory:

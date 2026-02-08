@@ -59,6 +59,7 @@ export default function AiVisualBuilderStudio() {
   const [uploadedFileName, setUploadedFileName] = useState(null)
   const [uploadLoading, setUploadLoading] = useState(false)
   const [uploadError, setUploadError] = useState(null)
+  const [dataLoadError, setDataLoadError] = useState(null)
   const [spec, setSpec] = useState(() => {
     try {
       const s = localStorage.getItem(STORAGE_KEY_SPEC)
@@ -194,21 +195,35 @@ export default function AiVisualBuilderStudio() {
   useEffect(() => {
     if (!datasetId) {
       setData(null)
+      setDataLoadError(null)
       return
     }
     if (datasetId === UPLOAD_DATASET_ID) {
       setData(uploadedData || null)
+      setDataLoadError(null)
       return
     }
     let cancelled = false
     setData(null)
+    setDataLoadError(null)
     apiClient
       .get('/api/ai/dataset-data', { params: { dataset: datasetId } })
       .then((res) => {
-        if (!cancelled && res.data && res.data.data) setData(res.data.data)
+        if (!cancelled && res.data && res.data.data) {
+          setData(res.data.data)
+          setDataLoadError(null)
+        } else if (!cancelled) {
+          setDataLoadError('Backend returned no data for this dataset.')
+        }
       })
-      .catch(() => {
-        if (!cancelled) setData(null)
+      .catch((err) => {
+        if (!cancelled) {
+          setData(null)
+          const msg = err.response?.status === 404
+            ? 'Dataset not found.'
+            : (err.response?.data?.error || err.message || 'Could not reach the API.')
+          setDataLoadError(msg)
+        }
       })
     return () => { cancelled = true }
   }, [datasetId, uploadedData])
@@ -577,6 +592,13 @@ export default function AiVisualBuilderStudio() {
                   </optgroup>
                 )}
               </select>
+              {dataLoadError && (
+                <div className="mt-2 p-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs">
+                  <p className="font-medium">Cannot load dataset</p>
+                  <p className="mt-0.5">{dataLoadError}</p>
+                  <p className="mt-1.5 text-amber-700">Start the backend on this machine: <code className="bg-amber-100 px-1 rounded">cd backend && node server.js</code></p>
+                </div>
+              )}
             </div>
             <div className="bg-white rounded-lg border border-gray-200 p-4">
               <h2 className="font-semibold text-gray-900 mb-2">Use your data</h2>
