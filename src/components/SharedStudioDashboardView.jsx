@@ -262,16 +262,14 @@ export default function SharedStudioDashboardView({ sharedData }) {
     queryResultsKeys: Object.keys(sharedData?.queryResults || {})
   })
 
-  // Extract datasetId from data_source endpoint
-  const getDatasetId = () => {
-    if (!dashboard?.data_source?.endpoint) return null
-    const endpoint = dashboard.data_source.endpoint
-    // Extract dataset ID from endpoint like "/api/example/sales" -> "sales"
+  // Get data source: built-in datasetId or custom API URL
+  const getDataSource = () => {
+    if (!dashboard?.data_source?.endpoint) return { datasetId: null, customEndpoint: null }
+    const endpoint = String(dashboard.data_source.endpoint).trim()
+    const isCustomUrl = endpoint.startsWith('http://') || endpoint.startsWith('https://')
+    if (isCustomUrl) return { datasetId: null, customEndpoint: endpoint }
     const match = endpoint.match(/\/api\/example\/(.+)$/)
-    if (match) {
-      return match[1]
-    }
-    return null
+    return { datasetId: match ? match[1] : null, customEndpoint: null }
   }
 
   // Load data from data_source if available
@@ -285,20 +283,33 @@ export default function SharedStudioDashboardView({ sharedData }) {
       try {
         setLoading(true)
         if (dashboard.data_source.type === 'api' && dashboard.data_source.endpoint) {
-          console.log('Loading data from:', dashboard.data_source.endpoint)
-          const response = await apiClient.get(dashboard.data_source.endpoint)
-          const result = response.data
-          console.log('Data loaded:', result?.data?.length || 0, 'rows')
-          if (result.data) {
-            setData(result.data)
+          const { datasetId, customEndpoint } = getDataSource()
+          const isCustom = !!customEndpoint
+          if (isCustom) {
+            console.log('Loading data from custom API via proxy')
+            const response = await apiClient.get('/api/studio/fetch', { params: { url: customEndpoint } })
+            const result = response.data
+            if (result?.data) {
+              setData(result.data)
+              console.log('Data loaded:', result.data.length, 'rows')
+            } else {
+              console.error('No data in response:', result)
+            }
           } else {
-            console.error('No data in response:', result)
+            console.log('Loading data from:', dashboard.data_source.endpoint)
+            const response = await apiClient.get(dashboard.data_source.endpoint)
+            const result = response.data
+            console.log('Data loaded:', result?.data?.length || 0, 'rows')
+            if (result?.data) {
+              setData(result.data)
+            } else {
+              console.error('No data in response:', result)
+            }
           }
         }
       } catch (error) {
         console.error('Error loading data:', error)
         console.error('Error details:', error.response?.data || error.message)
-        // If data loading fails, use saved data
         const savedData = sharedData?.data
         if (savedData) {
           console.log('Using saved data as fallback')
@@ -327,11 +338,11 @@ export default function SharedStudioDashboardView({ sharedData }) {
       dataLength: data?.length
     })
 
-    const datasetId = getDatasetId()
-    console.log('DatasetId extracted:', datasetId)
+    const { datasetId, customEndpoint } = getDataSource()
+    console.log('Data source:', customEndpoint ? 'custom API' : `datasetId: ${datasetId}`)
 
-    // If no datasetId, extract from data (fallback)
-    if (!datasetId) {
+    // If no API source, extract from data (fallback)
+    if (!datasetId && !customEndpoint) {
       console.log('No datasetId, extracting options from data')
       if (data && data.length > 0) {
         const optionsMap = {}
@@ -373,14 +384,14 @@ export default function SharedStudioDashboardView({ sharedData }) {
 
     const loadDropdownOptions = async () => {
       const optionsMap = {}
-      
+      const ds = getDataSource()
       for (const filter of dashboard.filters) {
         if (filter.type === 'dropdown' && filter.dimension) {
           try {
-            console.log(`Loading options for filter ${filter.id} (${filter.dimension}) from dataset ${datasetId}`)
             const response = await apiClient.get('/api/studio/options', {
               params: {
-                datasetId: datasetId,
+                ...(ds.datasetId ? { datasetId: ds.datasetId } : {}),
+                ...(ds.customEndpoint ? { customEndpoint: ds.customEndpoint } : {}),
                 field: filter.dimension
               }
             })

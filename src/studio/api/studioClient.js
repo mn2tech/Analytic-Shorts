@@ -81,7 +81,7 @@ export async function getDashboard(id) {
  */
 export async function saveDashboard(dashboardJson, dashboardId = null) {
   try {
-    const dashboardName = dashboardJson.metadata?.name || 'Untitled Dashboard'
+    const dashboardName = dashboardJson.metadata?.name || dashboardJson.title || 'Untitled Dashboard'
     const dashboardDescription = dashboardJson.metadata?.description || ''
     
     // Prepare the payload

@@ -60,6 +60,17 @@ After running the schema:
 2. Check Supabase Dashboard → Table Editor → `shorts_subscriptions`
 3. You should see a new row with `plan: 'free'` for that user
 
+## Studio / AI Visual Builder (optional)
+
+If you use the **AI Visual Builder Studio** (`/studio`), run the migration that adds the `schema` column so full dashboard specs are stored:
+
+1. Open **database/migration_add_dashboard_schema_column.sql**
+2. Copy its contents and run them in the Supabase SQL Editor (same way as the main schema).
+
+This adds a JSONB `schema` column to `shorts_dashboards` for the full DashboardSpec. Safe to run multiple times.
+
+See project root **STUDIO.md** for a short guide to using Studio.
+
 ## Next Steps
 
 Once the database is set up:

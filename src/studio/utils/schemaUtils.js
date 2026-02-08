@@ -1,17 +1,32 @@
 /**
- * Schema utility functions for multi-page app support
- * Handles backwards compatibility with single-page dashboards
+ * Schema utility functions for multi-page app support and DashboardSpec (AI Visual Builder).
+ * Handles backwards compatibility with single-page and multi-page dashboards.
  */
 
 /**
- * Normalize a dashboard schema to ensure it has pages structure
- * If pages[] is missing, creates a default single-page structure
- * @param {Object} schema - Dashboard schema (v1.0 or v2.0)
- * @returns {Object} Normalized schema with pages[]
+ * True if schema is the DashboardSpec format (title + filters/charts/kpis, no pages).
+ * Used by Studio and StudioAppView to choose renderer.
+ */
+export function isDashboardSpec(schema) {
+  if (!schema || typeof schema !== 'object') return false
+  const hasNewShape = Array.isArray(schema.filters) && Array.isArray(schema.charts)
+  const noOldPages = !schema.pages || !Array.isArray(schema.pages) || schema.pages.length === 0
+  return !!(hasNewShape && (schema.title != null || noOldPages))
+}
+
+/**
+ * Normalize a dashboard schema to ensure it has pages structure (legacy) or pass through DashboardSpec.
+ * @param {Object} schema - Dashboard schema (v1.0, v2.0, or DashboardSpec)
+ * @returns {Object} Normalized schema
  */
 export function normalizeSchema(schema) {
   if (!schema) {
     return null
+  }
+
+  // DashboardSpec (new format): return as-is
+  if (isDashboardSpec(schema)) {
+    return schema
   }
 
   // If pages already exist, return as-is

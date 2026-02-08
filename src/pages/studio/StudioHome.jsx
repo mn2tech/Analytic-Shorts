@@ -2,118 +2,120 @@ import { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import Navbar from '../../components/Navbar'
 import Footer from '../../components/Footer'
-import { listDashboards, deleteDashboard } from '../../studio/api/studioClient'
+import { listDashboards, deleteDashboard, saveDashboard } from '../../studio/api/studioClient'
 
-function StudioHome() {
+/**
+ * Studio Home - Minimal entry point.
+ * "New app" starts a clean slate; list shows saved apps (all open in /studio/app/:id).
+ */
+/** DashboardSpec used by Studio (same as AI Visual Builder). Create with AI uses this. */
+function getCreateWithAiSchema(promptText) {
+  const name = promptText && promptText.trim().length > 0
+    ? promptText.trim().slice(0, 50) + (promptText.trim().length > 50 ? '…' : '')
+    : 'AI App'
+  return {
+    title: name,
+    filters: [],
+    kpis: [],
+    charts: [],
+    layout: [],
+    style: { theme: 'executive_clean' },
+    warnings: [],
+    datasetId: 'sales',
+    metadata: {
+      name,
+      description: 'Created with AI',
+      status: 'draft',
+      version: '1.0.0',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }
+  }
+}
+
+export default function StudioHome() {
   const navigate = useNavigate()
-  const [dashboards, setDashboards] = useState([])
+  const [apps, setApps] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [showTemplates, setShowTemplates] = useState(false)
+  const [createWithAiPrompt, setCreateWithAiPrompt] = useState('')
+  const [creatingWithAi, setCreatingWithAi] = useState(false)
+  const [createWithAiError, setCreateWithAiError] = useState(null)
 
   useEffect(() => {
-    loadDashboards()
+    loadApps()
   }, [])
 
-  const loadDashboards = async () => {
+  async function loadApps() {
     try {
       setLoading(true)
       setError(null)
       const data = await listDashboards()
-      
-      // Parse schema to check for templates and determine if multi-page
-      const parsedData = data.map(dashboard => {
-        try {
-          const schema = typeof dashboard.schema === 'string' 
-            ? JSON.parse(dashboard.schema) 
-            : dashboard.schema
-          
-          // Check if it's a true multi-page app (more than 1 page, or has app_id/app_title indicating v2.0)
-          // Single-page dashboards that were normalized will have 1 page, but shouldn't be treated as multi-page
-          const isMultiPage = (schema?.pages && schema.pages.length > 1) || 
-                             (schema?.app_id && schema?.app_title && schema?.pages && schema.pages.length > 0)
-          
-          return {
-            ...dashboard,
-            schema,
-            isTemplate: schema?.metadata?.is_template || false,
-            isMultiPage: isMultiPage
+      const list = (data || []).map((d) => {
+        let schema = d.schema
+        if (typeof schema === 'string') {
+          try {
+            schema = JSON.parse(schema)
+          } catch {
+            schema = null
           }
-        } catch {
-          return { ...dashboard, isTemplate: false, isMultiPage: false }
+        }
+        return {
+          id: d.id,
+          name: d.name || schema?.title || schema?.app_title || schema?.metadata?.name || 'Untitled App',
+          schema,
+          updated_at: d.updated_at || d.created_at
         }
       })
-      
-      setDashboards(parsedData)
+      setApps(list)
     } catch (err) {
-      console.error('Error loading dashboards:', err)
-      setError(err.message || 'Failed to load dashboards')
-      // If auth error, still show empty state (user can sign in)
-      if (err.message?.includes('Authentication')) {
-        setDashboards([])
-      }
+      console.error('Studio loadApps:', err)
+      setError(err.message || 'Failed to load apps')
+      if (err.message?.includes('Authentication')) setApps([])
     } finally {
       setLoading(false)
     }
   }
 
-  const handleUseTemplate = async (templateId) => {
+  async function handleDelete(e, appId) {
+    e.stopPropagation()
+    if (!window.confirm('Delete this app? This cannot be undone.')) return
     try {
-      // Load template schema
-      const { getDashboard } = await import('../../studio/api/studioClient')
-      const templateSchema = await getDashboard(templateId)
-      
-      if (!templateSchema) {
-        alert('Template not found')
-        return
-      }
-
-      // Create new app from template
-      const { saveDashboard } = await import('../../studio/api/studioClient')
-      const newSchema = {
-        ...templateSchema,
-        app_id: undefined,
-        metadata: {
-          ...templateSchema.metadata,
-          id: undefined,
-          name: `${templateSchema.metadata?.name || 'Untitled'} (Copy)`,
-          status: 'draft',
-          is_template: false,
-          published_at: undefined
-        }
-      }
-
-      const saved = await saveDashboard(newSchema, null)
-      navigate(`/studio/app/${saved.id}`)
+      await deleteDashboard(appId)
+      await loadApps()
     } catch (err) {
-      console.error('Error using template:', err)
-      alert(err.message || 'Failed to create app from template')
+      alert(err.message || 'Failed to delete')
     }
   }
 
-  const handleDelete = async (e, dashboardId) => {
-    e.stopPropagation() // Prevent navigation
-    if (!window.confirm('Are you sure you want to delete this dashboard?')) {
+  async function handleCreateWithAi() {
+    const prompt = (createWithAiPrompt || '').trim()
+    if (!prompt) {
+      setCreateWithAiError('Describe what you want (e.g. a Data tab and a Graph tab with charts).')
       return
     }
-    
+    setCreatingWithAi(true)
+    setCreateWithAiError(null)
     try {
-      await deleteDashboard(dashboardId)
-      // Reload dashboards
-      await loadDashboards()
+      const schema = getCreateWithAiSchema(prompt)
+      const saved = await saveDashboard(schema, null)
+      const appId = saved?.id
+      if (!appId) throw new Error('No app ID returned')
+      navigate(`/studio/app/${appId}`, { state: { createWithAiPrompt: prompt }, replace: false })
     } catch (err) {
-      alert(err.message || 'Failed to delete dashboard')
+      setCreateWithAiError(err.message || 'Failed to create app')
+    } finally {
+      setCreatingWithAi(false)
     }
   }
 
-  const formatDate = (dateString) => {
-    if (!dateString) return 'Unknown'
+  function formatDate(dateString) {
+    if (!dateString) return '—'
     try {
-      const date = new Date(dateString)
-      return date.toLocaleDateString('en-US', { 
-        year: 'numeric', 
-        month: 'short', 
-        day: 'numeric' 
+      return new Date(dateString).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
       })
     } catch {
       return dateString
@@ -123,185 +125,128 @@ function StudioHome() {
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
-      
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        {/* Header */}
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">
-            Analytics Shorts Studio
-          </h1>
-          <p className="text-lg text-gray-600">
-            Create and manage advanced analytics dashboards
-          </p>
+          <h1 className="text-3xl font-bold text-gray-900 mb-1">Studio</h1>
+          <p className="text-gray-600">Build analytics apps from a clean slate.</p>
         </div>
 
-        {/* Actions */}
-        <div className="mb-8 flex flex-col sm:flex-row gap-4 items-center justify-between">
-          <div className="flex flex-col sm:flex-row gap-4">
+        {/* Create with AI - prompt box */}
+        <div className="mb-8 p-5 rounded-xl border border-emerald-200 bg-white shadow-sm">
+          <h2 className="text-lg font-semibold text-gray-900 mb-1">Create with AI</h2>
+          <p className="text-sm text-gray-600 mb-3">
+            Describe your app in plain language. We’ll create an app with sample data and open the editor to generate tabs and charts (e.g. Data tab + Graph tab like Tableau).
+          </p>
+          <div className="flex gap-2 items-end flex-wrap">
+            <div className="flex-1 min-w-[240px]">
+              <textarea
+                value={createWithAiPrompt}
+                onChange={e => { setCreateWithAiPrompt(e.target.value); setCreateWithAiError(null) }}
+                onKeyDown={e => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleCreateWithAi())}
+                placeholder="e.g. Create a Data tab with a table and a Graph tab with bar chart and pie chart like Tableau"
+                rows={2}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm placeholder-gray-400 resize-none"
+                disabled={creatingWithAi}
+              />
+              {createWithAiError && (
+                <p className="mt-1.5 text-sm text-red-600">{createWithAiError}</p>
+              )}
+            </div>
             <button
-              onClick={() => navigate('/studio/new')}
-              className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-semibold"
+              type="button"
+              onClick={handleCreateWithAi}
+              disabled={creatingWithAi || !createWithAiPrompt.trim()}
+              className="px-4 py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
             >
-              + Create New Dashboard
+              {creatingWithAi ? (
+                <>
+                  <span className="inline-block w-4 h-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                  Creating…
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  Create with AI
+                </>
+              )}
             </button>
+          </div>
+        </div>
+
+        <div className="mb-8 flex flex-wrap gap-4 items-center">
+          <button
+            onClick={() => navigate('/studio/app/new')}
+            className="px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
+          >
+            New app
+          </button>
+          <Link
+            to="/"
+            className="px-5 py-2.5 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-medium"
+          >
+            Back to Analytics Shorts
+          </Link>
+        </div>
+
+        {error && (
+          <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm">
+            {error}
+          </div>
+        )}
+
+        {loading ? (
+          <p className="text-gray-500">Loading...</p>
+        ) : apps.length === 0 ? (
+          <div className="text-center py-12 rounded-lg border border-gray-200 bg-white">
+            <p className="text-gray-500 mb-4">No apps yet.</p>
             <button
               onClick={() => navigate('/studio/app/new')}
-              className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-semibold"
+              className="px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
             >
-              + Create Multi-Page App
-            </button>
-            <Link
-              to="/"
-              className="px-6 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-semibold text-center"
-            >
-              Back to Analytics Shorts
-            </Link>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowTemplates(!showTemplates)}
-              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                showTemplates
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-            >
-              {showTemplates ? 'Show All' : 'Show Templates'}
+              New app
             </button>
           </div>
-        </div>
-
-        {/* Error State */}
-        {error && (
-          <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-            <p className="text-yellow-800 text-sm">{error}</p>
-          </div>
-        )}
-
-        {/* Loading State */}
-        {loading && (
-          <div className="text-center py-12">
-            <div className="text-gray-500">Loading dashboards...</div>
-          </div>
-        )}
-
-        {/* Dashboards Grid */}
-        {!loading && (() => {
-          const filteredDashboards = showTemplates
-            ? dashboards.filter(d => d.isTemplate)
-            : dashboards.filter(d => !d.isTemplate)
-          
-          if (filteredDashboards.length > 0) {
-            return (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filteredDashboards.map((dashboard) => (
-                  <div
-                    key={dashboard.id}
-                    className={`bg-white rounded-lg shadow-sm border p-6 hover:shadow-md transition-shadow relative group ${
-                      dashboard.isTemplate ? 'border-indigo-300 bg-indigo-50' : 'border-gray-200'
-                    }`}
-                  >
-                    {dashboard.isTemplate && (
-                      <div className="absolute top-2 right-2">
-                        <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-indigo-100 text-indigo-800">
-                          <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                            <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" />
-                            <path fillRule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clipRule="evenodd" />
-                          </svg>
-                          Template
-                        </span>
-                      </div>
-                    )}
-                    <div
-                      onClick={() => {
-                        if (dashboard.isTemplate) {
-                          handleUseTemplate(dashboard.id)
-                        } else {
-                          // Check if it's a true multi-page app
-                          if (dashboard.isMultiPage) {
-                            navigate(`/studio/app/${dashboard.id}`)
-                          } else {
-                            navigate(`/studio/${dashboard.id}`)
-                          }
-                        }
-                      }}
-                      className="cursor-pointer"
-                    >
-                      <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                        {dashboard.name || 'Untitled Dashboard'}
-                      </h3>
-                      <p className="text-sm text-gray-500 mb-1">
-                        {dashboard.schema?.metadata?.description || 'No description'}
-                      </p>
-                      <p className="text-xs text-gray-400">
-                        Last modified: {formatDate(dashboard.updated_at || dashboard.created_at)}
-                      </p>
-                      {dashboard.schema?.pages && dashboard.schema.pages.length > 1 && (
-                        <p className="text-xs text-indigo-600 mt-1">
-                          {dashboard.schema.pages.length} pages
-                        </p>
-                      )}
-                    </div>
-                    <div className="mt-4 flex gap-2">
-                      {dashboard.isTemplate ? (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleUseTemplate(dashboard.id)
-                          }}
-                          className="flex-1 px-3 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition-colors text-sm font-medium"
-                        >
-                          Use Template
-                        </button>
-                      ) : (
-                        <>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              if (dashboard.isMultiPage) {
-                                navigate(`/studio/app/${dashboard.id}`)
-                              } else {
-                                navigate(`/studio/${dashboard.id}`)
-                              }
-                            }}
-                            className="flex-1 px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-sm font-medium"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            onClick={(e) => handleDelete(e, dashboard.id)}
-                            className="px-3 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors text-sm font-medium"
-                          >
-                            Delete
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )
-          } else {
-            return (
-              <div className="text-center py-12">
-                <p className="text-gray-500 mb-4">
-                  {showTemplates ? 'No templates found' : 'No dashboards found'}
-                </p>
+        ) : (
+          <ul className="space-y-3">
+            {apps.map((app) => (
+              <li
+                key={app.id}
+                className="flex items-center justify-between gap-4 p-4 bg-white rounded-lg border border-gray-200 hover:border-gray-300"
+              >
                 <button
-                  onClick={() => navigate('/studio/new')}
-                  className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-semibold"
+                  type="button"
+                  onClick={() => navigate(`/studio/app/${app.id}`)}
+                  className="flex-1 text-left"
                 >
-                  Create Your First Dashboard
+                  <span className="font-medium text-gray-900">{app.name}</span>
+                  <span className="ml-2 text-sm text-gray-400">
+                    {formatDate(app.updated_at)}
+                  </span>
                 </button>
-              </div>
-            )
-          }
-        })()}
-
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/studio/app/${app.id}`)}
+                    className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                  >
+                    Open
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => handleDelete(e, app.id)}
+                    className="px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
       <Footer />
     </div>
   )
 }
-
-export default StudioHome

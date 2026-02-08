@@ -34,10 +34,9 @@ function MyDashboards() {
   }
 
   const handleLoadDashboard = (dashboard) => {
-    // Check if this is a Studio dashboard
+    // Studio / AI Visual Builder dashboards: open in Studio (AI Visual Builder) for editing
     if (dashboard.dashboard_view === 'studio' || dashboard.schema) {
-      // Route to Studio dashboard
-      navigate(`/studio/${dashboard.id}`)
+      navigate(`/studio?open=${dashboard.id}`)
       return
     }
 

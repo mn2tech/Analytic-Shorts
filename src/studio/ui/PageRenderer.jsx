@@ -1,10 +1,12 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import apiClient, { API_BASE_URL } from '../../config/api'
 import { getPageFilters, getQueries } from '../utils/schemaUtils'
 import StudioKPIWidget from './widgets/StudioKPIWidget'
 import StudioLineChartWidget from './widgets/StudioLineChartWidget'
 import StudioBarChartWidget from './widgets/StudioBarChartWidget'
+import StudioDataTableWidget from './widgets/StudioDataTableWidget'
+import StudioPieChartWidget from './widgets/StudioPieChartWidget'
 import FilterBar from './FilterBar'
 
 /**
@@ -15,6 +17,7 @@ import FilterBar from './FilterBar'
  * @param {Object} props.globalFilters - Global filter values
  * @param {Function} props.onFilterChange - Callback when filters change
  * @param {Function} props.onDrilldown - Callback for drilldown navigation
+ * @param {Function} props.onOpenDataSource - Callback to open Data source settings (optional)
  * @param {boolean} props.isReadOnly - Whether in read-only (published) mode
  */
 export default function PageRenderer({
@@ -23,7 +26,13 @@ export default function PageRenderer({
   globalFilters = {},
   onFilterChange,
   onDrilldown,
-  isReadOnly = false
+  isReadOnly = false,
+  onOpenDataSource,
+  onGenerateStarterDashboard,
+  isGeneratingStarterDashboard = false,
+  onAiCreate,
+  aiLoading = false,
+  aiError = null
 }) {
   const [searchParams, setSearchParams] = useSearchParams()
   const [filterValues, setFilterValues] = useState({})
@@ -31,24 +40,28 @@ export default function PageRenderer({
   const [queryLoading, setQueryLoading] = useState({})
   const [queryErrors, setQueryErrors] = useState({})
   const [dropdownOptions, setDropdownOptions] = useState({})
+  const [activeSectionIndex, setActiveSectionIndex] = useState(0)
+  const [aiPrompt, setAiPrompt] = useState('')
 
-  // Get page and its filters
-  const page = schema?.pages?.find(p => p.id === pageId) || schema?.pages?.[0]
-  const pageFilters = getPageFilters(schema, pageId)
-  const queries = getQueries(schema)
-  
-  // Also get global filters for initialization
-  const globalFiltersFromSchema = schema?.global_filters || []
+  // Get page and its filters (memoize so effect deps are stable and don't change every render)
+  const page = useMemo(
+    () => schema?.pages?.find(p => p.id === pageId) || schema?.pages?.[0],
+    [schema?.pages, pageId]
+  )
+  const pageFilters = useMemo(() => getPageFilters(schema, pageId), [schema, pageId])
+  const queries = useMemo(() => getQueries(schema), [schema])
+  const globalFiltersFromSchema = useMemo(() => schema?.global_filters ?? [], [schema?.global_filters])
 
-  // Initialize filter values from URL params and global filters
+  useEffect(() => {
+    setActiveSectionIndex(0)
+  }, [pageId])
+
+  // Initialize filter values from URL params and global filters (only when page/schema/URL/parent filters change)
   useEffect(() => {
     const initialFilters = { ...globalFilters }
-    
-    // Load from URL params
     searchParams.forEach((value, key) => {
       if (key.startsWith('filter_')) {
         const filterId = key.replace('filter_', '')
-        // Parse JSON strings (for time_range objects)
         if (value.startsWith('{') || value.startsWith('[')) {
           try {
             initialFilters[filterId] = JSON.parse(value)
@@ -60,8 +73,6 @@ export default function PageRenderer({
         }
       }
     })
-
-    // Set defaults from global filters first (they apply to all pages)
     globalFiltersFromSchema.forEach(filter => {
       if (filter.default !== undefined && initialFilters[filter.id] === undefined) {
         if (filter.type === 'time_range' && typeof filter.default === 'object') {
@@ -71,8 +82,6 @@ export default function PageRenderer({
         }
       }
     })
-
-    // Then set defaults from page-specific filters
     pageFilters.forEach(filter => {
       if (filter.default !== undefined && initialFilters[filter.id] === undefined) {
         if (filter.type === 'time_range' && typeof filter.default === 'object') {
@@ -82,14 +91,20 @@ export default function PageRenderer({
         }
       }
     })
-
-    console.log('Initialized filter values:', initialFilters)
-    console.log('Global filters from schema:', globalFiltersFromSchema)
-    console.log('Page filters:', pageFilters)
-    setFilterValues(initialFilters)
+    setFilterValues(prev => {
+      if (Object.keys(initialFilters).length !== Object.keys(prev).length) return initialFilters
+      for (const k of Object.keys(initialFilters)) {
+        const a = initialFilters[k]
+        const b = prev[k]
+        if (typeof a === 'object' && a !== null && typeof b === 'object' && b !== null) {
+          if (a?.start !== b?.start || a?.end !== b?.end) return initialFilters
+        } else if (a !== b) return initialFilters
+      }
+      return prev
+    })
   }, [pageId, globalFilters, pageFilters, globalFiltersFromSchema, searchParams])
 
-  // Update URL params when filters change
+  // Update URL params when filters change (do not call onFilterChange here to avoid loop with parent globalFilters)
   useEffect(() => {
     const newParams = new URLSearchParams(searchParams)
     
@@ -107,37 +122,41 @@ export default function PageRenderer({
     })
 
     setSearchParams(newParams, { replace: true })
-    onFilterChange?.(filterValues)
-  }, [filterValues, onFilterChange, searchParams, setSearchParams])
+  }, [filterValues, searchParams, setSearchParams])
 
-  // Load dropdown options
+  // Load dropdown options for every dropdown filter (use dimension/label/id as field name)
   useEffect(() => {
     const loadDropdownOptions = async () => {
       const options = {}
-      
+      const { datasetId, customEndpoint } = getDataSource(schema)
+      const hasSource = datasetId || customEndpoint
+
       for (const filter of pageFilters) {
-        if (filter.type === 'dropdown' && filter.source === 'dimension') {
-          try {
-            const datasetId = getDatasetId(schema)
-            if (datasetId) {
-              console.log(`Loading options for filter ${filter.id}, datasetId: ${datasetId}, field: ${filter.dimension}`)
-              console.log('API Base URL:', apiClient.defaults.baseURL || 'Not set (using relative)')
-              const response = await apiClient.get('/api/studio/options', {
-                params: {
-                  datasetId,
-                  field: filter.dimension
-                }
-              })
-              // Backend returns { values: [...] } not { options: [...] }
-              options[filter.id] = response.data.values || response.data.options || []
+        if (filter.type !== 'dropdown') continue
+        const fieldName = filter.dimension || filter.label || filter.id
+        if (!fieldName) {
+          options[filter.id] = []
+          continue
+        }
+        if (!hasSource) {
+          options[filter.id] = []
+          continue
+        }
+        try {
+          const response = await apiClient.get('/api/studio/options', {
+            params: {
+              ...(datasetId ? { datasetId } : {}),
+              ...(customEndpoint ? { customEndpoint } : {}),
+              field: fieldName
             }
-          } catch (error) {
-            console.error(`Error loading options for ${filter.id}:`, error)
-            options[filter.id] = []
-          }
+          })
+          options[filter.id] = response.data.values || response.data.options || []
+        } catch (error) {
+          console.error(`Error loading options for ${filter.id}:`, error)
+          options[filter.id] = []
         }
       }
-      
+
       setDropdownOptions(options)
     }
 
@@ -146,120 +165,70 @@ export default function PageRenderer({
     }
   }, [schema, pageFilters])
 
-  // Execute queries for current page
+  // Execute queries for current page (debounced so date/filter changes don't cause endless loading)
+  const queryTimeoutRef = useRef(null)
+
   useEffect(() => {
-    const executeQueries = async () => {
-      if (!schema || !page) {
-        console.log('Skipping query execution - missing schema or page:', { hasSchema: !!schema, hasPage: !!page })
-        return
+    if (!schema || !page) return
+
+    const widgets = page.sections?.flatMap(s => s.widgets || []) || []
+    const mergedFilterValues = { ...filterValues }
+    globalFiltersFromSchema.forEach(f => {
+      if (mergedFilterValues[f.id] === undefined) {
+        if (f.type === 'time_range') mergedFilterValues[f.id] = f.default && typeof f.default === 'object' ? f.default : { start: '', end: '' }
+        else mergedFilterValues[f.id] = f.default !== undefined ? f.default : 'All'
       }
-
-      // Wait for filter initialization to complete
-      // If there are filters defined in schema, wait until they're initialized
-      // If no filters are defined, proceed immediately
-      const hasFiltersDefined = globalFiltersFromSchema.length > 0 || pageFilters.length > 0
-      const filtersInitialized = !hasFiltersDefined || Object.keys(filterValues).length > 0
-      
-      if (!filtersInitialized) {
-        console.log('Waiting for filters to initialize before executing queries...', {
-          hasFiltersDefined,
-          filterValuesKeys: Object.keys(filterValues),
-          globalFiltersCount: globalFiltersFromSchema.length,
-          pageFiltersCount: pageFilters.length
-        })
-        return
+    })
+    pageFilters.forEach(f => {
+      if (mergedFilterValues[f.id] === undefined) {
+        if (f.type === 'time_range') mergedFilterValues[f.id] = f.default && typeof f.default === 'object' ? f.default : { start: '', end: '' }
+        else mergedFilterValues[f.id] = f.default !== undefined ? f.default : 'All'
       }
+    })
+    const queryIds = Array.from(new Set(widgets.map(w => w.query_ref).filter(Boolean)))
+    if (queryIds.length === 0) return
 
-      const widgets = page.sections?.flatMap(s => s.widgets || []) || []
-      const queryIds = new Set(widgets.map(w => w.query_ref).filter(Boolean))
-      
-      console.log('Executing queries for page:', pageId, 'Query IDs:', Array.from(queryIds))
-      console.log('Current filter values:', filterValues)
-      console.log('Filters initialized:', filtersInitialized)
-      
-      // Note: Queries will execute even if filterValues is empty - backend handles empty filters
-
-      if (queryIds.size === 0) {
-        console.warn('No queries found for widgets on this page')
-        return
-      }
-
+    const runQueries = async () => {
+      queryIds.forEach(id => {
+        setQueryLoading(prev => ({ ...prev, [id]: true }))
+        setQueryErrors(prev => ({ ...prev, [id]: null }))
+      })
       for (const queryId of queryIds) {
         const query = queries.find(q => q.id === queryId)
-        if (!query) {
-          console.warn(`Query ${queryId} not found in queries array`)
-          continue
-        }
-
-        setQueryLoading(prev => ({ ...prev, [queryId]: true }))
-        setQueryErrors(prev => ({ ...prev, [queryId]: null }))
-
+        if (!query) continue
         try {
-          const datasetId = getDatasetId(schema)
-          if (!datasetId) {
-            console.warn(`No datasetId found for query ${queryId}, skipping`)
+          const { datasetId, customEndpoint } = getDataSource(schema)
+          if (!datasetId && !customEndpoint) {
             setQueryLoading(prev => ({ ...prev, [queryId]: false }))
-            setQueryErrors(prev => ({
-              ...prev,
-              [queryId]: 'No dataset configured'
-            }))
+            setQueryErrors(prev => ({ ...prev, [queryId]: 'No dataset or API configured' }))
             continue
           }
-
-          // Use backend query API
-          const apiUrl = `${API_BASE_URL || ''}/api/studio/query`
-          console.log(`Executing query ${queryId} with datasetId: ${datasetId}, filters:`, filterValues)
-          console.log('API Base URL:', API_BASE_URL || 'Not set (using relative)')
-          console.log('Full API URL:', apiUrl)
-          console.log('apiClient baseURL:', apiClient.defaults.baseURL)
-          
-          // Ensure we're using the correct endpoint (not a React Router path)
-          const endpoint = '/api/studio/query'
-          if (endpoint.startsWith('/studio') || endpoint.startsWith('/apps')) {
-            console.error('ERROR: API endpoint looks like a React Router path!', endpoint)
-            throw new Error('Invalid API endpoint - looks like a route path')
-          }
-          
-          const response = await apiClient.post(endpoint, {
-            datasetId,
+          const response = await apiClient.post('/api/studio/query', {
+            ...(datasetId ? { datasetId } : {}),
+            ...(customEndpoint ? { customEndpoint } : {}),
             query,
-            filterValues
+            filterValues: mergedFilterValues
           })
-          console.log(`Query ${queryId} response:`, response.data)
-          
-          // Extract result from response (backend returns { result: { data: [...] } or { value: ... }, queryId, rowCount })
-          // The result object contains either { data: [...] } for charts or { value: ... } for KPIs
           const queryResult = response.data?.result || response.data
-          console.log(`Query ${queryId} extracted result:`, queryResult)
-          
           if (queryResult) {
             setQueryResults(prev => ({ ...prev, [queryId]: queryResult }))
           } else {
-            console.warn(`Query ${queryId} returned no result`)
-            setQueryErrors(prev => ({
-              ...prev,
-              [queryId]: 'Query returned no data'
-            }))
+            setQueryErrors(prev => ({ ...prev, [queryId]: 'Query returned no data' }))
           }
         } catch (error) {
-          console.error(`Error executing query ${queryId}:`, error)
-          console.error('Error details:', {
-            message: error.message,
-            response: error.response?.data,
-            status: error.response?.status
-          })
-          setQueryErrors(prev => ({
-            ...prev,
-            [queryId]: error.response?.data?.error || error.response?.data?.message || error.message || 'Query failed'
-          }))
+          const data = error.response?.data
+          const msg = (data && (data.message || data.error)) || error.message || 'Query failed'
+          setQueryErrors(prev => ({ ...prev, [queryId]: msg }))
         } finally {
           setQueryLoading(prev => ({ ...prev, [queryId]: false }))
         }
       }
     }
 
-    executeQueries()
-  }, [schema, page, queries, filterValues, pageId])
+    if (queryTimeoutRef.current) clearTimeout(queryTimeoutRef.current)
+    queryTimeoutRef.current = setTimeout(runQueries, 300)
+    return () => clearTimeout(queryTimeoutRef.current)
+  }, [schema, page, queries, filterValues, pageId, globalFiltersFromSchema, pageFilters])
 
   const handleFilterChange = (filterId, value) => {
     const updatedFilters = { ...filterValues, [filterId]: value }
@@ -326,11 +295,128 @@ export default function PageRenderer({
         <p className="text-gray-600 mb-6">{page.description}</p>
       )}
 
-      {/* Sections */}
-      {page.sections?.map((section) => (
+      {/* Empty state: no sections or all sections have no widgets */}
+      {(() => {
+        const hasNoContent = !page.sections?.length || page.sections.every((s) => !(s.widgets?.length))
+        if (!hasNoContent) return null
+
+        const hasDataSource = !!schema?.data_source?.endpoint
+
+        if (hasDataSource && onAiCreate && !isReadOnly) {
+          return (
+            <div className="rounded-xl border-2 border-dashed border-gray-200 bg-white p-10 max-w-2xl mx-auto">
+              <h3 className="text-xl font-semibold text-gray-900 mb-2">What would you like to create?</h3>
+              <p className="text-gray-600 mb-4 text-sm">
+                Describe in plain language. For example: &quot;Create a Data tab with a table, and a Graph tab with a pie chart, bar chart, and line chart.&quot;
+              </p>
+              <textarea
+                value={aiPrompt}
+                onChange={(e) => setAiPrompt(e.target.value)}
+                placeholder="e.g. Create a Data tab with a table, and a Graph tab with pie chart, bar chart, and line chart"
+                rows={3}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                disabled={aiLoading}
+              />
+              {aiError && (
+                <div className="mt-2 text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{aiError}</div>
+              )}
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => onAiCreate(aiPrompt.trim())}
+                  disabled={aiLoading || !aiPrompt.trim()}
+                  className="px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
+                >
+                  {aiLoading ? (
+                    <>
+                      <span className="inline-block animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                      Creating…
+                    </>
+                  ) : (
+                    'Create'
+                  )}
+                </button>
+                {onOpenDataSource && (
+                  <button type="button" onClick={onOpenDataSource} className="text-sm text-gray-500 hover:text-gray-700">
+                    Change data source
+                  </button>
+                )}
+                {onGenerateStarterDashboard && (
+                  <button
+                    type="button"
+                    onClick={onGenerateStarterDashboard}
+                    disabled={isGeneratingStarterDashboard}
+                    className="text-sm text-gray-500 hover:text-gray-700 disabled:opacity-50"
+                  >
+                    {isGeneratingStarterDashboard ? 'Generating…' : 'Or generate a starter Data + Graph'}
+                  </button>
+                )}
+              </div>
+            </div>
+          )
+        }
+
+        return (
+          <div className="rounded-xl border-2 border-dashed border-gray-300 bg-gray-50/50 p-12 text-center">
+            <div className="max-w-md mx-auto">
+              <div className="w-14 h-14 mx-auto mb-4 rounded-full bg-gray-200 flex items-center justify-center">
+                <svg className="w-7 h-7 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">No dashboard content yet</h3>
+              <p className="text-gray-600 mb-6">
+                {hasDataSource
+                  ? 'Set a data source to describe what you want with AI (e.g. create a Data tab and a Graph tab with charts).'
+                  : 'Choose a data source first, then describe what you want in plain language.'}
+              </p>
+              {!isReadOnly && onOpenDataSource && (
+                <button
+                  type="button"
+                  onClick={onOpenDataSource}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                >
+                  Configure data source
+                </button>
+              )}
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* Data | Graph tabs when page has data-section + graph-section */}
+      {page.sections?.length >= 2 &&
+        page.sections.some((s) => s.id === 'data-section') &&
+        page.sections.some((s) => s.id === 'graph-section') && (
+          <div className="flex border-b border-gray-200 mb-6">
+            {page.sections.map((section, idx) => (
+              <button
+                key={section.id}
+                type="button"
+                onClick={() => setActiveSectionIndex(idx)}
+                className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                  activeSectionIndex === idx
+                    ? 'border-blue-600 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                {section.title}
+              </button>
+            ))}
+          </div>
+        )}
+
+      {/* Sections (all if no tabs; only active if Data/Graph tabs) */}
+      {(page.sections?.length >= 2 &&
+       page.sections.some((s) => s.id === 'data-section') &&
+       page.sections.some((s) => s.id === 'graph-section')
+        ? [page.sections[activeSectionIndex]]
+        : page.sections ?? []
+      ).map((section) => (
         <div key={section.id} className="mb-8">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">{section.title}</h2>
-          
+          {!(page.sections?.length >= 2 && page.sections.some((s) => s.id === 'data-section') && page.sections.some((s) => s.id === 'graph-section')) && (
+            <h2 className="text-xl font-semibold text-gray-900 mb-4">{section.title}</h2>
+          )}
           <div
             className={`grid gap-6 ${
               section.layout === 'grid'
@@ -356,7 +442,8 @@ export default function PageRenderer({
                 error,
                 config: widget.config,
                 format: widget.format,
-                onDrilldown: widget.actions?.onClick ? (data) => handleWidgetClick(widget, data) : null
+                onDrilldown: widget.actions?.onClick ? (data) => handleWidgetClick(widget, data) : null,
+                dataSourceEndpoint: schema?.data_source?.endpoint ?? ''
               }
 
               switch (widget.type) {
@@ -366,6 +453,10 @@ export default function PageRenderer({
                   return <StudioLineChartWidget key={widget.id} {...widgetProps} />
                 case 'bar_chart':
                   return <StudioBarChartWidget key={widget.id} {...widgetProps} />
+                case 'data_table':
+                  return <StudioDataTableWidget key={widget.id} {...widgetProps} />
+                case 'pie_chart':
+                  return <StudioPieChartWidget key={widget.id} {...widgetProps} />
                 default:
                   return (
                     <div key={widget.id} className="bg-white rounded-lg shadow p-4">
@@ -381,12 +472,26 @@ export default function PageRenderer({
   )
 }
 
-// Helper to extract dataset ID from schema
-function getDatasetId(schema) {
-  if (!schema?.data_source?.endpoint) return null
-  
-  const endpoint = schema.data_source.endpoint
-  // Extract dataset ID from endpoint like /api/example/sales -> sales
-  const match = endpoint.match(/\/api\/example\/(\w+)/)
-  return match ? match[1] : null
+// Helper to get data source from schema: either built-in datasetId or custom API URL
+function getDataSource(schema) {
+  const endpoint = schema?.data_source?.endpoint ? String(schema.data_source.endpoint).trim() : ''
+  // Fallback: if app has filters/queries but no endpoint (e.g. AI added filters first), use built-in sales
+  const hasContent = (schema?.global_filters?.length || schema?.queries?.length) > 0
+  if (!endpoint) {
+    return hasContent ? { datasetId: 'sales', customEndpoint: null } : { datasetId: null, customEndpoint: null }
+  }
+  const isCustomUrl = endpoint.startsWith('http://') || endpoint.startsWith('https://')
+  if (isCustomUrl) {
+    // If URL points to our own /api/example/xxx, use datasetId so options/query use built-in data
+    const match = endpoint.match(/\/api\/example\/(.+)$/)
+    if (match) {
+      const datasetId = match[1].replace(/%2F/g, '/')
+      return { datasetId, customEndpoint: null }
+    }
+    return { datasetId: null, customEndpoint: endpoint }
+  }
+  // Built-in: extract dataset ID from endpoint like /api/example/sales -> sales, or plain "sales"
+  const match = endpoint.match(/\/api\/example\/(.+)$/)
+  const datasetId = match ? match[1].replace(/%2F/g, '/') : (endpoint.includes('/') ? null : endpoint)
+  return { datasetId: datasetId || null, customEndpoint: datasetId ? null : (endpoint || null) }
 }

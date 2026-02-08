@@ -16,6 +16,7 @@ import DateRangeSlider from '../components/DateRangeSlider'
 import SubawardDrilldownModal from '../components/SubawardDrilldownModal'
 import { saveAs } from 'file-saver'
 import { generateShareId, saveSharedDashboard, getShareableUrl, copyToClipboard } from '../utils/shareUtils'
+import { clearAnalyticsDataAndReload } from '../utils/analyticsStorage'
 import { saveDashboard, updateDashboard } from '../services/dashboardService'
 import jsPDF from 'jspdf'
 import html2canvas from 'html2canvas'
@@ -50,6 +51,7 @@ function Dashboard() {
   const [dashboardWidgetVisibility, setDashboardWidgetVisibility] = useState(null) // Store widget visibility for sharing
   const [subawardModalOpen, setSubawardModalOpen] = useState(false)
   const [subawardRecipient, setSubawardRecipient] = useState('')
+  const [noDataReason, setNoDataReason] = useState(null) // 'no-storage' | 'invalid-data' when dashboard has nothing to show
   const hasInitialized = useRef(false)
   const isUpdatingMetadata = useRef(false)
 
@@ -83,8 +85,10 @@ function Dashboard() {
     // Otherwise, try to get from sessionStorage
     const storedData = sessionStorage.getItem('analyticsData')
     if (!storedData) {
-      console.log('Dashboard: No data in sessionStorage or location.state, redirecting to home')
-      navigate('/')
+      console.log('Dashboard: No data in sessionStorage or location.state')
+      hasInitialized.current = true
+      setNoDataReason('no-storage')
+      setLoading(false)
       return
     }
 
@@ -100,14 +104,16 @@ function Dashboard() {
       if (!parsed || !parsed.data || !Array.isArray(parsed.data)) {
         console.error('Invalid data in sessionStorage:', parsed)
         sessionStorage.removeItem('analyticsData')
-        navigate('/')
+        setNoDataReason('invalid-data')
+        setLoading(false)
         return
       }
       initializeData(parsed)
     } catch (error) {
       console.error('Error parsing stored data:', error)
       sessionStorage.removeItem('analyticsData')
-      navigate('/')
+      setNoDataReason('invalid-data')
+      setLoading(false)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []) // Only run once on mount - location.state is checked but not in deps to prevent re-runs
@@ -788,6 +794,46 @@ function Dashboard() {
       </div>
     )
   }
+
+  // No analytics data: show explicit empty state so /dashboard is never blank
+  if (noDataReason) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Navbar />
+        <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+          <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-8 text-center">
+            <div className="w-14 h-14 mx-auto mb-4 rounded-full bg-gray-100 flex items-center justify-center">
+              <svg className="w-7 h-7 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+            </div>
+            <h1 className="text-xl font-semibold text-gray-900 mb-2">No dashboard data</h1>
+            <p className="text-gray-600 mb-6">
+              {noDataReason === 'no-storage'
+                ? 'Upload a file from the home page to build a dashboard, or open a saved dashboard from My Dashboards.'
+                : 'The stored data could not be loaded. Upload a new file or open a saved dashboard.'}
+            </p>
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              <button
+                type="button"
+                onClick={() => navigate('/')}
+                className="inline-flex items-center justify-center px-4 py-2.5 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Go to Home
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate('/dashboards')}
+                className="inline-flex items-center justify-center px-4 py-2.5 bg-white border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                My Dashboards
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
   
   console.log('Dashboard: Rendering. Data length:', data?.length, 'Filtered data length:', filteredData?.length, 'Columns:', columns?.length, 'Selected numeric:', selectedNumeric, 'Selected categorical:', selectedCategorical)
   
@@ -853,10 +899,7 @@ function Dashboard() {
             
             <div className="text-center">
               <button
-                onClick={() => {
-                  sessionStorage.removeItem('analyticsData')
-                  navigate('/')
-                }}
+                onClick={clearAnalyticsDataAndReload}
                 className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
               >
                 Go Back to Upload
@@ -988,7 +1031,7 @@ function Dashboard() {
                   </ol>
                 </div>
                 <button
-                  onClick={() => navigate('/')}
+                  onClick={clearAnalyticsDataAndReload}
                   className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
                 >
                   Go Back to Upload
@@ -1099,7 +1142,7 @@ function Dashboard() {
             
             <div className="text-center">
               <button
-                onClick={() => navigate('/')}
+                onClick={clearAnalyticsDataAndReload}
                 className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
               >
                 Go Back to Fix Data
@@ -1747,7 +1790,7 @@ function Dashboard() {
                   Export PDF
                 </button>
                 <button
-                  onClick={() => navigate('/')}
+                  onClick={clearAnalyticsDataAndReload}
                   className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium text-sm"
                 >
                   New Upload

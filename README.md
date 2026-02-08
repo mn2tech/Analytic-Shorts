@@ -14,6 +14,7 @@ A modern, fast, and mobile-friendly web application for uploading CSV/Excel file
 - **Example Datasets**: Try the platform with pre-built datasets (Sales, Attendance, Donations)
 - **Responsive Design**: Mobile-first design with TailwindCSS
 - **Smooth Animations**: Optimized for video demos with fade-in and loading animations
+- **AI Visual Builder Studio** (at `/studio`): Create dashboards from natural-language prompts; save, share, and get public view-only links. See [STUDIO.md](./STUDIO.md) for a short guide. For full spec storage, run the migration in **database/migration_add_dashboard_schema_column.sql** (see database/README.md).
 
 ## 📋 Prerequisites
 

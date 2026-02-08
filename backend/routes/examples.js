@@ -232,6 +232,121 @@ const exampleDatasets = {
       { Year: '2025', Income: 930000 },
     ],
   },
+  pharmacy: {
+    data: [
+      { Date: '2025-01', ReportType: 'Inventory', Metric: 'Units on hand', Location: 'Store A', Value: 1240 },
+      { Date: '2025-01', ReportType: 'Inventory', Metric: 'Units on hand', Location: 'Store B', Value: 890 },
+      { Date: '2025-01', ReportType: 'Prescription volume', Metric: 'Scripts dispensed', Location: 'Store A', Value: 3200 },
+      { Date: '2025-01', ReportType: 'Prescription volume', Metric: 'Scripts dispensed', Location: 'Store B', Value: 2100 },
+      { Date: '2025-01', ReportType: 'Revenue', Metric: 'Rx sales ($)', Location: 'Store A', Value: 84500 },
+      { Date: '2025-01', ReportType: 'Revenue', Metric: 'Rx sales ($)', Location: 'Store B', Value: 62300 },
+      { Date: '2025-01', ReportType: 'Compliance', Metric: 'Controlled recs', Location: 'Store A', Value: 0 },
+      { Date: '2025-01', ReportType: 'Compliance', Metric: 'Controlled recs', Location: 'Store B', Value: 0 },
+      { Date: '2025-02', ReportType: 'Inventory', Metric: 'Units on hand', Location: 'Store A', Value: 1180 },
+      { Date: '2025-02', ReportType: 'Inventory', Metric: 'Units on hand', Location: 'Store B', Value: 920 },
+      { Date: '2025-02', ReportType: 'Prescription volume', Metric: 'Scripts dispensed', Location: 'Store A', Value: 3350 },
+      { Date: '2025-02', ReportType: 'Prescription volume', Metric: 'Scripts dispensed', Location: 'Store B', Value: 2280 },
+      { Date: '2025-02', ReportType: 'Revenue', Metric: 'Rx sales ($)', Location: 'Store A', Value: 87200 },
+      { Date: '2025-02', ReportType: 'Revenue', Metric: 'Rx sales ($)', Location: 'Store B', Value: 65100 },
+      { Date: '2025-02', ReportType: 'Compliance', Metric: 'Controlled recs', Location: 'Store A', Value: 0 },
+      { Date: '2025-02', ReportType: 'Compliance', Metric: 'Controlled recs', Location: 'Store B', Value: 0 },
+      { Date: '2025-03', ReportType: 'Inventory', Metric: 'Units on hand', Location: 'Store A', Value: 1310 },
+      { Date: '2025-03', ReportType: 'Inventory', Metric: 'Units on hand', Location: 'Store B', Value: 870 },
+      { Date: '2025-03', ReportType: 'Prescription volume', Metric: 'Scripts dispensed', Location: 'Store A', Value: 3480 },
+      { Date: '2025-03', ReportType: 'Prescription volume', Metric: 'Scripts dispensed', Location: 'Store B', Value: 2190 },
+      { Date: '2025-03', ReportType: 'Revenue', Metric: 'Rx sales ($)', Location: 'Store A', Value: 89100 },
+      { Date: '2025-03', ReportType: 'Revenue', Metric: 'Rx sales ($)', Location: 'Store B', Value: 63800 },
+      { Date: '2025-03', ReportType: 'Compliance', Metric: 'Controlled recs', Location: 'Store A', Value: 0 },
+      { Date: '2025-03', ReportType: 'Compliance', Metric: 'Controlled recs', Location: 'Store B', Value: 0 },
+      { Date: '2025-04', ReportType: 'Inventory', Metric: 'Units on hand', Location: 'Store A', Value: 1270 },
+      { Date: '2025-04', ReportType: 'Inventory', Metric: 'Units on hand', Location: 'Store B', Value: 940 },
+      { Date: '2025-04', ReportType: 'Prescription volume', Metric: 'Scripts dispensed', Location: 'Store A', Value: 3290 },
+      { Date: '2025-04', ReportType: 'Prescription volume', Metric: 'Scripts dispensed', Location: 'Store B', Value: 2340 },
+      { Date: '2025-04', ReportType: 'Revenue', Metric: 'Rx sales ($)', Location: 'Store A', Value: 86800 },
+      { Date: '2025-04', ReportType: 'Revenue', Metric: 'Rx sales ($)', Location: 'Store B', Value: 66700 },
+      { Date: '2025-04', ReportType: 'Compliance', Metric: 'Controlled recs', Location: 'Store A', Value: 0 },
+      { Date: '2025-04', ReportType: 'Compliance', Metric: 'Controlled recs', Location: 'Store B', Value: 0 },
+      { Date: '2025-05', ReportType: 'Inventory', Metric: 'Units on hand', Location: 'Store A', Value: 1190 },
+      { Date: '2025-05', ReportType: 'Inventory', Metric: 'Units on hand', Location: 'Store B', Value: 910 },
+      { Date: '2025-05', ReportType: 'Prescription volume', Metric: 'Scripts dispensed', Location: 'Store A', Value: 3410 },
+      { Date: '2025-05', ReportType: 'Prescription volume', Metric: 'Scripts dispensed', Location: 'Store B', Value: 2250 },
+      { Date: '2025-05', ReportType: 'Revenue', Metric: 'Rx sales ($)', Location: 'Store A', Value: 88300 },
+      { Date: '2025-05', ReportType: 'Revenue', Metric: 'Rx sales ($)', Location: 'Store B', Value: 64200 },
+      { Date: '2025-05', ReportType: 'Compliance', Metric: 'Controlled recs', Location: 'Store A', Value: 0 },
+      { Date: '2025-05', ReportType: 'Compliance', Metric: 'Controlled recs', Location: 'Store B', Value: 0 },
+      { Date: '2025-06', ReportType: 'Inventory', Metric: 'Units on hand', Location: 'Store A', Value: 1350 },
+      { Date: '2025-06', ReportType: 'Inventory', Metric: 'Units on hand', Location: 'Store B', Value: 880 },
+      { Date: '2025-06', ReportType: 'Prescription volume', Metric: 'Scripts dispensed', Location: 'Store A', Value: 3560 },
+      { Date: '2025-06', ReportType: 'Prescription volume', Metric: 'Scripts dispensed', Location: 'Store B', Value: 2310 },
+      { Date: '2025-06', ReportType: 'Revenue', Metric: 'Rx sales ($)', Location: 'Store A', Value: 90200 },
+      { Date: '2025-06', ReportType: 'Revenue', Metric: 'Rx sales ($)', Location: 'Store B', Value: 65900 },
+      { Date: '2025-06', ReportType: 'Compliance', Metric: 'Controlled recs', Location: 'Store A', Value: 0 },
+      { Date: '2025-06', ReportType: 'Compliance', Metric: 'Controlled recs', Location: 'Store B', Value: 0 },
+    ],
+  },
+  'superbowl-winners': {
+    data: [
+      { Year: 1967, Winner: 'Green Bay Packers' },
+      { Year: 1968, Winner: 'Green Bay Packers' },
+      { Year: 1969, Winner: 'New York Jets' },
+      { Year: 1970, Winner: 'Kansas City Chiefs' },
+      { Year: 1971, Winner: 'Baltimore Colts' },
+      { Year: 1972, Winner: 'Dallas Cowboys' },
+      { Year: 1973, Winner: 'Miami Dolphins' },
+      { Year: 1974, Winner: 'Miami Dolphins' },
+      { Year: 1975, Winner: 'Pittsburgh Steelers' },
+      { Year: 1976, Winner: 'Pittsburgh Steelers' },
+      { Year: 1977, Winner: 'Oakland Raiders' },
+      { Year: 1978, Winner: 'Dallas Cowboys' },
+      { Year: 1979, Winner: 'Pittsburgh Steelers' },
+      { Year: 1980, Winner: 'Pittsburgh Steelers' },
+      { Year: 1981, Winner: 'Oakland Raiders' },
+      { Year: 1982, Winner: 'San Francisco 49ers' },
+      { Year: 1983, Winner: 'Washington Redskins' },
+      { Year: 1984, Winner: 'Los Angeles Raiders' },
+      { Year: 1985, Winner: 'San Francisco 49ers' },
+      { Year: 1986, Winner: 'Chicago Bears' },
+      { Year: 1987, Winner: 'New York Giants' },
+      { Year: 1988, Winner: 'Washington Redskins' },
+      { Year: 1989, Winner: 'San Francisco 49ers' },
+      { Year: 1990, Winner: 'San Francisco 49ers' },
+      { Year: 1991, Winner: 'New York Giants' },
+      { Year: 1992, Winner: 'Washington Redskins' },
+      { Year: 1993, Winner: 'Dallas Cowboys' },
+      { Year: 1994, Winner: 'Dallas Cowboys' },
+      { Year: 1995, Winner: 'San Francisco 49ers' },
+      { Year: 1996, Winner: 'Dallas Cowboys' },
+      { Year: 1997, Winner: 'Green Bay Packers' },
+      { Year: 1998, Winner: 'Denver Broncos' },
+      { Year: 1999, Winner: 'Denver Broncos' },
+      { Year: 2000, Winner: 'St. Louis Rams' },
+      { Year: 2001, Winner: 'Baltimore Ravens' },
+      { Year: 2002, Winner: 'New England Patriots' },
+      { Year: 2003, Winner: 'Tampa Bay Buccaneers' },
+      { Year: 2004, Winner: 'New England Patriots' },
+      { Year: 2005, Winner: 'New England Patriots' },
+      { Year: 2006, Winner: 'Pittsburgh Steelers' },
+      { Year: 2007, Winner: 'Indianapolis Colts' },
+      { Year: 2008, Winner: 'New York Giants' },
+      { Year: 2009, Winner: 'Pittsburgh Steelers' },
+      { Year: 2010, Winner: 'New Orleans Saints' },
+      { Year: 2011, Winner: 'Green Bay Packers' },
+      { Year: 2012, Winner: 'New York Giants' },
+      { Year: 2013, Winner: 'Baltimore Ravens' },
+      { Year: 2014, Winner: 'Seattle Seahawks' },
+      { Year: 2015, Winner: 'New England Patriots' },
+      { Year: 2016, Winner: 'Denver Broncos' },
+      { Year: 2017, Winner: 'New England Patriots' },
+      { Year: 2018, Winner: 'Philadelphia Eagles' },
+      { Year: 2019, Winner: 'New England Patriots' },
+      { Year: 2020, Winner: 'Kansas City Chiefs' },
+      { Year: 2021, Winner: 'Tampa Bay Buccaneers' },
+      { Year: 2022, Winner: 'Los Angeles Rams' },
+      { Year: 2023, Winner: 'Kansas City Chiefs' },
+      { Year: 2024, Winner: 'Kansas City Chiefs' },
+      { Year: 2025, Winner: 'Philadelphia Eagles' },
+    ],
+  },
   usaspending: {
     data: [
       { 'Award Date': '2024-01-15', 'Award Amount': 2500000, 'Recipient Name': 'Tech Solutions Inc', 'Awarding Agency': 'Department of Defense', 'Award Type': 'Contract', State: 'VA', 'NAICS Code': 541511, Description: 'Software Development Services' },
@@ -267,6 +382,36 @@ const exampleDatasets = {
     ],
   },
 }
+
+// Load NFL schedule from CSV (2025 season + playoffs)
+const nflSchedulePath = path.join(__dirname, '..', 'data', 'nfl-schedule-2025.csv')
+let nflScheduleData = null
+function loadNflSchedule() {
+  if (nflScheduleData) return nflScheduleData
+  try {
+    const csv = fs.readFileSync(nflSchedulePath, 'utf8')
+    const parsed = Papa.parse(csv, { header: true, skipEmptyLines: true })
+    const numericCols = ['PtsW', 'PtsL', 'YdsW', 'TOW', 'YdsL', 'TOL']
+    nflScheduleData = (parsed.data || []).map((row) => {
+      const out = { ...row }
+      numericCols.forEach((col) => {
+        if (out[col] !== undefined && out[col] !== '' && !isNaN(Number(out[col]))) {
+          out[col] = Number(out[col])
+        }
+      })
+      if (out.Week !== undefined && out.Week !== '' && /^\d+$/.test(String(out.Week).trim())) {
+        out.Week = Number(out.Week)
+      }
+      return out
+    }).filter((row) => row.Winner || row.Loser || row.Week) // keep header-like or data rows
+    exampleDatasets['nfl-schedule'] = { data: nflScheduleData }
+  } catch (err) {
+    console.warn('NFL schedule CSV not loaded:', err.message)
+    exampleDatasets['nfl-schedule'] = { data: [] }
+  }
+  return nflScheduleData
+}
+loadNflSchedule()
 
 router.get('/sales', (req, res) => {
   const dataset = exampleDatasets.sales
@@ -350,6 +495,57 @@ router.get('/banking', (req, res) => {
 
 router.get('/yearly-income', (req, res) => {
   const dataset = exampleDatasets.yearlyIncome
+  const columns = Object.keys(dataset.data[0])
+  const { numericColumns, categoricalColumns, dateColumns } = detectColumnTypes(dataset.data, columns)
+  const processedData = processDataPreservingNumbers(dataset.data, numericColumns)
+
+  res.json({
+    data: processedData,
+    columns,
+    numericColumns,
+    categoricalColumns,
+    dateColumns,
+    rowCount: processedData.length,
+  })
+})
+
+router.get('/nfl-schedule', (req, res) => {
+  const data = loadNflSchedule()
+  if (!data || data.length === 0) {
+    return res.status(503).json({ error: 'NFL schedule data not available' })
+  }
+  const columns = Object.keys(data[0])
+  const { numericColumns, categoricalColumns, dateColumns } = detectColumnTypes(data, columns)
+  const processedData = processDataPreservingNumbers(data, numericColumns)
+
+  res.json({
+    data: processedData,
+    columns,
+    numericColumns,
+    categoricalColumns,
+    dateColumns,
+    rowCount: processedData.length,
+  })
+})
+
+router.get('/pharmacy', (req, res) => {
+  const dataset = exampleDatasets.pharmacy
+  const columns = Object.keys(dataset.data[0])
+  const { numericColumns, categoricalColumns, dateColumns } = detectColumnTypes(dataset.data, columns)
+  const processedData = processDataPreservingNumbers(dataset.data, numericColumns)
+
+  res.json({
+    data: processedData,
+    columns,
+    numericColumns,
+    categoricalColumns,
+    dateColumns,
+    rowCount: processedData.length,
+  })
+})
+
+router.get('/superbowl-winners', (req, res) => {
+  const dataset = exampleDatasets['superbowl-winners']
   const columns = Object.keys(dataset.data[0])
   const { numericColumns, categoricalColumns, dateColumns } = detectColumnTypes(dataset.data, columns)
   const processedData = processDataPreservingNumbers(dataset.data, numericColumns)

@@ -3,7 +3,8 @@ const cors = require('cors')
 const multer = require('multer')
 const path = require('path')
 const fs = require('fs')
-require('dotenv').config()
+// Load .env from backend directory so it works when started from project root or backend/
+require('dotenv').config({ path: path.join(__dirname, '.env') })
 
 const uploadRoutes = require('./routes/upload')
 const insightsRoutes = require('./routes/insights')
@@ -13,6 +14,8 @@ const subscriptionRoutes = require('./routes/subscription')
 const webhookRoutes = require('./routes/webhook')
 const analyticsRoutes = require('./routes/analytics')
 const studioRoutes = require('./routes/studio')
+const studioAiSchemaHandler = require('./routes/studioAiSchema')
+const aiDashboardSpecRoutes = require('./routes/aiDashboardSpec')
 const sharedRoutes = require('./routes/shared')
 const accessLogger = require('./middleware/accessLogger')
 
@@ -57,7 +60,15 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true })
 }
 
-// Routes
+// Routes - register /api/studio/ai-schema FIRST so it always matches
+app.post('/api/studio/ai-schema', (req, res, next) => {
+  console.log('[server] POST /api/studio/ai-schema hit')
+  studioAiSchemaHandler(req, res).catch(next)
+})
+app.post('/api/studio/ai-schema/', (req, res, next) => {
+  console.log('[server] POST /api/studio/ai-schema/ hit')
+  studioAiSchemaHandler(req, res).catch(next)
+})
 app.use('/api/upload', uploadRoutes)
 app.use('/api/insights', insightsRoutes)
 app.use('/api/example', exampleRoutes)
@@ -65,6 +76,23 @@ app.use('/api/dashboards', dashboardRoutes)
 app.use('/api/subscription', subscriptionRoutes)
 app.use('/api/analytics', analyticsRoutes)
 app.use('/api/studio', studioRoutes)
+// POST /api/ai/dashboard-spec — register first so it always matches (avoids 404)
+const handleDashboardSpec = aiDashboardSpecRoutes.handleDashboardSpec
+if (typeof handleDashboardSpec !== 'function') {
+  console.error('[server] aiDashboardSpec.handleDashboardSpec missing; POST /api/ai/dashboard-spec will return 503')
+}
+const dashboardSpecHandler = (req, res, next) => {
+  if (typeof handleDashboardSpec !== 'function') {
+    return res.status(503).json({ error: 'AI dashboard-spec handler not loaded' })
+  }
+  handleDashboardSpec(req, res).catch(next)
+}
+app.post('/api/ai/dashboard-spec', dashboardSpecHandler)
+app.post('/api/ai/dashboard-spec/', dashboardSpecHandler)
+app.use('/api/ai', aiDashboardSpecRoutes)
+if (typeof handleDashboardSpec === 'function') {
+  console.log('[server] POST /api/ai/dashboard-spec registered')
+}
 app.use('/api/shared', sharedRoutes)
 
 // Health check
@@ -100,6 +128,10 @@ app.use((req, res) => {
     message: `Cannot ${req.method} ${req.path}`,
     availableEndpoints: [
       'GET /api/health',
+      'GET /api/ai (list AI routes)',
+      'GET /api/ai/dataset-schema',
+      'GET /api/ai/dataset-data',
+      'POST /api/ai/dashboard-spec',
       'POST /api/upload',
       'POST /api/insights',
       'GET /api/example/sales',
@@ -114,8 +146,17 @@ app.use((req, res) => {
 
 // Only start server if not running in Lambda
 if (!process.env.LAMBDA_TASK_ROOT) {
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     console.log(`🚀 Server running on http://localhost:${PORT}`)
+  })
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`\n❌ Port ${PORT} is already in use. Another process (often a previous Node server) is using it.`)
+      console.error('   On Windows, free the port with: netstat -ano | findstr :' + PORT)
+      console.error('   Then: taskkill /PID <PID> /F')
+      console.error('   Or close the other app using port ' + PORT + ' and restart.\n')
+    }
+    throw err
   })
 }
 

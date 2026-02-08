@@ -1,4 +1,4 @@
-import { Routes, Route, useLocation } from 'react-router-dom'
+import { Routes, Route, useLocation, Navigate, useParams } from 'react-router-dom'
 import { useEffect } from 'react'
 import { AuthProvider } from './contexts/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
@@ -13,10 +13,15 @@ import Help from './pages/Help'
 import Privacy from './pages/Privacy'
 import Terms from './pages/Terms'
 import AdminAnalytics from './pages/AdminAnalytics'
-import StudioHome from './pages/studio/StudioHome'
 import StudioDashboard from './pages/studio/StudioDashboard'
-import StudioAppEditor from './pages/studio/StudioAppEditor'
 import StudioAppView from './pages/studio/StudioAppView'
+import AiVisualBuilderStudio from './pages/AiVisualBuilderStudio'
+
+/** Redirect /studio/app/:id to /studio?open=:id so AI Visual Builder can load that dashboard. */
+function NavigateToStudioWithOpen() {
+  const { id } = useParams()
+  return <Navigate to={{ pathname: '/studio', search: id ? `?open=${id}` : '' }} replace />
+}
 
 // Track page views for Google Analytics
 function PageViewTracker() {
@@ -72,10 +77,26 @@ function App() {
         />
         <Route path="/dashboard/shared/:shareId" element={<SharedDashboard />} />
         <Route
+          path="/ai-visual-builder"
+          element={
+            <ProtectedRoute>
+              <AiVisualBuilderStudio />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/studio"
           element={
             <ProtectedRoute>
-              <StudioHome />
+              <AiVisualBuilderStudio />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/studio/app/:id"
+          element={
+            <ProtectedRoute>
+              <NavigateToStudioWithOpen />
             </ProtectedRoute>
           }
         />
@@ -87,14 +108,7 @@ function App() {
             </ProtectedRoute>
           }
         />
-        <Route
-          path="/studio/app/:id"
-          element={
-            <ProtectedRoute>
-              <StudioAppEditor />
-            </ProtectedRoute>
-          }
-        />
+        <Route path="/ai-visual-builder" element={<Navigate to="/studio" replace />} />
         <Route path="/apps/:id" element={<StudioAppView />} />
         <Route path="/apps/:id/:pageId" element={<StudioAppView />} />
         {/* Network view removed */}

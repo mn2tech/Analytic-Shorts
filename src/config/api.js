@@ -8,7 +8,7 @@ const getApiBaseUrl = () => {
     return import.meta.env.VITE_API_URL
   }
   
-  // In development, use relative path (proxy in vite.config.js)
+  // In development, use same origin so Vite proxies /api to backend (avoids CORS / network errors)
   if (import.meta.env.DEV) {
     return ''
   }

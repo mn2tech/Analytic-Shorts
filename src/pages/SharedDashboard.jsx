@@ -10,6 +10,7 @@ import Filters from '../components/Filters'
 import AIInsights from '../components/AIInsights'
 import { loadSharedDashboard } from '../utils/shareUtils'
 import SharedStudioDashboardView from '../components/SharedStudioDashboardView'
+import DashboardRenderer from '../components/aiVisualBuilder/DashboardRenderer'
 
 function SharedDashboard() {
   const navigate = useNavigate()
@@ -31,6 +32,9 @@ function SharedDashboard() {
   const [activeTab, setActiveTab] = useState('Overview')
   const [dashboardTitle, setDashboardTitle] = useState('Analytics Dashboard')
   const [studioDashboardData, setStudioDashboardData] = useState(null)
+  const [dashboardSpecData, setDashboardSpecData] = useState(null)
+  const [filterValues, setFilterValues] = useState({})
+  const [fullScreen, setFullScreen] = useState(false)
 
   useEffect(() => {
     const loadDashboard = async () => {
@@ -57,26 +61,23 @@ function SharedDashboard() {
         return
       }
 
-      // Check if this is a Studio dashboard
-      // Also check if it has a dashboard object with metadata (Studio dashboards have this structure)
-      const isStudioDashboard = sharedData.dashboardType === 'studio' || 
+      // Check if this is an AI Visual Builder (DashboardSpec) share
+      if (sharedData.dashboardType === 'dashboardSpec' && sharedData.spec) {
+        setDashboardSpecData({ spec: sharedData.spec, data: sharedData.data || [] })
+        setLoading(false)
+        return
+      }
+
+      // Check if this is a Studio dashboard (legacy sections/widgets)
+      const isStudioDashboard = sharedData.dashboardType === 'studio' ||
                                  (sharedData.dashboard && sharedData.dashboard.metadata && sharedData.dashboard.sections)
-      
-      console.log('Dashboard type check:', {
-        dashboardType: sharedData.dashboardType,
-        hasDashboardMetadata: !!(sharedData.dashboard?.metadata),
-        hasDashboardSections: !!(sharedData.dashboard?.sections),
-        isStudioDashboard: isStudioDashboard
-      })
 
       if (isStudioDashboard) {
-        console.log('Detected Studio dashboard, rendering SharedStudioDashboardView')
-        // Store Studio dashboard data for rendering
         setStudioDashboardData(sharedData)
         setLoading(false)
         return
       }
-      
+
       console.log('Regular dashboard detected, rendering standard view')
 
       // Initialize data from shared dashboard
@@ -301,7 +302,50 @@ function SharedDashboard() {
   const currentDate = new Date()
   const monthYear = currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
 
-  // Render Studio dashboard if it's a Studio dashboard
+  // Render AI Visual Builder (DashboardSpec) public view
+  if (dashboardSpecData && !loading) {
+    const title = dashboardSpecData.spec?.title || dashboardSpecData.spec?.metadata?.name || 'Shared Dashboard'
+    const wrapperClass = fullScreen
+      ? 'fixed inset-0 z-40 bg-gray-50 flex flex-col overflow-hidden'
+      : 'min-h-screen bg-gray-50'
+    return (
+      <div className={wrapperClass}>
+        {!fullScreen && <Navbar />}
+        <div className={fullScreen ? 'flex-1 flex flex-col overflow-hidden p-4' : 'max-w-7xl mx-auto px-4 py-6'}>
+          <div className="flex items-center justify-between gap-4 mb-4 flex-shrink-0">
+            <div>
+              {!fullScreen && (
+                <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <p className="text-blue-800 text-sm">
+                    Shared dashboard (view-only, no login required)
+                  </p>
+                </div>
+              )}
+              <h1 className="text-2xl font-bold text-gray-900">{title}</h1>
+            </div>
+            <button
+              type="button"
+              onClick={() => setFullScreen((f) => !f)}
+              className="px-3 py-1.5 text-sm rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 shrink-0"
+              title={fullScreen ? 'Exit full screen' : 'Full screen'}
+            >
+              {fullScreen ? 'Exit full screen' : 'Full screen'}
+            </button>
+          </div>
+          <div className={fullScreen ? 'flex-1 min-h-0 overflow-auto' : undefined}>
+            <DashboardRenderer
+              spec={dashboardSpecData.spec}
+              data={dashboardSpecData.data}
+              filterValues={filterValues}
+              onFilterChange={setFilterValues}
+            />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Render Studio dashboard if it's a Studio dashboard (legacy)
   if (studioDashboardData && !loading) {
     return <SharedStudioDashboardView sharedData={studioDashboardData} />
   }

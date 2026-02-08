@@ -10,6 +10,10 @@ import Navbar from '../../components/Navbar'
  * @param {Function} props.onPageChange - Callback when page changes
  * @param {Function} props.onSave - Callback to save app
  * @param {Function} props.onPublish - Callback to publish app
+ * @param {Function} props.onOpenDataSource - Callback to open Data Source settings (optional)
+ * @param {Function} props.onOpenDataMetadata - Callback to open Data & Metadata viewer (optional)
+ * @param {Function} props.onOpenAiPrompt - Callback to open AI add filters/widgets (optional)
+ * @param {Function} props.onStartFromScratch - Callback to discard and open new app (optional)
  * @param {boolean} props.isPublished - Whether app is in published (view-only) mode
  * @param {boolean} props.isSaving - Whether save is in progress
  */
@@ -21,6 +25,10 @@ export default function AppShell({
   onPublish,
   onDuplicate,
   onSaveAsTemplate,
+  onOpenDataSource,
+  onOpenDataMetadata,
+  onOpenAiPrompt,
+  onStartFromScratch,
   isPublished = false,
   isSaving = false,
   children
@@ -64,6 +72,16 @@ export default function AppShell({
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                 </svg>
               </button>
+              {onStartFromScratch && (
+                <button
+                  type="button"
+                  onClick={onStartFromScratch}
+                  className="text-sm text-gray-500 hover:text-blue-600 transition-colors"
+                  title="Discard and start a new app"
+                >
+                  Start from scratch
+                </button>
+              )}
               <div>
                 <h1 className="text-2xl font-bold text-gray-900">{appTitle}</h1>
                 {isPublished && (
@@ -90,6 +108,45 @@ export default function AppShell({
             {/* Actions */}
             {!isPublished && (
               <div className="flex items-center gap-2">
+                {onOpenDataSource && (
+                  <button
+                    type="button"
+                    onClick={onOpenDataSource}
+                    className="inline-flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium text-sm"
+                    title="Configure data source / API"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
+                    </svg>
+                    Data source
+                  </button>
+                )}
+                {onOpenDataMetadata && (
+                  <button
+                    type="button"
+                    onClick={onOpenDataMetadata}
+                    className="inline-flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium text-sm"
+                    title="View source data and metadata"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    Data &amp; Metadata
+                  </button>
+                )}
+                {onOpenAiPrompt && (
+                  <button
+                    type="button"
+                    onClick={onOpenAiPrompt}
+                    className="inline-flex items-center gap-2 px-3 py-2 bg-emerald-100 text-emerald-800 rounded-lg hover:bg-emerald-200 transition-colors font-medium text-sm"
+                    title="Add filters and widgets using natural language"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                    </svg>
+                    Add with AI
+                  </button>
+                )}
                 {onDuplicate && (
                   <button
                     onClick={onDuplicate}

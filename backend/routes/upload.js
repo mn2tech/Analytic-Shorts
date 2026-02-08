@@ -85,9 +85,10 @@ const storage = multer.diskStorage({
   },
 })
 
+const FILE_SIZE_LIMIT_MB = 500
 const upload = multer({
   storage: storage,
-  limits: { fileSize: 500 * 1024 * 1024 }, // 500MB limit (supports Enterprise plan, actual limit enforced by usageLimits middleware based on user's plan)
+  limits: { fileSize: FILE_SIZE_LIMIT_MB * 1024 * 1024 }, // 500MB (actual limit may be enforced by usageLimits per plan)
   fileFilter: (req, file, cb) => {
     const allowedTypes = [
       'text/csv',
@@ -222,6 +223,14 @@ router.post('/', getUserFromToken, upload.single('file'), checkUploadLimitWithTi
     }
     res.status(500).json({ error: error.message || 'Failed to process file' })
   }
+})
+
+// Handle multer file size limit (multer calls next(err) before route handler runs)
+router.use((err, req, res, next) => {
+  if (err.code === 'LIMIT_FILE_SIZE') {
+    return res.status(413).json({ error: `File size limit exceeded (max ${FILE_SIZE_LIMIT_MB} MB)` })
+  }
+  next(err)
 })
 
 module.exports = router

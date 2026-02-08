@@ -6,6 +6,7 @@ import { parseNumericValue } from '../../utils/numberUtils'
 import sampleDashboardJson from '../../studio/examples/sample_dashboard.json'
 import apiClient from '../../config/api'
 import { getDashboard, saveDashboard } from '../../studio/api/studioClient'
+import { isDashboardSpec } from '../../studio/utils/schemaUtils'
 import { generateShareId, saveSharedDashboard, getShareableUrl, copyToClipboard } from '../../utils/shareUtils'
 
 // Studio Widget Components
@@ -405,6 +406,11 @@ function StudioDashboard() {
                   throw new Error('Invalid dashboard schema format')
                 }
               }
+              // DashboardSpec (AI Visual Builder) dashboards: open in Studio for editing
+              if (isDashboardSpec(parsedSchema)) {
+                navigate(`/studio?open=${dashboardId}`, { replace: true })
+                return
+              }
               console.log('Parsed schema:', parsedSchema)
               loadDashboardConfig(parsedSchema)
               setCurrentDashboardId(dashboardId)
@@ -468,39 +474,33 @@ function StudioDashboard() {
     loadDashboard()
   }, [dashboardId])
 
-  // Extract datasetId from data_source endpoint
-  const getDatasetId = () => {
-    if (!dashboard?.data_source?.endpoint) return null
-    const endpoint = dashboard.data_source.endpoint
-    // Extract dataset ID from endpoint like "/api/example/sales" -> "sales"
+  // Get data source: built-in datasetId or custom API URL
+  const getDataSource = () => {
+    if (!dashboard?.data_source?.endpoint) return { datasetId: null, customEndpoint: null }
+    const endpoint = String(dashboard.data_source.endpoint).trim()
+    const isCustomUrl = endpoint.startsWith('http://') || endpoint.startsWith('https://')
+    if (isCustomUrl) return { datasetId: null, customEndpoint: endpoint }
     const match = endpoint.match(/\/api\/example\/(.+)$/)
-    if (match) {
-      return match[1]
-    }
-    // For uploaded data, we might need a different approach
-    return null
+    return { datasetId: match ? match[1] : null, customEndpoint: null }
   }
 
   // Load dropdown options from API
   useEffect(() => {
     if (!dashboard?.filters || !dashboard?.data_source) return
 
-    const datasetId = getDatasetId()
-    if (!datasetId) {
-      // Fallback to extracting from data if no datasetId
-      return
-    }
+    const { datasetId, customEndpoint } = getDataSource()
+    if (!datasetId && !customEndpoint) return
 
     const loadDropdownOptions = async () => {
       const optionsMap = {}
-      
+      const ds = getDataSource()
       for (const filter of dashboard.filters) {
         if (filter.type === 'dropdown' && filter.dimension) {
           try {
-            console.log(`Loading options for filter ${filter.id} (${filter.dimension}) from dataset ${datasetId}`)
             const response = await apiClient.get('/api/studio/options', {
               params: {
-                datasetId: datasetId,
+                ...(ds.datasetId ? { datasetId: ds.datasetId } : {}),
+                ...(ds.customEndpoint ? { customEndpoint: ds.customEndpoint } : {}),
                 field: filter.dimension
               }
             })
