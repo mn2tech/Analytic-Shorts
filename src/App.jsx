@@ -1,8 +1,9 @@
-import { Routes, Route, useLocation, Navigate, useParams } from 'react-router-dom'
+import { Routes, Route, Outlet, useLocation, Navigate, useParams } from 'react-router-dom'
 import { useEffect } from 'react'
 import { AuthProvider } from './contexts/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
 import BrandWatermark from './components/BrandWatermark'
+import AppLayout from './layouts/AppLayout'
 import Home from './pages/Home'
 import Login from './pages/Login'
 import Signup from './pages/Signup'
@@ -18,10 +19,16 @@ import StudioDashboard from './pages/studio/StudioDashboard'
 import StudioAppView from './pages/studio/StudioAppView'
 import AiVisualBuilderStudio from './pages/AiVisualBuilderStudio'
 
-/** Redirect /studio/app/:id to /studio?open=:id so AI Visual Builder can load that dashboard. */
+/** Redirect /studio to /studio/chat, preserving search (e.g. ?open=:id). */
+function StudioIndexRedirect() {
+  const location = useLocation()
+  return <Navigate to={`/studio/chat${location.search || ''}`} replace />
+}
+
+/** Redirect /studio/app/:id to /studio/chat?open=:id so AI Visual Builder can load that dashboard. */
 function NavigateToStudioWithOpen() {
   const { id } = useParams()
-  return <Navigate to={{ pathname: '/studio', search: id ? `?open=${id}` : '' }} replace />
+  return <Navigate to={{ pathname: '/studio/chat', search: id ? `?open=${id}` : '' }} replace />
 }
 
 // Track page views for Google Analytics
@@ -45,74 +52,90 @@ function App() {
     <AuthProvider>
       <PageViewTracker />
       <Routes>
-        <Route path="/" element={<Home />} />
+        {/* Routes WITHOUT layout (no sidebar): login, signup, public share, app view. SharedDashboard stays minimal. */}
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
-        <Route path="/pricing" element={<Pricing />} />
-        <Route path="/help" element={<Help />} />
-        <Route path="/privacy" element={<Privacy />} />
-        <Route path="/terms" element={<Terms />} />
-        <Route
-          path="/admin/analytics"
-          element={
-            <ProtectedRoute>
-              <AdminAnalytics />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/dashboards"
-          element={
-            <ProtectedRoute>
-              <MyDashboards />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/dashboard"
-          element={
-            <ProtectedRoute>
-              <Dashboard />
-            </ProtectedRoute>
-          }
-        />
         <Route path="/dashboard/shared/:shareId" element={<SharedDashboard />} />
-        <Route
-          path="/ai-visual-builder"
-          element={
-            <ProtectedRoute>
-              <AiVisualBuilderStudio />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/studio"
-          element={
-            <ProtectedRoute>
-              <AiVisualBuilderStudio />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/studio/app/:id"
-          element={
-            <ProtectedRoute>
-              <NavigateToStudioWithOpen />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/studio/:dashboardId"
-          element={
-            <ProtectedRoute>
-              <StudioDashboard />
-            </ProtectedRoute>
-          }
-        />
-        <Route path="/ai-visual-builder" element={<Navigate to="/studio" replace />} />
         <Route path="/apps/:id" element={<StudioAppView />} />
         <Route path="/apps/:id/:pageId" element={<StudioAppView />} />
-        {/* Network view removed */}
+        <Route path="/ai-visual-builder" element={<Navigate to="/studio" replace />} />
+
+        {/* Routes WITH layout (sidebar + Navbar + Footer) */}
+        <Route element={<AppLayout />}>
+          <Route path="/" element={<Home />} />
+          <Route path="/pricing" element={<Pricing />} />
+          <Route path="/help" element={<Help />} />
+          <Route path="/privacy" element={<Privacy />} />
+          <Route path="/terms" element={<Terms />} />
+          <Route
+            path="/admin/analytics"
+            element={
+              <ProtectedRoute>
+                <AdminAnalytics />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/dashboards"
+            element={
+              <ProtectedRoute>
+                <MyDashboards />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute>
+                <Dashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/studio" element={<Outlet />}>
+            <Route index element={<StudioIndexRedirect />} />
+            <Route
+              path="app/:id"
+              element={
+                <ProtectedRoute>
+                  <NavigateToStudioWithOpen />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="chat"
+              element={
+                <ProtectedRoute>
+                  <AiVisualBuilderStudio />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="data"
+              element={
+                <ProtectedRoute>
+                  <AiVisualBuilderStudio />
+                </ProtectedRoute>
+              }
+            />
+            <Route path="build" element={<Navigate to="/studio/preview" replace />} />
+            <Route
+              path="preview"
+              element={
+                <ProtectedRoute>
+                  <AiVisualBuilderStudio />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path=":dashboardId"
+              element={
+                <ProtectedRoute>
+                  <StudioDashboard />
+                </ProtectedRoute>
+              }
+            />
+          </Route>
+        </Route>
       </Routes>
       <BrandWatermark />
     </AuthProvider>
@@ -120,4 +143,3 @@ function App() {
 }
 
 export default App
-

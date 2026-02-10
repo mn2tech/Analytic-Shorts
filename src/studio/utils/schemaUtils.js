@@ -15,6 +15,42 @@ export function isDashboardSpec(schema) {
 }
 
 /**
+ * Get effective filters, kpis, and charts from a DashboardSpec.
+ * If spec has 2+ tabs, aggregates from all tabs; otherwise uses top-level.
+ * Used for summary text and "has content" checks.
+ */
+export function getSpecContent(spec) {
+  if (!spec || typeof spec !== 'object') return { filters: [], kpis: [], charts: [] }
+  const tabs = spec.tabs
+  if (Array.isArray(tabs) && tabs.length >= 2) {
+    const filters = []
+    const kpis = []
+    const charts = []
+    tabs.forEach((t) => {
+      if (t && typeof t === 'object') {
+        if (Array.isArray(t.filters)) filters.push(...t.filters)
+        if (Array.isArray(t.kpis)) kpis.push(...t.kpis)
+        if (Array.isArray(t.charts)) charts.push(...t.charts)
+      }
+    })
+    return { filters, kpis, charts }
+  }
+  return {
+    filters: Array.isArray(spec.filters) ? spec.filters : [],
+    kpis: Array.isArray(spec.kpis) ? spec.kpis : [],
+    charts: Array.isArray(spec.charts) ? spec.charts : []
+  }
+}
+
+/**
+ * True if the DashboardSpec has at least one filter, KPI, or chart (top-level or in tabs).
+ */
+export function hasSpecContent(spec) {
+  const { filters, kpis, charts } = getSpecContent(spec)
+  return filters.length + kpis.length + charts.length > 0
+}
+
+/**
  * Normalize a dashboard schema to ensure it has pages structure (legacy) or pass through DashboardSpec.
  * @param {Object} schema - Dashboard schema (v1.0, v2.0, or DashboardSpec)
  * @returns {Object} Normalized schema

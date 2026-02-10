@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import Navbar from '../../components/Navbar'
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { parseNumericValue } from '../../utils/numberUtils'
 import sampleDashboardJson from '../../studio/examples/sample_dashboard.json'
@@ -1135,7 +1134,6 @@ function StudioDashboard() {
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50">
-        <Navbar />
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
           <div className="flex items-center justify-center h-64">
             <div className="text-gray-500">Loading dashboard...</div>
@@ -1148,7 +1146,6 @@ function StudioDashboard() {
   if (!dashboard) {
     return (
       <div className="min-h-screen bg-gray-50">
-        <Navbar />
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
           <div className="text-center text-gray-500">
             <p>Dashboard not found</p>
@@ -1172,8 +1169,6 @@ function StudioDashboard() {
   try {
     return (
       <div className="min-h-screen bg-gray-50">
-      <Navbar />
-      
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {/* Header */}
         <div className="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center">
@@ -1474,7 +1469,6 @@ function StudioDashboard() {
     console.error('Error stack:', error.stack)
     return (
       <div className="min-h-screen bg-gray-50">
-        <Navbar />
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
           <div className="bg-red-50 border border-red-200 rounded-lg p-6">
             <h2 className="text-xl font-semibold text-red-900 mb-2">Error Rendering Dashboard</h2>

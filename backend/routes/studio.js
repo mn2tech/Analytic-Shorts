@@ -258,7 +258,10 @@ const datasetRegistry = {
   'cdc-health': { type: 'api', endpoint: '/api/example/cdc-health' },
   'government-budget': { type: 'api', endpoint: '/api/example/government-budget' },
   'usaspending/live': { type: 'api', endpoint: '/api/example/usaspending/live' },
-  'treasury': { type: 'api', endpoint: '/api/example/treasury' }
+  'treasury': { type: 'api', endpoint: '/api/example/treasury' },
+  'today-snapshot': { type: 'api', endpoint: '/api/example/today-snapshot' },
+  'revenue-trends': { type: 'api', endpoint: '/api/example/revenue-trends' },
+  'alters-insights': { type: 'api', endpoint: '/api/example/alters-insights' }
 }
 
 // Helper to parse numeric values

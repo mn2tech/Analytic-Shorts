@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import Navbar from '../components/Navbar'
 
 function Help() {
   const [openSection, setOpenSection] = useState(null)
@@ -24,6 +23,35 @@ function Help() {
         {
           q: 'How do I get started with public data?',
           a: 'On the home page, scroll down to "Or Explore Public Data APIs" section. Click on any API dataset (USA Spending, Unemployment Rate, CDC Health Data, Government Budget) to instantly load a real-time dashboard and see how the platform works.'
+        }
+      ]
+    },
+    {
+      category: 'Studio & Report Chat',
+      questions: [
+        {
+          q: 'What is Studio?',
+          a: 'Studio is an AI-powered report builder. Open it from the sidebar under "Studio" (or "Report Chat"). You work in one place with three tabs: Data, Report Chat, and Preview—no need to switch pages.'
+        },
+        {
+          q: 'What are the three tabs (Data, Report Chat, Preview)?',
+          a: 'Data: Choose a dataset (examples or your upload), upload a file, or view schema. Report Chat: Describe the report you want in plain language; the AI generates charts, KPIs, and filters. Preview: See your report live, adjust style with the style dock, and use Save / Share in the header.'
+        },
+        {
+          q: 'How do I build a report with Report Chat?',
+          a: 'Select or upload data in the Data tab first. Then open the Report Chat tab, type what you want (e.g. "Executive summary of this dataset" or "Top 5 categories by value"), and click Send. The report appears in the Preview tab; you can keep chatting to refine it.'
+        },
+        {
+          q: 'Where do I save or share my report?',
+          a: 'Use the header buttons: "Save" saves the report to your account. "Share" copies a link so others can view it (save first). "Public link" gives a shareable URL. These are available on every Studio tab (Data, Report Chat, Preview).'
+        },
+        {
+          q: 'What is the Data tab for?',
+          a: 'The Data tab lets you pick a dataset (example datasets or your uploaded file), upload a new file (CSV/Excel), and view the schema. Data Lake (save and reuse datasets) is coming soon.'
+        },
+        {
+          q: 'What is the Preview tab?',
+          a: 'The Preview tab shows your generated report—charts, KPIs, and filters. You can change theme and layout in the Style dock on the right. If nothing is there yet, use Report Chat to generate a report first.'
         }
       ]
     },
@@ -127,7 +155,6 @@ function Help() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <Navbar />
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="text-center mb-12">
           <h1 className="text-4xl font-bold text-gray-900 mb-4">Help Center</h1>
@@ -137,7 +164,7 @@ function Help() {
         </div>
 
         {/* Quick Links */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-12">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-12">
           <Link
             to="/"
             className="bg-white rounded-lg shadow-sm p-6 hover:shadow-md transition-shadow text-center"
@@ -149,6 +176,19 @@ function Help() {
             </div>
             <h3 className="font-semibold text-gray-900 mb-2">Get Started</h3>
             <p className="text-sm text-gray-600">Upload your first file</p>
+          </Link>
+
+          <Link
+            to="/studio/chat"
+            className="bg-white rounded-lg shadow-sm p-6 hover:shadow-md transition-shadow text-center"
+          >
+            <div className="w-12 h-12 bg-violet-100 rounded-full flex items-center justify-center mx-auto mb-3">
+              <svg className="w-6 h-6 text-violet-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+              </svg>
+            </div>
+            <h3 className="font-semibold text-gray-900 mb-2">Studio / Report Chat</h3>
+            <p className="text-sm text-gray-600">Build reports with AI</p>
           </Link>
 
           <Link

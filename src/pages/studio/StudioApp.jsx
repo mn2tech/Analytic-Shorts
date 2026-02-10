@@ -474,6 +474,7 @@ export default function StudioApp() {
                 data={data}
                 filterValues={filterValues}
                 onFilterChange={setFilterValues}
+                onFilterOrderChange={(newFilters) => setSchema((s) => (s ? { ...s, filters: newFilters } : null))}
               />
             </div>
           </div>

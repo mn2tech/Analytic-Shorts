@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { parseNumericValue } from '../utils/numberUtils'
-import Navbar from '../components/Navbar'
 import Loader from '../components/Loader'
 import DashboardCharts from '../components/DashboardCharts'
 import AdvancedDashboard from '../components/AdvancedDashboard'
@@ -789,7 +788,6 @@ function Dashboard() {
     console.log('Dashboard: Still loading. Data:', data, 'Has initialized:', hasInitialized.current)
     return (
       <div className="min-h-screen bg-gray-50">
-        <Navbar />
         <Loader />
       </div>
     )
@@ -799,7 +797,6 @@ function Dashboard() {
   if (noDataReason) {
     return (
       <div className="min-h-screen bg-gray-50">
-        <Navbar />
         <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
           <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-8 text-center">
             <div className="w-14 h-14 mx-auto mb-4 rounded-full bg-gray-100 flex items-center justify-center">
@@ -853,7 +850,6 @@ function Dashboard() {
     
     return (
       <div className="min-h-screen bg-gray-50">
-        <Navbar />
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
           <div className="bg-red-50 border-2 border-red-300 rounded-lg p-8">
             <div className="text-center mb-6">
@@ -920,7 +916,6 @@ function Dashboard() {
       console.log('Metadata update in progress - showing loading state to prevent blank page')
       return (
         <div className="min-h-screen bg-gray-50">
-          <Navbar />
           <Loader />
         </div>
       )
@@ -943,7 +938,6 @@ function Dashboard() {
       
       return (
         <div className="min-h-screen bg-gray-50">
-          <Navbar />
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
             <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-8">
               <div className="text-center mb-6">
@@ -1045,7 +1039,6 @@ function Dashboard() {
     // If not initialized yet, show loading
     return (
       <div className="min-h-screen bg-gray-50">
-        <Navbar />
         <Loader />
       </div>
     )
@@ -1076,7 +1069,6 @@ function Dashboard() {
     
     return (
       <div className="min-h-screen bg-gray-50">
-        <Navbar />
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
           <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-8">
             <div className="text-center mb-6">
@@ -1389,7 +1381,6 @@ function Dashboard() {
     
     return (
       <div className="min-h-screen bg-gray-50">
-        <Navbar />
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
           <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-8">
             <div className="text-center mb-6">
@@ -1448,7 +1439,6 @@ function Dashboard() {
       {/* Analytics Watermark Pattern */}
       <div className="analytics-watermark"></div>
       <div className="analytics-watermark-icons"></div>
-      <Navbar />
       
       {/* Date Range Slider and Network View Button - Top of Dashboard */}
       <div className="bg-white border-b border-gray-200 shadow-sm">

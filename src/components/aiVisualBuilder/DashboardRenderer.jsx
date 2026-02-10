@@ -4,12 +4,10 @@
  * Date range filters use a dual-thumb date slider.
  */
 
-import { useMemo, useState, useEffect, useCallback, useRef } from 'react'
+import { useMemo, useState, useEffect, useCallback, useRef, memo } from 'react'
 import GridLayout, { WidthProvider } from 'react-grid-layout/legacy'
 import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
-import html2canvas from 'html2canvas'
-import { saveAs } from 'file-saver'
 
 const ResponsiveGridLayout = WidthProvider(GridLayout)
 import {
@@ -110,10 +108,6 @@ function isGridLayout(layout) {
 const CHART_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444', '#6366f1', '#14b8a6']
 const CHART_COLORS_MINIMAL = ['#4b5563', '#6b7280', '#9ca3af', '#374151', '#6b7280', '#9ca3af', '#4b5563', '#6b7280']
 const CHART_COLORS_PASTEL = ['#93c5fd', '#c4b5fd', '#f9a8d4', '#fcd34d', '#6ee7b7', '#fca5a5', '#a5b4fc', '#67e8f9']
-const CHART_TICK_FONT_SIZE = 16
-const CHART_AXIS_LABEL_FONT_SIZE = 14
-const CHART_DATA_LABEL_FONT_SIZE = 18
-
 // Sheen/gloss gradient for bars: diagonal highlight streak (state-of-the-art look)
 function BarSheenGradient({ id, baseColor = CHART_COLORS[0] }) {
   return (
@@ -187,6 +181,10 @@ function applyFilters(data, filters, filterValues) {
       if (value === 'All') continue
       const field = resolveFieldName(firstRow, f.field) || f.field
       out = out.filter((row) => String(row[field]) === String(value))
+    } else if (f.type === 'checkbox' && Array.isArray(value) && value.length > 0) {
+      const field = resolveFieldName(firstRow, f.field) || f.field
+      const set = new Set(value.map((v) => String(v)))
+      out = out.filter((row) => set.has(String(row[field] ?? '')))
     } else if (f.type === 'number_range' && typeof value === 'object' && value.min != null && value.max != null) {
       const field = resolveFieldName(firstRow, f.field) || f.field
       out = out.filter((row) => {
@@ -303,21 +301,45 @@ function getMeasureLabel(chart) {
   return `${aggLabel} of ${field}`
 }
 
-// Extended year range for date sliders when data is year-like (e.g. Super Bowl 1967–2025)
-const DATE_RANGE_YEAR_FLOOR = 1966
-const DATE_RANGE_YEAR_CEILING = 2025
+// When filtered data has one row, return { label, value } for a display field (e.g. Winner) for the chart card
+function getSingleRowValueLabel(chart, filteredData) {
+  if (!filteredData?.length || filteredData.length !== 1) return null
+  const row = filteredData[0]
+  const dim = chart.xField || chart.dimension
+  const met = chart.yField || chart.metric || chart.field
+  const skip = new Set([dim, met, chart.stackField, chart.detailField].filter(Boolean).map((f) => resolveFieldName(row, f)))
+  if (chart.valueLabelField) {
+    const resolved = resolveFieldName(row, chart.valueLabelField)
+    const v = row[resolved]
+    if (v != null && v !== '') return { label: chart.valueLabelField, value: String(v) }
+  }
+  const prefer = ['Winner', 'Winner_name', 'Name', 'Category', 'Label']
+  for (const key of prefer) {
+    const resolved = resolveFieldName(row, key)
+    if (resolved && row[resolved] != null && row[resolved] !== '' && !skip.has(resolved)) {
+      return { label: resolved, value: String(row[resolved]) }
+    }
+  }
+  for (const key of Object.keys(row || {})) {
+    if (skip.has(key)) continue
+    const v = row[key]
+    if (v != null && v !== '' && typeof v === 'string') {
+      return { label: key, value: String(v) }
+    }
+  }
+  return null
+}
 
-// Date range slider: dual-thumb slider for min/max date from data; extends to 1966–2025 when field is year-like
+// Date range slider: dual-thumb slider for min/max date from data (uses actual data range only)
 function DateRangeSliderInline({ data, field, value, onChange, theme }) {
   const dateRange = useMemo(() => {
     if (!data?.length || !field) return { min: '', max: '', minTs: 0, maxTs: 0 }
+    const firstRow = data[0]
+    const resolvedField = resolveFieldName(firstRow, field) || field
     let minTs = Infinity
     let maxTs = -Infinity
-    let hasYearLikeValue = false
     for (const row of data) {
-      const raw = row[field]
-      const num = Number(raw)
-      if (!Number.isNaN(num) && num >= 1900 && num <= 2100 && num % 1 === 0) hasYearLikeValue = true
+      const raw = row[resolvedField]
       const t = valueToTimestamp(raw)
       if (!Number.isNaN(t)) {
         if (t < minTs) minTs = t
@@ -325,13 +347,6 @@ function DateRangeSliderInline({ data, field, value, onChange, theme }) {
       }
     }
     if (minTs === Infinity || maxTs === -Infinity) return { min: '', max: '', minTs: 0, maxTs: 0 }
-    // When data has year-like values, extend slider range so user can select full picture (e.g. 1966–2025)
-    if (hasYearLikeValue) {
-      const floorTs = new Date(DATE_RANGE_YEAR_FLOOR, 0, 1).getTime()
-      const ceilingTs = new Date(DATE_RANGE_YEAR_CEILING, 0, 1).getTime()
-      minTs = Math.min(minTs, floorTs)
-      maxTs = Math.max(maxTs, ceilingTs)
-    }
     return {
       min: new Date(minTs).toISOString().split('T')[0],
       max: new Date(maxTs).toISOString().split('T')[0],
@@ -558,131 +573,105 @@ function BarChartFilterPopover({ chartId, dimension, metric, detailField, aggreg
   )
 }
 
-export default function DashboardRenderer({ spec, data, filterValues, onFilterChange, onLayoutChange, onRemoveWidget, onChartOptionChange }) {
+function DashboardRenderer({ spec, data, dataByDatasetId, defaultDatasetId, availableDatasetIds, filterValues, onFilterChange, onLayoutChange, onRemoveWidget, onChartOptionChange, onFilterOrderChange, onTabDatasetChange }) {
   const [localFilters, setLocalFilters] = useState({})
   const [chartFilter, setChartFilter] = useState(null)
   const [openBarFilterChartId, setOpenBarFilterChartId] = useState(null)
   const [openPieFilterChartId, setOpenPieFilterChartId] = useState(null)
   const [insightCollapsed, setInsightCollapsed] = useState(false)
   const [filtersCollapsed, setFiltersCollapsed] = useState(false)
-  const [dateSortOrder, setDateSortOrder] = useState('') // '' | 'asc' | 'desc'
+  const [draggedFilterId, setDraggedFilterId] = useState(null)
+  const [dragOverFilterId, setDragOverFilterId] = useState(null)
+  const [activeTabIndex, setActiveTabIndex] = useState(0)
   const chartRefs = useRef({})
+  const filterDropTargetRef = useRef(null)
+
+  const tabs = useMemo(() => (spec?.tabs && spec.tabs.length >= 2 ? spec.tabs : null), [spec?.tabs])
+  const safeTabIndex = tabs ? Math.min(activeTabIndex, tabs.length - 1) : 0
+  const currentTab = tabs?.[safeTabIndex]
+  const defaultId = defaultDatasetId || (dataByDatasetId && Object.keys(dataByDatasetId)[0]) || null
+  const dataForTab = useMemo(() => {
+    if (dataByDatasetId && currentTab?.dataset != null) {
+      const id = currentTab.dataset
+      return dataByDatasetId[id] ?? dataByDatasetId[defaultId] ?? data ?? []
+    }
+    if (dataByDatasetId && defaultId) return dataByDatasetId[defaultId] ?? data ?? []
+    return data ?? []
+  }, [data, dataByDatasetId, defaultId, currentTab?.dataset])
+
+  const currentSpec = useMemo(() => {
+    if (!spec) return null
+    if (tabs && tabs[safeTabIndex]) {
+      const t = tabs[safeTabIndex]
+      return {
+        ...spec,
+        filters: t.filters ?? [],
+        kpis: t.kpis ?? [],
+        charts: t.charts ?? [],
+        layout: t.layout ?? []
+      }
+    }
+    return spec
+  }, [spec, tabs, safeTabIndex])
 
   const filterState = useMemo(() => ({ ...localFilters, ...filterValues }), [localFilters, filterValues])
 
-  const [exportError, setExportError] = useState(null)
-  const handleExportChart = useCallback(async (chartId, title) => {
-    setExportError(null)
-    const el = chartRefs.current[chartId]
-    if (!el) {
-      setExportError('Chart not ready. Try again in a moment.')
-      return
-    }
-    const filename = `${(title || chartId).replace(/[^a-z0-9-_]/gi, '_')}.png`
+  const [layout, setLayout] = useState(() => {
+    if (!spec) return []
+    const t = spec.tabs?.[safeTabIndex]
+    const l = t ? (t.layout ?? []) : (spec.layout ?? [])
+    const kpis = t ? (t.kpis ?? []) : (spec.kpis ?? [])
+    const charts = t ? (t.charts ?? []) : (spec.charts ?? [])
+    return isGridLayout(l) && l.length > 0 ? l : buildDefaultLayout({ kpis, charts, layout: l })
+  })
 
-    const trySvgExport = () => {
-      const svg = el.querySelector('svg')
-      if (!svg) return Promise.resolve(false)
-      return new Promise((resolve, reject) => {
-        try {
-          const bbox = svg.getBBox()
-          const attrW = svg.getAttribute('width')
-          const attrH = svg.getAttribute('height')
-          const numW = attrW != null ? parseFloat(attrW, 10) : NaN
-          const numH = attrH != null ? parseFloat(attrH, 10) : NaN
-          const container = svg.parentElement
-          const cw = container?.offsetWidth || el.offsetWidth
-          const ch = container?.offsetHeight || el.offsetHeight
-          const w = Math.max(1, bbox.width || (Number.isFinite(numW) ? numW : svg.width?.baseVal?.value) || cw || 800)
-          const h = Math.max(1, bbox.height || (Number.isFinite(numH) ? numH : svg.height?.baseVal?.value) || ch || 400)
-          const clone = svg.cloneNode(true)
-          clone.setAttribute('width', w)
-          clone.setAttribute('height', h)
-          if (!clone.getAttribute('xmlns')) clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
-          const svgData = new XMLSerializer().serializeToString(clone)
-          const blob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' })
-          const url = URL.createObjectURL(blob)
-          const img = new Image()
-          img.onload = () => {
-            try {
-              const canvas = document.createElement('canvas')
-              canvas.width = w
-              canvas.height = h
-              const ctx = canvas.getContext('2d')
-              ctx.fillStyle = '#ffffff'
-              ctx.fillRect(0, 0, w, h)
-              ctx.drawImage(img, 0, 0)
-              URL.revokeObjectURL(url)
-              canvas.toBlob((b) => {
-                if (b) saveAs(b, filename)
-                else setExportError('Export failed.')
-                resolve(true)
-              }, 'image/png')
-            } catch (e) {
-              URL.revokeObjectURL(url)
-              reject(e)
-            }
-          }
-          img.onerror = () => {
-            URL.revokeObjectURL(url)
-            reject(new Error('SVG load failed'))
-          }
-          img.src = url
-        } catch (e) {
-          reject(e)
-        }
-      })
-    }
-
-    try {
-      const usedSvg = await trySvgExport()
-      if (!usedSvg) {
-        const canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#ffffff' })
-        canvas.toBlob((blob) => {
-          if (blob) saveAs(blob, filename)
-          else setExportError('Export failed.')
-        }, 'image/png')
-      }
-    } catch (e) {
-      console.error('Export chart failed:', e)
-      setExportError(e?.message || 'Export failed. Try again.')
-    }
-  }, [])
-
-  const [layout, setLayout] = useState(() => (spec && isGridLayout(spec.layout) ? spec.layout : buildDefaultLayout(spec)))
+  // Sync layout when spec or active tab changes. Use stable deps to avoid effect loop (currentSpec is a new object every render).
   useEffect(() => {
     if (!spec) return
-    if (isGridLayout(spec.layout)) {
-      setLayout(spec.layout)
-    } else {
-      setLayout(buildDefaultLayout(spec))
-    }
-  }, [spec])
+    const t = tabs && tabs[safeTabIndex] ? tabs[safeTabIndex] : null
+    const layoutFromSpec = t ? (t.layout ?? []) : (spec.layout ?? [])
+    const kpis = t ? (t.kpis ?? []) : (spec.kpis ?? [])
+    const charts = t ? (t.charts ?? []) : (spec.charts ?? [])
+    const nextLayout = isGridLayout(layoutFromSpec) && layoutFromSpec.length > 0 ? layoutFromSpec : buildDefaultLayout({ kpis, charts, layout: layoutFromSpec })
+    setLayout((prev) => {
+      if (prev === nextLayout) return prev
+      if (Array.isArray(prev) && prev.length === nextLayout.length && nextLayout.every((n, i) => prev[i] && n.i === prev[i].i && n.w === prev[i].w && n.h === prev[i].h)) return prev
+      return nextLayout
+    })
+  }, [spec, tabs, safeTabIndex])
+  const layoutRef = useRef(layout)
+  layoutRef.current = layout
   const handleLayoutChange = useCallback(
     (newLayout) => {
+      if (!Array.isArray(newLayout) || newLayout.length === 0) return
+      const prev = layoutRef.current
+      const same = Array.isArray(prev) && prev.length === newLayout.length &&
+        newLayout.every((n, i) => prev[i] && n.i === prev[i].i && n.x === prev[i].x && n.y === prev[i].y && n.w === prev[i].w && n.h === prev[i].h)
       setLayout(newLayout)
-      onLayoutChange?.(newLayout)
+      if (!same && typeof onLayoutChange === 'function') {
+        if (tabs && safeTabIndex != null) onLayoutChange(newLayout, safeTabIndex)
+        else onLayoutChange(newLayout)
+      }
     },
-    [onLayoutChange]
+    [onLayoutChange, tabs, safeTabIndex]
   )
 
   const handleRemoveWidget = useCallback(
     (id, type) => {
       const newLayout = layout.filter((item) => item.i !== id)
       setLayout(newLayout)
-      onLayoutChange?.(newLayout)
-      onRemoveWidget?.(id, type)
+      handleLayoutChange(newLayout)
+      if (typeof onRemoveWidget === 'function') {
+        if (tabs && safeTabIndex != null) onRemoveWidget(id, type, safeTabIndex)
+        else onRemoveWidget(id, type)
+      }
     },
-    [layout, onLayoutChange, onRemoveWidget]
+    [layout, handleLayoutChange, onRemoveWidget, tabs, safeTabIndex]
   )
 
   const baseFilteredData = useMemo(
-    () => applyFilters(data, spec?.filters || [], filterState),
-    [data, spec?.filters, filterState]
-  )
-  const dateFilterField = useMemo(
-    () => spec?.filters?.find((f) => f.type === 'date_range')?.field || null,
-    [spec?.filters]
+    () => applyFilters(dataForTab, currentSpec?.filters || [], filterState),
+    [dataForTab, currentSpec?.filters, filterState]
   )
   const filteredData = useMemo(() => {
     let out = baseFilteredData
@@ -690,16 +679,8 @@ export default function DashboardRenderer({ spec, data, filterValues, onFilterCh
       const firstRow = baseFilteredData?.[0]
       out = applyChartFilter(baseFilteredData, chartFilter, firstRow)
     }
-    if (dateSortOrder && dateFilterField && out?.length) {
-      out = [...out].sort((a, b) => {
-        const ta = valueToTimestamp(a[dateFilterField])
-        const tb = valueToTimestamp(b[dateFilterField])
-        if (Number.isNaN(ta) || Number.isNaN(tb)) return 0
-        return dateSortOrder === 'asc' ? ta - tb : tb - ta
-      })
-    }
     return out
-  }, [baseFilteredData, chartFilter, dateSortOrder, dateFilterField])
+  }, [baseFilteredData, chartFilter])
 
   const handleFilterChange = (id, value) => {
     setLocalFilters((prev) => ({ ...prev, [id]: value }))
@@ -727,15 +708,22 @@ export default function DashboardRenderer({ spec, data, filterValues, onFilterCh
   const styleOpts = spec.style || {}
   const chartColors = styleOpts.palette === 'minimal' ? CHART_COLORS_MINIMAL : styleOpts.palette === 'pastel' ? CHART_COLORS_PASTEL : CHART_COLORS
   const useBarSheen = styleOpts.barStyle !== 'flat'
+  const measureSize = styleOpts.measureSize || 'medium'
+  const chartSizes = measureSize === 'small' ? { tick: 12, axis: 11, dataLabel: 14 } : measureSize === 'large' ? { tick: 20, axis: 18, dataLabel: 22 } : { tick: 16, axis: 14, dataLabel: 18 }
+  const chartTickFontSize = chartSizes.tick
+  const chartAxisLabelFontSize = chartSizes.axis
+  const chartDataLabelFontSize = chartSizes.dataLabel
+  const chartFontFamily = styleOpts.fontFamily === 'serif' ? 'Georgia, serif' : styleOpts.fontFamily === 'mono' ? 'ui-monospace, monospace' : styleOpts.fontFamily === 'sans' ? 'system-ui, -apple-system, sans-serif' : undefined
+  const chartTextStyle = chartFontFamily ? { fontFamily: chartFontFamily } : {}
 
-  // Insight explaining the dashboard: use spec.insight or auto-generate from title/kpis/charts
+  // Insight explaining the dashboard: use currentSpec.insight or auto-generate from title/kpis/charts
   const insightText =
-    spec.insight && String(spec.insight).trim()
-      ? String(spec.insight).trim()
+    currentSpec?.insight && String(currentSpec.insight).trim()
+      ? String(currentSpec.insight).trim()
       : (() => {
           const title = spec.title ? String(spec.title).trim() : 'your data'
-          const kpis = spec.kpis || []
-          const charts = spec.charts || []
+          const kpis = currentSpec?.kpis || []
+          const charts = currentSpec?.charts || []
           const k = kpis.length
           const c = charts.length
           const parts = [`This dashboard shows ${title}.`]
@@ -751,6 +739,37 @@ export default function DashboardRenderer({ spec, data, filterValues, onFilterCh
 
   return (
     <div className="space-y-6">
+      {tabs && tabs.length >= 2 && (
+        <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 pb-2">
+          {tabs.map((tab, idx) => (
+            <div key={tab.id || idx} className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setActiveTabIndex(idx)}
+                className={`px-4 py-2 rounded-t-lg text-sm font-medium transition-colors ${
+                  safeTabIndex === idx
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                {tab.label || `Tab ${idx + 1}`}
+              </button>
+              {(availableDatasetIds?.length > 1 || (dataByDatasetId && Object.keys(dataByDatasetId).length > 1)) && onTabDatasetChange && (
+                <select
+                  value={tab.dataset ?? defaultId ?? ''}
+                  onChange={(e) => onTabDatasetChange(idx, e.target.value || null)}
+                  className="text-xs py-1 px-2 rounded border border-gray-300 bg-white text-gray-700"
+                  title="Dataset for this tab"
+                >
+                  {(availableDatasetIds && availableDatasetIds.length > 0 ? availableDatasetIds : Object.keys(dataByDatasetId || {})).map((id) => (
+                    <option key={id} value={id}>{id}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
       {spec.warnings && spec.warnings.length > 0 && (
         <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-base">
           {spec.warnings.map((w, i) => (
@@ -758,13 +777,6 @@ export default function DashboardRenderer({ spec, data, filterValues, onFilterCh
           ))}
         </div>
       )}
-      {exportError && (
-        <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-800 text-sm flex items-center justify-between gap-2">
-          <span>{exportError}</span>
-          <button type="button" onClick={() => setExportError(null)} className="shrink-0 text-red-600 hover:text-red-800" aria-label="Dismiss">×</button>
-        </div>
-      )}
-
       {/* Insight explaining the dashboard — collapsible */}
       <div className={`rounded-lg border ${cardClass}`}>
         <button
@@ -792,7 +804,7 @@ export default function DashboardRenderer({ spec, data, filterValues, onFilterCh
       </div>
 
       {/* Hint: charts are clickable for cross-filtering */}
-      {((spec.charts || []).some((ch) => ['bar', 'pie', 'line', 'area', 'stacked_bar', 'stacked_area'].includes(ch.type))) && (
+      {((currentSpec?.charts || []).some((ch) => ['bar', 'pie', 'line', 'area', 'stacked_bar', 'stacked_area'].includes(ch.type))) && (
         <p className="text-sm text-gray-500">
           Click a bar, pie segment, line, or area to filter the whole dashboard; click again or use &quot;Clear selection&quot; to reset.
         </p>
@@ -815,7 +827,7 @@ export default function DashboardRenderer({ spec, data, filterValues, onFilterCh
       )}
 
       {/* Filters row — collapsible */}
-      {spec.filters && spec.filters.length > 0 && (
+      {currentSpec?.filters && currentSpec.filters.length > 0 && (
         <div className={`rounded-lg border ${cardClass}`}>
           <button
             type="button"
@@ -832,28 +844,84 @@ export default function DashboardRenderer({ spec, data, filterValues, onFilterCh
           </button>
           {!filtersCollapsed && (
             <div className="px-4 pb-4 pt-0">
-              {dateFilterField && (
-                <div className="flex items-center gap-2 mb-3">
-                  <label className={`text-sm font-medium shrink-0 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Sort date</label>
-                  <select
-                    value={dateSortOrder}
-                    onChange={(e) => setDateSortOrder(e.target.value)}
-                    className={`text-sm rounded border px-2 py-1 ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-gray-200' : 'bg-white border-gray-300 text-gray-700'}`}
-                    title="Sort data by date"
-                  >
-                    <option value="">None</option>
-                    <option value="asc">Oldest first</option>
-                    <option value="desc">Newest first</option>
-                  </select>
-                </div>
-              )}
               <div className="flex flex-wrap gap-4 items-end">
-                {spec.filters.map((f) => (
-                  <div key={f.id} className={`flex flex-col gap-1 ${f.type === 'date_range' ? 'w-full min-w-0' : ''}`}>
+                {currentSpec.filters.map((f) => {
+                  const canDrag = !!onFilterOrderChange
+                  const isDragging = draggedFilterId === f.id
+                  const isDragOver = dragOverFilterId === f.id
+                  const handleDragStart = (e) => {
+                    if (!canDrag) return
+                    e.dataTransfer.setData('text/plain', f.id)
+                    e.dataTransfer.effectAllowed = 'move'
+                    setDraggedFilterId(f.id)
+                  }
+                  const handleDragEnd = () => {
+                    setDraggedFilterId(null)
+                    setDragOverFilterId(null)
+                    filterDropTargetRef.current = null
+                  }
+                  const handleCardDragOver = (e) => {
+                    if (!canDrag || !draggedFilterId || draggedFilterId === f.id) return
+                    e.preventDefault()
+                    e.dataTransfer.dropEffect = 'move'
+                    filterDropTargetRef.current = f.id
+                    setDragOverFilterId(f.id)
+                  }
+                  const handleCardDrop = (e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    setDragOverFilterId(null)
+                    const dropTargetId = f.id
+                    const dragId = e.dataTransfer.getData('text/plain')
+                    if (!dragId || !onFilterOrderChange || dragId === dropTargetId) return
+                    const fromIndex = currentSpec.filters.findIndex((x) => x.id === dragId)
+                    let toIndex = currentSpec.filters.findIndex((x) => x.id === dropTargetId)
+                    if (fromIndex === -1) return
+                    const newFilters = [...currentSpec.filters]
+                    const [removed] = newFilters.splice(fromIndex, 1)
+                    if (fromIndex < toIndex) toIndex--
+                    newFilters.splice(toIndex, 0, removed)
+                    onFilterOrderChange(newFilters, tabs ? safeTabIndex : undefined)
+                  }
+                  return (
+                  <div
+                    key={f.id}
+                    data-filter-id={f.id}
+                    className={`${canDrag ? 'flex flex-row items-end gap-2' : 'flex flex-col gap-1'} ${f.type === 'date_range' ? 'w-full min-w-0' : ''} ${isDragging ? 'opacity-50' : ''} ${isDragOver ? (theme === 'dark' ? 'ring-2 ring-blue-500 rounded-lg' : 'ring-2 ring-blue-400 rounded-lg') : ''}`}
+                    onDragOver={canDrag ? handleCardDragOver : undefined}
+                    onDragLeave={canDrag ? () => { setDragOverFilterId((prev) => (prev === f.id ? null : prev)) } : undefined}
+                    onDrop={canDrag ? handleCardDrop : undefined}
+                  >
+                    {canDrag && (
+                      <span
+                        draggable={true}
+                        onDragStart={handleDragStart}
+                        onDragEnd={handleDragEnd}
+                        className={`cursor-grab active:cursor-grabbing touch-none p-1 rounded ${theme === 'dark' ? 'text-gray-500 hover:text-gray-400 hover:bg-gray-700' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'}`}
+                        title="Drag to reorder"
+                        aria-label="Drag to reorder filter"
+                      >
+                        <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+                          <circle cx="9" cy="6" r="1.5" /><circle cx="15" cy="6" r="1.5" /><circle cx="9" cy="12" r="1.5" /><circle cx="15" cy="12" r="1.5" /><circle cx="9" cy="18" r="1.5" /><circle cx="15" cy="18" r="1.5" />
+                        </svg>
+                      </span>
+                    )}
+                    {onRemoveWidget && (
+                      <button
+                        type="button"
+                        onClick={() => onRemoveWidget(f.id, 'filter')}
+                        className={`flex-shrink-0 w-7 h-7 flex items-center justify-center rounded ${theme === 'dark' ? 'text-gray-400 hover:text-red-400 hover:bg-gray-700' : 'text-gray-400 hover:text-red-600 hover:bg-red-50'}`}
+                        title="Remove filter"
+                        aria-label="Remove filter"
+                      >
+                        <span className="text-lg leading-none">×</span>
+                      </button>
+                    )}
+                    <div className={`flex flex-col gap-1 ${f.type === 'date_range' ? 'w-full min-w-0 flex-1' : ''}`}>
                     <label className={`text-sm font-medium ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>{f.label || f.id}</label>
                     {f.type === 'date_range' && (
                       <DateRangeSliderInline
-                        data={data}
+                        data={dataForTab}
                         field={f.field}
                         value={filterState[f.id]}
                         onChange={(v) => handleFilterChange(f.id, v)}
@@ -861,9 +929,9 @@ export default function DashboardRenderer({ spec, data, filterValues, onFilterCh
                       />
                     )}
                 {f.type === 'select' && (() => {
-                  const firstRow = (data && data[0]) || {}
+                  const firstRow = (dataForTab && dataForTab[0]) || {}
                   const field = resolveFieldName(firstRow, f.field) || f.field
-                  const rawValues = (data || [])
+                  const rawValues = (dataForTab || [])
                     .map((r) => r[field])
                     .filter((v) => v != null && v !== '')
                   const uniqueValues = [...new Set(rawValues.map((v) => String(v)))]
@@ -888,6 +956,56 @@ export default function DashboardRenderer({ spec, data, filterValues, onFilterCh
                     </select>
                   )
                 })()}
+                {f.type === 'checkbox' && (() => {
+                  const firstRow = (dataForTab && dataForTab[0]) || {}
+                  const field = resolveFieldName(firstRow, f.field) || f.field
+                  const rawValues = (dataForTab || []).map((r) => r[field]).filter((v) => v != null && v !== '')
+                  const uniqueValues = [...new Set(rawValues.map((v) => String(v)))].sort((a, b) => {
+                    const na = Number(a); const nb = Number(b)
+                    if (!Number.isNaN(na) && !Number.isNaN(nb)) return na - nb
+                    return String(a).localeCompare(String(b))
+                  })
+                  const selected = Array.isArray(filterState[f.id]) ? filterState[f.id] : []
+                  const toggle = (v) => {
+                    let next
+                    if (selected.length === 0) {
+                      next = uniqueValues.filter((x) => x !== v)
+                      if (next.length === 0) next = []
+                    } else if (selected.includes(v)) {
+                      next = selected.filter((x) => x !== v)
+                    } else {
+                      next = [...selected, v]
+                    }
+                    if (next.length === uniqueValues.length) next = []
+                    handleFilterChange(f.id, next)
+                  }
+                  const selectAll = () => handleFilterChange(f.id, [...uniqueValues])
+                  const clearAll = () => handleFilterChange(f.id, [])
+                  const borderClass = theme === 'dark' ? 'border-gray-600 bg-gray-800' : 'border-gray-300 bg-white'
+                  const textClass = theme === 'dark' ? 'text-gray-200' : 'text-gray-800'
+                  const labelClass = theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
+                  return (
+                    <div className={`flex flex-col gap-2 max-h-48 overflow-y-auto px-3 py-2 border rounded text-base min-w-[160px] ${borderClass}`}>
+                      <div className="flex gap-2 flex-shrink-0">
+                        <button type="button" onClick={selectAll} className={`text-xs ${theme === 'dark' ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-800'}`}>All</button>
+                        <button type="button" onClick={clearAll} className={`text-xs ${theme === 'dark' ? 'text-gray-400 hover:text-gray-300' : 'text-gray-500 hover:text-gray-700'}`}>None</button>
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        {uniqueValues.map((v) => (
+                          <label key={v} className={`flex items-center gap-2 cursor-pointer ${textClass}`}>
+                            <input
+                              type="checkbox"
+                              checked={selected.length === 0 || selected.includes(v)}
+                              onChange={() => toggle(v)}
+                              className="rounded border-gray-400"
+                            />
+                            <span className={labelClass}>{v}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })()}
                 {f.type === 'number_range' && (
                   <div className="flex gap-2 items-center">
                     <input
@@ -900,7 +1018,7 @@ export default function DashboardRenderer({ spec, data, filterValues, onFilterCh
                           min: e.target.value === '' ? undefined : Number(e.target.value)
                         })
                       }
-                      className="w-28 px-3 py-2 border rounded text-base"
+                      className="px-3 py-2 border rounded text-base w-28"
                     />
                     <span className="text-gray-400">–</span>
                     <input
@@ -913,20 +1031,23 @@ export default function DashboardRenderer({ spec, data, filterValues, onFilterCh
                           max: e.target.value === '' ? undefined : Number(e.target.value)
                         })
                       }
-                      className="w-28 px-3 py-2 border rounded text-base"
+                      className="px-3 py-2 border rounded text-base w-28"
                     />
                   </div>
                 )}
-              </div>
-            ))}
+                    </div>
+                  </div>
+                  );
+                })}
               </div>
             </div>
           )}
         </div>
       )}
 
-      {/* Dynamic grid: KPIs + Charts (draggable/resizable) */}
-      {((spec.kpis && spec.kpis.length > 0) || (spec.charts && spec.charts.length > 0)) && (
+      {/* Dynamic grid: KPIs + Charts (draggable/resizable). Contain layout to reduce flicker from reflow. */}
+      {((currentSpec?.kpis && currentSpec.kpis.length > 0) || (currentSpec?.charts && currentSpec.charts.length > 0)) && (
+        <div style={{ contain: 'layout' }}>
         <ResponsiveGridLayout
           className="layout"
           layout={layout}
@@ -938,7 +1059,7 @@ export default function DashboardRenderer({ spec, data, filterValues, onFilterCh
           compactType="vertical"
           preventCollision={false}
         >
-          {(spec.kpis || []).map((k) => {
+          {(currentSpec?.kpis || []).map((k) => {
             const val = aggregate(filteredData, k.field, k.aggregation || 'sum')
             const fmt = k.format || {}
             return (
@@ -961,7 +1082,7 @@ export default function DashboardRenderer({ spec, data, filterValues, onFilterCh
               </div>
             )
           })}
-          {(spec.charts || []).map((c) => (
+          {(currentSpec?.charts || []).map((c) => (
             <div
               key={c.id}
               ref={(el) => { if (el != null) chartRefs.current[c.id] = el }}
@@ -969,7 +1090,7 @@ export default function DashboardRenderer({ spec, data, filterValues, onFilterCh
             >
               <div className="flex justify-between items-center gap-2 mb-1">
                 <h3 className="text-xl font-medium">{c.title || c.id}</h3>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1 flex-shrink-0">
                   {(c.type === 'bar' || c.type === 'line' || c.type === 'pie' || c.type === 'area' || c.type === 'stacked_bar' || c.type === 'stacked_area' || c.type === 'grouped_bar' || c.type === 'radial_bar' || c.type === 'scatter') && (
                     <>
                       {c.type === 'bar' && onChartOptionChange && (
@@ -1094,14 +1215,6 @@ export default function DashboardRenderer({ spec, data, filterValues, onFilterCh
                           </select>
                         </>
                       )}
-                      <button
-                        type="button"
-                        onClick={() => handleExportChart(c.id, c.title || c.id)}
-                        className="text-sm px-2 py-1 rounded border border-gray-300 bg-white hover:bg-gray-50 text-gray-600"
-                        title="Export chart as PNG"
-                      >
-                        Export
-                      </button>
                     </>
                   )}
                   {onRemoveWidget && (
@@ -1117,6 +1230,14 @@ export default function DashboardRenderer({ spec, data, filterValues, onFilterCh
                   )}
                 </div>
               </div>
+              {(() => {
+                const sr = getSingleRowValueLabel(c, filteredData)
+                return sr ? (
+                  <p className={`text-base font-medium mb-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
+                    {sr.label}: {sr.value}
+                  </p>
+                ) : null
+              })()}
               {((c.type === 'bar' || c.type === 'line' || c.type === 'area' || c.type === 'stacked_bar' || c.type === 'stacked_area' || c.type === 'grouped_bar' || c.type === 'radial_bar' || c.type === 'scatter') && (c.yField || c.metric)) && (
                 <p className="text-base text-gray-500 mb-2">{getMeasureLabel(c)}</p>
               )}
@@ -1165,8 +1286,8 @@ export default function DashboardRenderer({ spec, data, filterValues, onFilterCh
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={lineChartData(filteredData, c.xField, c.yField)}>
                         <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.gridStroke} />
-                        <XAxis dataKey="name" tick={{ fontSize: CHART_TICK_FONT_SIZE, fill: chartTheme.tickFill }} />
-                        <YAxis tick={{ fontSize: CHART_TICK_FONT_SIZE, fill: chartTheme.tickFill }} tickFormatter={(v) => formatValue(v, chartFmt(c))} label={{ value: getMeasureLabel(c), angle: -90, position: 'insideLeft', style: { fill: chartTheme.tickFill, fontSize: CHART_AXIS_LABEL_FONT_SIZE } }} />
+                        <XAxis dataKey="name" tick={{ fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }} />
+                        <YAxis tick={{ fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }} tickFormatter={(v) => formatValue(v, chartFmt(c))} label={{ value: getMeasureLabel(c), angle: -90, position: 'insideLeft', style: { fill: chartTheme.tickFill, fontSize: chartAxisLabelFontSize, ...chartTextStyle } }} />
                         <Tooltip
                           contentStyle={{ fontSize: 14, backgroundColor: chartTheme.tooltipBg, border: `1px solid ${chartTheme.tooltipBorder}`, color: chartTheme.tooltipText }}
                           formatter={(val) => [formatValue(Array.isArray(val) ? val[0] : val, chartFmt(c)), c.yField || 'Value']}
@@ -1184,7 +1305,7 @@ export default function DashboardRenderer({ spec, data, filterValues, onFilterCh
                           activeDot={{ r: 6, cursor: 'pointer' }}
                           onClick={(point) => point?.name != null && handleChartClick(c.xField, point.name)}
                         >
-                          {(c.showDataLabels !== false) && <LabelList position="top" formatter={(v) => formatValue(v, chartFmt(c))} style={{ fontSize: CHART_DATA_LABEL_FONT_SIZE }} />}
+                          {(c.showDataLabels !== false) && <LabelList position="top" formatter={(v) => formatValue(v, chartFmt(c))} style={{ fontSize: chartDataLabelFontSize, ...chartTextStyle }} />}
                         </Line>
                       </LineChart>
                     </ResponsiveContainer>
@@ -1205,8 +1326,8 @@ export default function DashboardRenderer({ spec, data, filterValues, onFilterCh
                           </linearGradient>
                         </defs>
                         <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.gridStroke} />
-                        <XAxis dataKey="name" tick={{ fontSize: CHART_TICK_FONT_SIZE, fill: chartTheme.tickFill }} />
-                        <YAxis tick={{ fontSize: CHART_TICK_FONT_SIZE, fill: chartTheme.tickFill }} tickFormatter={(v) => formatValue(v, chartFmt(c))} label={{ value: getMeasureLabel(c), angle: -90, position: 'insideLeft', style: { fill: chartTheme.tickFill, fontSize: CHART_AXIS_LABEL_FONT_SIZE } }} />
+                        <XAxis dataKey="name" tick={{ fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }} />
+                        <YAxis tick={{ fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }} tickFormatter={(v) => formatValue(v, chartFmt(c))} label={{ value: getMeasureLabel(c), angle: -90, position: 'insideLeft', style: { fill: chartTheme.tickFill, fontSize: chartAxisLabelFontSize, ...chartTextStyle } }} />
                         <Tooltip
                           contentStyle={{ fontSize: 14, backgroundColor: chartTheme.tooltipBg, border: `1px solid ${chartTheme.tooltipBorder}`, color: chartTheme.tooltipText }}
                           formatter={(val) => [formatValue(Array.isArray(val) ? val[0] : val, chartFmt(c)), c.yField || 'Value']}
@@ -1222,7 +1343,7 @@ export default function DashboardRenderer({ spec, data, filterValues, onFilterCh
                           fill={`url(#area-fill-${c.id})`}
                           onClick={(data) => data?.name != null && handleChartClick(c.xField, data.name)}
                         >
-                          {(c.showDataLabels !== false) && <LabelList position="top" formatter={(v) => formatValue(v, chartFmt(c))} style={{ fontSize: CHART_DATA_LABEL_FONT_SIZE }} />}
+                          {(c.showDataLabels !== false) && <LabelList position="top" formatter={(v) => formatValue(v, chartFmt(c))} style={{ fontSize: chartDataLabelFontSize, ...chartTextStyle }} />}
                         </Area>
                       </AreaChart>
                     </ResponsiveContainer>
@@ -1244,7 +1365,8 @@ export default function DashboardRenderer({ spec, data, filterValues, onFilterCh
                 const labelAngle = c.labelAngle ?? 0
                 const isVertical = c.orientation === 'vertical'
                 const categoryTick = (axis) => ({
-                  fontSize: CHART_TICK_FONT_SIZE,
+                  fontSize: chartTickFontSize,
+                  ...chartTextStyle,
                   fill: chartTheme.tickFill,
                   ...(axis === 'x' && isVertical && labelAngle !== 0 ? { angle: -labelAngle, textAnchor: 'end' } : {}),
                   ...(axis === 'y' && !isVertical && labelAngle !== 0 ? { angle: -labelAngle, textAnchor: 'end' } : {})
@@ -1282,16 +1404,16 @@ export default function DashboardRenderer({ spec, data, filterValues, onFilterCh
                           <XAxis
                             type={isVertical ? 'category' : 'number'}
                             dataKey={isVertical ? 'name' : undefined}
-                            tick={isVertical ? categoryTick('x') : { fontSize: CHART_TICK_FONT_SIZE, fill: chartTheme.tickFill }}
+                            tick={isVertical ? categoryTick('x') : { fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }}
                             tickFormatter={isVertical ? undefined : (v) => formatValue(v, chartFmt(c))}
                           />
                           <YAxis
                             type={isVertical ? 'number' : 'category'}
                             dataKey={isVertical ? undefined : 'name'}
                             width={isVertical ? 0 : 120}
-                            tick={!isVertical ? categoryTick('y') : { fontSize: CHART_TICK_FONT_SIZE, fill: chartTheme.tickFill }}
+                            tick={!isVertical ? categoryTick('y') : { fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }}
                             tickFormatter={isVertical ? (v) => formatValue(v, chartFmt(c)) : undefined}
-                            label={isVertical ? { value: getMeasureLabel(c), angle: -90, position: 'insideLeft', style: { fill: chartTheme.tickFill, fontSize: CHART_AXIS_LABEL_FONT_SIZE } } : undefined}
+                            label={isVertical ? { value: getMeasureLabel(c), angle: -90, position: 'insideLeft', style: { fill: chartTheme.tickFill, fontSize: chartAxisLabelFontSize, ...chartTextStyle } } : undefined}
                           />
                           <Tooltip
                             contentStyle={{ fontSize: 14, backgroundColor: chartTheme.tooltipBg, border: `1px solid ${chartTheme.tooltipBorder}`, color: chartTheme.tooltipText, maxWidth: 360 }}
@@ -1328,7 +1450,7 @@ export default function DashboardRenderer({ spec, data, filterValues, onFilterCh
                             {(c.showDataLabels !== false) && (
                               <LabelList
                                 position={c.orientation === 'vertical' ? 'top' : 'right'}
-                                style={{ fontSize: CHART_DATA_LABEL_FONT_SIZE }}
+                                style={{ fontSize: chartDataLabelFontSize, ...chartTextStyle }}
                                 formatter={(v, props) => {
                                   const payload = props?.payload
                                   if (hasDetails && payload?.details?.length && payload.details.length <= 5) {
@@ -1361,13 +1483,13 @@ export default function DashboardRenderer({ spec, data, filterValues, onFilterCh
                             ))}
                           </defs>
                           <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.gridStroke} />
-                          <XAxis dataKey="name" tick={{ fontSize: CHART_TICK_FONT_SIZE, fill: chartTheme.tickFill }} />
-                          <YAxis tick={{ fontSize: CHART_TICK_FONT_SIZE, fill: chartTheme.tickFill }} tickFormatter={(v) => formatValue(v, chartFmt(c))} label={{ value: getMeasureLabel(c), angle: -90, position: 'insideLeft', style: { fill: chartTheme.tickFill, fontSize: CHART_AXIS_LABEL_FONT_SIZE } }} />
+                          <XAxis dataKey="name" tick={{ fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }} />
+                          <YAxis tick={{ fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }} tickFormatter={(v) => formatValue(v, chartFmt(c))} label={{ value: getMeasureLabel(c), angle: -90, position: 'insideLeft', style: { fill: chartTheme.tickFill, fontSize: chartAxisLabelFontSize, ...chartTextStyle } }} />
                           <Tooltip contentStyle={{ fontSize: 14, backgroundColor: chartTheme.tooltipBg, border: `1px solid ${chartTheme.tooltipBorder}`, color: chartTheme.tooltipText }} formatter={(val) => formatValue(val, chartFmt(c))} />
                           <Legend />
                           {stackKeys.map((key, i) => (
                             <Bar key={key} dataKey={key} stackId="stack" fill={useBarSheen ? `url(#stacked-sheen-${c.id}-${i})` : chartColors[i % chartColors.length]} name={key} radius={[0, 0, 0, 0]}>
-                              {(c.showDataLabels !== false) && <LabelList position="center" formatter={(v) => formatValue(v, chartFmt(c))} style={{ fontSize: CHART_DATA_LABEL_FONT_SIZE }} />}
+                              {(c.showDataLabels !== false) && <LabelList position="center" formatter={(v) => formatValue(v, chartFmt(c))} style={{ fontSize: chartDataLabelFontSize, ...chartTextStyle }} />}
                             </Bar>
                           ))}
                         </BarChart>
@@ -1392,13 +1514,13 @@ export default function DashboardRenderer({ spec, data, filterValues, onFilterCh
                             ))}
                           </defs>
                           <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.gridStroke} />
-                          <XAxis dataKey="name" tick={{ fontSize: CHART_TICK_FONT_SIZE, fill: chartTheme.tickFill }} />
-                          <YAxis tick={{ fontSize: CHART_TICK_FONT_SIZE, fill: chartTheme.tickFill }} tickFormatter={(v) => formatValue(v, chartFmt(c))} label={{ value: getMeasureLabel(c), angle: -90, position: 'insideLeft', style: { fill: chartTheme.tickFill, fontSize: CHART_AXIS_LABEL_FONT_SIZE } }} />
+                          <XAxis dataKey="name" tick={{ fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }} />
+                          <YAxis tick={{ fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }} tickFormatter={(v) => formatValue(v, chartFmt(c))} label={{ value: getMeasureLabel(c), angle: -90, position: 'insideLeft', style: { fill: chartTheme.tickFill, fontSize: chartAxisLabelFontSize, ...chartTextStyle } }} />
                           <Tooltip contentStyle={{ fontSize: 14, backgroundColor: chartTheme.tooltipBg, border: `1px solid ${chartTheme.tooltipBorder}`, color: chartTheme.tooltipText }} formatter={(val) => formatValue(val, chartFmt(c))} />
                           <Legend />
                           {groupKeys.map((key, i) => (
                             <Bar key={key} dataKey={key} fill={useBarSheen ? `url(#grouped-sheen-${c.id}-${i})` : chartColors[i % chartColors.length]} name={key} radius={[4, 4, 0, 0]} isAnimationActive>
-                              {(c.showDataLabels !== false) && <LabelList position="top" formatter={(v) => formatValue(v, chartFmt(c))} style={{ fontSize: CHART_DATA_LABEL_FONT_SIZE }} />}
+                              {(c.showDataLabels !== false) && <LabelList position="top" formatter={(v) => formatValue(v, chartFmt(c))} style={{ fontSize: chartDataLabelFontSize, ...chartTextStyle }} />}
                             </Bar>
                           ))}
                         </BarChart>
@@ -1435,7 +1557,7 @@ export default function DashboardRenderer({ spec, data, filterValues, onFilterCh
                             {radialData.map((entry, i) => (
                               <Cell key={i} fill={entry.color} fillOpacity={0.85} />
                             ))}
-                            <LabelList position="center" formatter={(v, props) => formatValue((props.payload?.value) ?? v, chartFmt(c))} style={{ fontSize: CHART_DATA_LABEL_FONT_SIZE }} />
+                            <LabelList position="center" formatter={(v, props) => formatValue((props.payload?.value) ?? v, chartFmt(c))} style={{ fontSize: chartDataLabelFontSize, ...chartTextStyle }} />
                           </RadialBar>
                           <Tooltip
                             contentStyle={{ fontSize: 14, backgroundColor: chartTheme.tooltipBg, border: `1px solid ${chartTheme.tooltipBorder}`, color: chartTheme.tooltipText }}
@@ -1459,8 +1581,8 @@ export default function DashboardRenderer({ spec, data, filterValues, onFilterCh
                       <ResponsiveContainer width="100%" height="100%">
                         <AreaChart data={stackedData} margin={{ left: 20, right: 20, bottom: 60 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.gridStroke} />
-                          <XAxis dataKey="name" tick={{ fontSize: CHART_TICK_FONT_SIZE, fill: chartTheme.tickFill }} />
-                          <YAxis tick={{ fontSize: CHART_TICK_FONT_SIZE, fill: chartTheme.tickFill }} tickFormatter={(v) => formatValue(v, chartFmt(c))} label={{ value: getMeasureLabel(c), angle: -90, position: 'insideLeft', style: { fill: chartTheme.tickFill, fontSize: CHART_AXIS_LABEL_FONT_SIZE } }} />
+                          <XAxis dataKey="name" tick={{ fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }} />
+                          <YAxis tick={{ fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }} tickFormatter={(v) => formatValue(v, chartFmt(c))} label={{ value: getMeasureLabel(c), angle: -90, position: 'insideLeft', style: { fill: chartTheme.tickFill, fontSize: chartAxisLabelFontSize, ...chartTextStyle } }} />
                           <Tooltip contentStyle={{ fontSize: 14, backgroundColor: chartTheme.tooltipBg, border: `1px solid ${chartTheme.tooltipBorder}`, color: chartTheme.tooltipText }} formatter={(val) => formatValue(val, chartFmt(c))} />
                           <Legend />
                           {stackKeys.map((key, i) => (
@@ -1480,8 +1602,8 @@ export default function DashboardRenderer({ spec, data, filterValues, onFilterCh
                     <ResponsiveContainer width="100%" height="100%">
                       <ScatterChart margin={{ left: 20, right: 20, bottom: 60 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.gridStroke} />
-                        <XAxis type="number" dataKey="x" name={c.xField} tick={{ fontSize: CHART_TICK_FONT_SIZE, fill: chartTheme.tickFill }} tickFormatter={(v) => formatValue(v, chartFmt(c))} />
-                        <YAxis type="number" dataKey="y" name={c.yField} tick={{ fontSize: CHART_TICK_FONT_SIZE, fill: chartTheme.tickFill }} tickFormatter={(v) => formatValue(v, chartFmt(c))} label={{ value: c.yField || 'Y', angle: -90, position: 'insideLeft', style: { fill: chartTheme.tickFill, fontSize: CHART_AXIS_LABEL_FONT_SIZE } }} />
+                        <XAxis type="number" dataKey="x" name={c.xField} tick={{ fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }} tickFormatter={(v) => formatValue(v, chartFmt(c))} />
+                        <YAxis type="number" dataKey="y" name={c.yField} tick={{ fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }} tickFormatter={(v) => formatValue(v, chartFmt(c))} label={{ value: c.yField || 'Y', angle: -90, position: 'insideLeft', style: { fill: chartTheme.tickFill, fontSize: chartAxisLabelFontSize, ...chartTextStyle } }} />
                         <Tooltip
                           contentStyle={{ fontSize: 14, backgroundColor: chartTheme.tooltipBg, border: `1px solid ${chartTheme.tooltipBorder}`, color: chartTheme.tooltipText }}
                           formatter={(val, name, props) => {
@@ -1539,9 +1661,10 @@ export default function DashboardRenderer({ spec, data, filterValues, onFilterCh
             </div>
           ))}
         </ResponsiveGridLayout>
+        </div>
       )}
 
-      {(!spec.charts || spec.charts.length === 0) && (!spec.kpis || spec.kpis.length === 0) && (
+      {(!currentSpec?.charts || currentSpec.charts.length === 0) && (!currentSpec?.kpis || currentSpec.kpis.length === 0) && (
         <div className="p-8 text-center text-gray-500 text-base rounded-lg border border-dashed border-gray-300">
           No charts or KPIs in spec. Try refining your prompt.
         </div>
@@ -1554,3 +1677,5 @@ export default function DashboardRenderer({ spec, data, filterValues, onFilterCh
     </div>
   )
 }
+
+export default memo(DashboardRenderer)

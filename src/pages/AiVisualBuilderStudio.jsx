@@ -4,26 +4,22 @@
  * Save/Load spec via localStorage (MVP).
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react'
-import { useSearchParams, useNavigate } from 'react-router-dom'
-import Navbar from '../components/Navbar'
-import Footer from '../components/Footer'
-import DashboardRenderer from '../components/aiVisualBuilder/DashboardRenderer'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useSearchParams, useNavigate, useLocation, Navigate } from 'react-router-dom'
+import StudioShell from './studio/StudioShell'
+import TabHeader from './studio/components/TabHeader'
+import ReportChatView from './studio/ReportChatView'
+import DataView from './studio/DataView'
+import PreviewView from './studio/PreviewView'
 import ErrorBoundary from '../components/ErrorBoundary'
-import ChartTypeIcons from '../components/aiVisualBuilder/ChartTypeIcons'
-import FilterTypeIcons from '../components/aiVisualBuilder/FilterTypeIcons'
-import { getSuggestedPrompts } from '../studio/utils/datasetPrompts'
 import { getDashboard, saveDashboard, listDashboards } from '../studio/api/studioClient'
 import { generateShareId, saveSharedDashboard, getShareableUrl, copyToClipboard } from '../utils/shareUtils'
-import { normalizeSchema, isDashboardSpec } from '../studio/utils/schemaUtils'
+import { normalizeSchema, isDashboardSpec, getSpecContent } from '../studio/utils/schemaUtils'
 import apiClient from '../config/api'
 
 const STORAGE_KEY_SPEC = 'aiVisualBuilder_spec'
 const STORAGE_KEY_DATASET = 'aiVisualBuilder_dataset'
 const STORAGE_KEY_FULLSCREEN = 'aiVisualBuilder_fullScreen'
-const STORAGE_KEY_PANEL_LAYOUT = 'aiVisualBuilder_panelLayout'
-const COLLAPSED_PANEL_WIDTH = 48
-const DEFAULT_PANEL_WIDTHS = [22, 32, 46] // left %, center %, right %
 
 // Example datasets (ids that work with /api/example/:id or /api/ai/dataset-schema?dataset=)
 const EXAMPLE_DATASET_IDS = [
@@ -35,7 +31,10 @@ const EXAMPLE_DATASET_IDS = [
   'yearly-income',
   'nfl-schedule',
   'pharmacy',
-  'superbowl-winners'
+  'superbowl-winners',
+  'today-snapshot',
+  'revenue-trends',
+  'alters-insights'
 ]
 const UPLOAD_DATASET_ID = 'upload'
 
@@ -48,6 +47,63 @@ function buildSchemaFromUpload(res) {
     examples: []
   }))
   return { rowCount: rowCount ?? (data?.length ?? 0), fields }
+}
+
+/** Build a friendly assistant summary from a dashboard spec (for chat bubble). No backend. */
+function buildAssistantSummary(spec) {
+  if (!spec) return 'Your report is ready. Check the preview.'
+  const title = spec.title || 'Untitled Dashboard'
+  const { filters, kpis, charts } = getSpecContent(spec)
+  const kCount = kpis.length
+  const cCount = charts.length
+  const fCount = filters.length
+
+  const parts = []
+  parts.push(`**${title}** is ready.`)
+  if (kCount + cCount + fCount === 0) {
+    parts.push('The report is empty; try adding filters, KPIs, or charts in a follow-up message.')
+  } else {
+    const items = []
+    if (kCount) items.push(`${kCount} KPI${kCount !== 1 ? 's' : ''}`)
+    if (cCount) items.push(`${cCount} chart${cCount !== 1 ? 's' : ''}`)
+    if (fCount) items.push(`${fCount} filter${fCount !== 1 ? 's' : ''}`)
+    if (spec.tabs && spec.tabs.length >= 2) items.push(`${spec.tabs.length} tabs`)
+    parts.push(`It has ${items.join(', ')}.`)
+  }
+
+  if (charts.length > 0) {
+    const chartLines = charts.slice(0, 6).map((c) => {
+      const type = (c.type || 'chart').replace(/_/g, ' ')
+      const dim = c.xField || c.dimension || c.field
+      const met = c.yField || c.metric || c.measure
+      const desc = [dim, met].filter(Boolean).join(' by ')
+      return desc ? `• ${type}: ${desc}` : `• ${type}`
+    })
+    parts.push('')
+    parts.push('Charts:')
+    parts.push(chartLines.join('\n'))
+  }
+
+  if (filters.length > 0) {
+    parts.push('')
+    parts.push('You can filter the data using the controls above the report. Charts that support it can also be used to cross-filter (click segments or bars).')
+  }
+
+  // Contextual follow-up suggestions (2–3)
+  const followUps = []
+  const hasTime = charts.some((c) => (c.xField || c.dimension || '').toLowerCase().includes('date') || (c.xField || c.dimension || '').toLowerCase().includes('month'))
+  const hasCategory = charts.some((c) => c.xField || c.dimension)
+  if (charts.length > 0 && !hasTime) followUps.push('Add a trend over time (e.g. by date or month).')
+  if (hasCategory && charts.length < 4) followUps.push('Add another chart breaking down by a different dimension.')
+  if (kpis.length === 0 && charts.length > 0) followUps.push('Add headline KPIs for the main metrics.')
+  if (filters.length < 2 && (charts.length > 0 || kpis.length > 0)) followUps.push('Add a filter to slice the data (e.g. region or category).')
+  if (followUps.length === 0) followUps.push('Try "Add a table of top 10 rows" or "Show a pie chart by category".')
+  const suggested = followUps.slice(0, 3)
+  parts.push('')
+  parts.push('**Suggested follow-ups:**')
+  suggested.forEach((s) => parts.push(`• ${s}`))
+
+  return parts.join('\n')
 }
 
 export default function AiVisualBuilderStudio() {
@@ -87,27 +143,45 @@ export default function AiVisualBuilderStudio() {
       return localStorage.getItem(STORAGE_KEY_FULLSCREEN) === 'true'
     } catch { return false }
   })
-  const [panelCollapsed, setPanelCollapsed] = useState({ left: false, center: false, right: false })
-  const [styleDockCollapsed, setStyleDockCollapsed] = useState(false)
-  const [panelWidths, setPanelWidths] = useState(() => {
-    try {
-      const s = localStorage.getItem(STORAGE_KEY_PANEL_LAYOUT)
-      if (s) {
-        const parsed = JSON.parse(s)
-        if (Array.isArray(parsed) && parsed.length === 3 && parsed.every((n) => n >= 10 && n <= 60)) {
-          return parsed
-        }
-      }
-    } catch (_) {}
-    return DEFAULT_PANEL_WIDTHS
-  })
-  const [resizing, setResizing] = useState(null)
-  const containerRef = useRef(null)
-  const startXRef = useRef(0)
+  const [pendingConversationMessage, setPendingConversationMessage] = useState(null)
+  const [activeTab, setActiveTab] = useState(() =>
+    (typeof window !== 'undefined' && window.location.pathname.endsWith('/preview') ? 'preview' : 'chat')
+  )
+  const [chatTab, setChatTab] = useState('chat') // 'data' | 'chat' | 'preview' inside ReportChatView
+  const [chatMessages, setChatMessages] = useState([]) // { id, role: 'user'|'assistant', content }
+  const [conversationInputValue, setConversationInputValue] = useState('')
+  const [dataLakeList, setDataLakeList] = useState([])
+  const [dataLakeListLoading, setDataLakeListLoading] = useState(false)
+  const [saveToLakeName, setSaveToLakeName] = useState('')
+  const [saveToLakeLoading, setSaveToLakeLoading] = useState(false)
+  const [dataByDatasetIdExtra, setDataByDatasetIdExtra] = useState({}) // data for tab.dataset ids (when different from primary)
+  const uploadInputRef = useRef(null)
 
   const navigate = useNavigate()
+  const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
   const openId = searchParams.get('open')
+
+  // Redirect /studio or /studio/ to /studio/chat (preserve search e.g. ?open=)
+  if (location.pathname === '/studio' || location.pathname === '/studio/') {
+    const search = location.search || ''
+    return <Navigate to={`/studio/chat${search}`} replace />
+  }
+
+  // Nested Studio routes: /studio/chat | /studio/data | /studio/preview (build removed)
+  const studioView = (() => {
+    const p = location.pathname
+    if (p.endsWith('/data')) return 'data'
+    if (p.endsWith('/preview')) return 'preview'
+    return 'chat' // /studio/chat or fallback
+  })()
+
+  const VIEW_META = {
+    chat: { title: 'Report Chat', subtitle: "Describe the report. We'll build it instantly." },
+    data: { title: 'Data', subtitle: 'Select, upload, or manage datasets.' },
+    preview: { title: 'Preview & Publish', subtitle: 'Finalize style, save, and share.' },
+    clear: { title: 'Clear', subtitle: 'Clear dashboard and start over.' }
+  }
 
   // Load a saved dashboard when ?open=:id is in the URL (e.g. from /studio/app/:id redirect)
   useEffect(() => {
@@ -137,6 +211,15 @@ export default function AiVisualBuilderStudio() {
     return () => clearTimeout(t)
   }, [loadedMessage])
 
+  // Report Converse: clear pending user message once handleGenerate has added it to promptHistory
+  useEffect(() => {
+    if (!pendingConversationMessage) return
+    const last = promptHistory[promptHistory.length - 1]
+    if (last && last.prompt === pendingConversationMessage) {
+      setPendingConversationMessage(null)
+    }
+  }, [promptHistory, pendingConversationMessage])
+
   // Load user dashboards (with data) for dataset selector
   useEffect(() => {
     apiClient
@@ -147,6 +230,19 @@ export default function AiVisualBuilderStudio() {
       })
       .catch(() => setUserDashboards([]))
   }, [])
+
+  // Load data lake list
+  const fetchDataLakeList = useCallback(() => {
+    setDataLakeListLoading(true)
+    apiClient
+      .get('/api/datalake')
+      .then((res) => {
+        setDataLakeList(Array.isArray(res.data?.datasets) ? res.data.datasets : [])
+      })
+      .catch(() => setDataLakeList([]))
+      .finally(() => setDataLakeListLoading(false))
+  }, [])
+  useEffect(() => { fetchDataLakeList() }, [fetchDataLakeList])
 
   // Load saved Studio dashboards (for "Open" list)
   useEffect(() => {
@@ -228,6 +324,52 @@ export default function AiVisualBuilderStudio() {
     return () => { cancelled = true }
   }, [datasetId, uploadedData])
 
+  // Load data for tab.dataset ids when spec has tabs with different datasets (so each tab can use a different dataset)
+  const tabDatasetIds = useMemo(() => {
+    const ids = new Set()
+    if (Array.isArray(spec?.tabs)) {
+      spec.tabs.forEach((t) => { if (t && t.dataset) ids.add(t.dataset) })
+    }
+    return Array.from(ids).filter((id) => id !== datasetId && id !== UPLOAD_DATASET_ID)
+  }, [spec?.tabs, datasetId])
+  useEffect(() => {
+    if (tabDatasetIds.length === 0) {
+      setDataByDatasetIdExtra({})
+      return
+    }
+    let cancelled = false
+    const loaded = {}
+    Promise.all(
+      tabDatasetIds.map((id) =>
+        apiClient.get('/api/ai/dataset-data', { params: { dataset: id } }).then((res) => {
+          if (!cancelled && res.data?.data) loaded[id] = res.data.data
+        }).catch(() => {})
+      )
+    ).then(() => {
+      if (!cancelled) setDataByDatasetIdExtra((prev) => (Object.keys(loaded).length ? { ...prev, ...loaded } : {}))
+    })
+    return () => { cancelled = true }
+  }, [tabDatasetIds.join(',')])
+
+  const dataByDatasetId = useMemo(() => {
+    const primary = datasetId && (data || (datasetId === UPLOAD_DATASET_ID ? uploadedData : null))
+    if (!primary && Object.keys(dataByDatasetIdExtra).length === 0) return undefined
+    return {
+      ...(primary && datasetId ? { [datasetId]: primary } : {}),
+      ...dataByDatasetIdExtra
+    }
+  }, [datasetId, data, uploadedData, dataByDatasetIdExtra])
+
+  const onTabDatasetChange = useCallback((tabIndex, datasetIdForTab) => {
+    setSpec((s) => {
+      if (!s?.tabs || tabIndex < 0 || tabIndex >= s.tabs.length) return s
+      return {
+        ...s,
+        tabs: s.tabs.map((t, i) => (i === tabIndex ? { ...t, dataset: datasetIdForTab || undefined } : t))
+      }
+    })
+  }, [])
+
   // Sync title from spec when spec changes (e.g. after generate)
   useEffect(() => {
     if (spec?.title) setDashboardTitle(spec.title)
@@ -248,79 +390,23 @@ export default function AiVisualBuilderStudio() {
     if (datasetId) localStorage.setItem(STORAGE_KEY_DATASET, datasetId)
   }, [datasetId])
 
+  // When selected data changes, clear the generated report so it stays aligned with current data
+  const prevDatasetIdRef = useRef(datasetId)
+  useEffect(() => {
+    if (prevDatasetIdRef.current !== datasetId) {
+      prevDatasetIdRef.current = datasetId
+      setSpec(null)
+    }
+  }, [datasetId])
+
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY_FULLSCREEN, String(fullScreen))
     } catch (_) {}
   }, [fullScreen])
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY_PANEL_LAYOUT, JSON.stringify(panelWidths))
-    } catch (_) {}
-  }, [panelWidths])
-
-  const togglePanel = (panel) => {
-    setPanelCollapsed((c) => ({ ...c, [panel]: !c[panel] }))
-  }
-
-  /** Expand one panel to take more space (50%), others share the rest */
-  const expandPanel = (panel) => {
-    setPanelCollapsed((c) => ({ ...c, [panel]: false }))
-    if (panel === 'left') setPanelWidths([50, 25, 25])
-    else if (panel === 'center') setPanelWidths([25, 50, 25])
-    else setPanelWidths([25, 25, 50])
-  }
-
-  const resetPanelLayout = () => {
-    setPanelCollapsed({ left: false, center: false, right: false })
-    setPanelWidths(DEFAULT_PANEL_WIDTHS)
-  }
-
-  const startResize = (divider) => (e) => {
-    e.preventDefault()
-    setResizing(divider)
-    startXRef.current = e.clientX
-  }
-
-  useEffect(() => {
-    if (!resizing || !containerRef.current) return
-    document.body.classList.add('select-none')
-    document.body.style.cursor = 'col-resize'
-    const onMove = (e) => {
-      const dx = e.clientX - startXRef.current
-      startXRef.current = e.clientX
-      const total = containerRef.current?.offsetWidth || 1000
-      const deltaPercent = (dx / total) * 100
-      setPanelWidths((w) => {
-        const next = [...w]
-        if (resizing === 'left') {
-          next[0] = Math.min(50, Math.max(10, w[0] + deltaPercent))
-          next[1] = Math.min(50, Math.max(15, w[1] - deltaPercent))
-        } else {
-          next[1] = Math.min(50, Math.max(15, w[1] + deltaPercent))
-          next[2] = Math.min(60, Math.max(25, w[2] - deltaPercent))
-        }
-        return next
-      })
-    }
-    const onUp = () => {
-      setResizing(null)
-      document.body.classList.remove('select-none')
-      document.body.style.cursor = ''
-    }
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-    return () => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-      document.body.classList.remove('select-none')
-      document.body.style.cursor = ''
-    }
-  }, [resizing])
-
-  const handleGenerate = useCallback(async () => {
-    const userPrompt = (prompt || '').trim()
+  const handleGenerate = useCallback(async (overridePrompt) => {
+    const userPrompt = (overridePrompt !== undefined ? String(overridePrompt || '') : (prompt || '')).trim()
     if (!userPrompt) {
       setError('Enter a prompt.')
       return
@@ -344,10 +430,18 @@ export default function AiVisualBuilderStudio() {
       if (newSpec) {
         setSpec(newSpec)
         setPromptHistory((h) => [...h, { prompt: userPrompt, at: new Date().toISOString() }])
+        const uid = `${Date.now()}-${Math.random().toString(16).slice(2)}`
+        setChatMessages((m) => [
+          ...m,
+          { id: `msg-${uid}-user`, role: 'user', content: userPrompt },
+          { id: `msg-${uid}-assistant`, role: 'assistant', content: buildAssistantSummary(newSpec) }
+        ])
+        setActiveTab('preview')
       } else {
         setError('No spec returned.')
       }
     } catch (err) {
+      setPendingConversationMessage(null)
       const msg =
         err.response?.data?.message ||
         err.response?.data?.error ||
@@ -358,6 +452,26 @@ export default function AiVisualBuilderStudio() {
       setLoading(false)
     }
   }, [datasetId, prompt, spec, uploadedData])
+
+  // Conversation Mode: send message (sets prompt, shows pending bubble, calls existing handleGenerate)
+  const sendConversationMessage = useCallback(() => {
+    const text = (conversationInputValue || '').trim()
+    if (!text || loading) return
+    if (!datasetId) {
+      setError('Select a dataset first.')
+      return
+    }
+    if (datasetId === UPLOAD_DATASET_ID && (!uploadedData || !uploadedData.length)) {
+      setError('Upload a file first or select another dataset.')
+      return
+    }
+    setPrompt(text)
+    setPendingConversationMessage(text)
+    setConversationInputValue('')
+    setError(null)
+    // Pass text so we don't rely on prompt state (which may not have updated yet)
+    handleGenerate(text)
+  }, [conversationInputValue, loading, datasetId, uploadedData, handleGenerate])
 
   const loadSavedSpec = () => {
     try {
@@ -372,6 +486,8 @@ export default function AiVisualBuilderStudio() {
     if (!window.confirm('Clear dashboard? This can\'t be undone.')) return
     setSpec(null)
     setPromptHistory([])
+    setChatMessages([])
+    setPendingConversationMessage(null)
     try {
       localStorage.removeItem(STORAGE_KEY_SPEC)
     } catch (_) {}
@@ -409,6 +525,57 @@ export default function AiVisualBuilderStudio() {
     setUploadError(null)
     if (datasetId === UPLOAD_DATASET_ID) setDatasetId('sales')
   }, [datasetId])
+
+  const handleSaveToDataLake = useCallback(async () => {
+    const rows = data || (datasetId === UPLOAD_DATASET_ID ? uploadedData : null)
+    const schemaToUse = schema || (uploadedSchema?.fields ? { fields: uploadedSchema.fields } : null)
+    if (!Array.isArray(rows) || rows.length === 0) {
+      setSaveError('No data to save. Load or upload a dataset first.')
+      return
+    }
+    if (!schemaToUse?.fields?.length) {
+      setSaveError('No schema available. Load or upload a dataset first.')
+      return
+    }
+    const name = (saveToLakeName || 'dataset').trim()
+    setSaveToLakeLoading(true)
+    setSaveError(null)
+    try {
+      const columns = schemaToUse.fields.map((f) => f.name)
+      const numericColumns = schemaToUse.fields.filter((f) => (f.type || '').toLowerCase() === 'number').map((f) => f.name)
+      const dateColumns = schemaToUse.fields.filter((f) => (f.type || '').toLowerCase() === 'date').map((f) => f.name)
+      const categoricalColumns = schemaToUse.fields.filter((f) => {
+        const t = (f.type || '').toLowerCase()
+        return t !== 'number' && t !== 'date'
+      }).map((f) => f.name)
+      const res = await apiClient.post('/api/datalake', {
+        name,
+        data: rows,
+        columns,
+        numericColumns,
+        categoricalColumns,
+        dateColumns
+      })
+      setSaveToLakeName('')
+      fetchDataLakeList()
+      if (res.data?.id) setDatasetId(`datalake:${res.data.id}`)
+    } catch (err) {
+      setSaveError(err.response?.data?.error || err.message || 'Failed to save to Data Lake')
+    } finally {
+      setSaveToLakeLoading(false)
+    }
+  }, [data, datasetId, uploadedData, schema, uploadedSchema, saveToLakeName, fetchDataLakeList])
+
+  const handleDeleteFromDataLake = useCallback(async (id) => {
+    if (!id) return
+    try {
+      await apiClient.delete(`/api/datalake/${id}`)
+      fetchDataLakeList()
+      if (datasetId === `datalake:${id}`) setDatasetId('sales')
+    } catch (err) {
+      setSaveError(err.response?.data?.error || err.message || 'Failed to delete from Data Lake')
+    }
+  }, [datasetId, fetchDataLakeList])
 
   const handleSaveDashboard = useCallback(async () => {
     if (!spec) {
@@ -486,518 +653,181 @@ export default function AiVisualBuilderStudio() {
     }
   }, [spec, datasetId, data])
 
-  const panelLeftW = panelCollapsed.left ? COLLAPSED_PANEL_WIDTH : `${panelWidths[0]}%`
-  const panelCenterW = panelCollapsed.center ? COLLAPSED_PANEL_WIDTH : `${panelWidths[1]}%`
-  const panelRightW = panelCollapsed.right ? COLLAPSED_PANEL_WIDTH : `${panelWidths[2]}%`
+  // Studio steps progress (non-blocking)
+  const hasData = !!datasetId && (!!(data?.length) || !!(uploadedData?.length))
+  const specHasContent = spec && ((spec.filters?.length ?? 0) + (spec.charts?.length ?? 0) + (spec.kpis?.length ?? 0) > 0)
+  const hasReport = !!specHasContent
+  const isSaved = !!savedDashboardId
 
-  const wrapperClass = fullScreen
-    ? 'fixed inset-0 z-40 bg-gray-50 flex flex-col overflow-hidden'
-    : 'min-h-screen bg-gray-50'
+  const handleLoadSampleData = useCallback(() => {
+    setDatasetId((id) => (id && EXAMPLE_DATASET_IDS.includes(id) ? id : EXAMPLE_DATASET_IDS[0] || 'sales'))
+  }, [])
+  const focusFileInput = useCallback(() => {
+    if (uploadInputRef.current) setTimeout(() => uploadInputRef.current?.click(), 100)
+  }, [])
+
+  const onSuggestionClick = (label) => {
+    setPrompt(label)
+    setPendingConversationMessage(label)
+    setError(null)
+    handleGenerate(label)
+  }
 
   return (
-    <div className={wrapperClass}>
-      {!fullScreen && <Navbar />}
+    <ErrorBoundary>
       {loadedMessage && (
-        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg shadow-lg animate-fade-in">
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg shadow-lg">
           Loaded: {loadedMessage}
         </div>
       )}
-      <div className={fullScreen ? 'flex-1 flex flex-col overflow-hidden' : 'max-w-[1920px] mx-auto px-4 py-6'}>
-        <div className="flex items-center justify-between gap-4 mb-4 flex-shrink-0">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">AI Visual Builder Studio</h1>
-            <p className="text-gray-600 text-sm mt-0.5">
-              Select a dataset, describe the dashboard in plain language, and refine with follow-up prompts.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={resetPanelLayout}
-              className="px-3 py-1.5 text-sm rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
-              title="Reset panel layout"
-            >
-              Reset layout
-            </button>
-            <button
-              type="button"
-              onClick={() => setFullScreen((f) => !f)}
-              className="px-3 py-1.5 text-sm rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
-              title={fullScreen ? 'Exit full screen' : 'Full screen'}
-            >
-              {fullScreen ? 'Exit full screen' : 'Full screen'}
-            </button>
-          </div>
-        </div>
-
-        <div
-          ref={containerRef}
-          className={`flex min-h-0 ${fullScreen ? 'flex-1 gap-0' : 'gap-4'} overflow-hidden`}
-          style={fullScreen ? { height: 'calc(100vh - 120px)' } : { minHeight: 480 }}
-        >
-          {/* Left panel: dataset + schema */}
-          <div
-            className="flex flex-col bg-white rounded-lg border border-gray-200 overflow-hidden flex-shrink-0"
-            style={{ width: panelLeftW, minWidth: panelCollapsed.left ? COLLAPSED_PANEL_WIDTH : 160 }}
-          >
-            <div className="flex items-center border-b border-gray-200 bg-gray-50">
-              <button
-                type="button"
-                onClick={() => togglePanel('left')}
-                className="flex-1 flex items-center justify-between w-full px-4 py-2 text-left hover:bg-gray-100 text-sm font-semibold text-gray-900"
-              >
-                <span>Dataset &amp; schema</span>
-                <span className="text-gray-500" title={panelCollapsed.left ? 'Expand panel' : 'Collapse panel'}>{panelCollapsed.left ? '▶' : '▼'}</span>
-              </button>
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); expandPanel('left') }}
-                className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded shrink-0"
-                title="Expand this panel"
-              >
-                <span className="text-lg leading-none">⊞</span>
-              </button>
-            </div>
-            {!panelCollapsed.left && (
-              <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            <div className="rounded-lg border border-gray-200 p-3 bg-white">
-              <h2 className="font-semibold text-gray-900 mb-2">Dataset</h2>
-              <select
-                value={datasetId}
-                onChange={(e) => setDatasetId(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
-              >
-                <option value="">Select…</option>
-                {uploadedData && (
-                  <optgroup label="Your upload">
-                    <option value={UPLOAD_DATASET_ID}>
-                      Your uploaded file{uploadedFileName ? ` (${uploadedFileName})` : ''}
-                    </option>
-                  </optgroup>
-                )}
-                <optgroup label="Example datasets">
-                  {EXAMPLE_DATASET_IDS.map((id) => (
-                    <option key={id} value={id}>
-                      {id}
-                    </option>
-                  ))}
-                </optgroup>
-                {userDashboards.length > 0 && (
-                  <optgroup label="Your dashboards">
-                    {userDashboards.map((d) => (
-                      <option key={d.id} value={`dashboard:${d.id}`}>
-                        {d.name || d.id}
-                      </option>
-                    ))}
-                  </optgroup>
-                )}
-              </select>
-              {dataLoadError && (
-                <div className="mt-2 p-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs">
-                  <p className="font-medium">Cannot load dataset</p>
-                  <p className="mt-0.5">{dataLoadError}</p>
-                  <p className="mt-1.5 text-amber-700">Start the backend on this machine: <code className="bg-amber-100 px-1 rounded">cd backend && node server.js</code></p>
-                </div>
-              )}
-            </div>
-            <div className="bg-white rounded-lg border border-gray-200 p-4">
-              <h2 className="font-semibold text-gray-900 mb-2">Use your data</h2>
-              <p className="text-xs text-gray-500 mb-2">CSV or Excel. Max 500 MB. Schema is inferred from your file.</p>
-              <label className="flex flex-col gap-1">
-                <span className="text-sm font-medium text-gray-700">Upload file</span>
-                <input
-                  type="file"
-                  accept=".csv,.xlsx,.xls"
-                  onChange={handleFileUpload}
-                  disabled={uploadLoading}
-                  className="block w-full text-sm text-gray-500 file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                />
-              </label>
-              {uploadLoading && <p className="mt-1 text-sm text-gray-500">Uploading…</p>}
-              {uploadError && (
-                <p className="mt-1 text-sm text-red-600">
-                  {uploadError}
-                  {uploadError.toLowerCase().includes('limit') || uploadError.toLowerCase().includes('size') || uploadError.toLowerCase().includes('too large')
-                    ? ' (max 500 MB)'
-                    : ''}
-                </p>
-              )}
-              {uploadedData && (
-                <p className="mt-2 text-sm text-green-700">
-                  {uploadedSchema?.rowCount ?? uploadedData.length} rows loaded. Select &quot;Your uploaded file&quot; above.
-                </p>
-              )}
-              {uploadedData && (
-                <button
-                  type="button"
-                  onClick={clearUploadedData}
-                  className="mt-2 text-xs text-gray-500 hover:text-red-600"
-                >
-                  Clear uploaded data
-                </button>
-              )}
-            </div>
-            {schema && (
-              <div className="bg-white rounded-lg border border-gray-200 p-4">
-                <h2 className="font-semibold text-gray-900 mb-2">Schema</h2>
-                <p className="text-xs text-gray-500 mb-2">{schema.rowCount} rows</p>
-                <ul className="text-sm space-y-1 max-h-48 overflow-y-auto">
-                  {schema.fields.map((f) => (
-                    <li key={f.name} className="flex justify-between gap-2">
-                      <span className="font-medium text-gray-700">{f.name}</span>
-                      <span className="text-gray-500">{f.type}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={loadSavedSpec}
-                className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
-              >
-                Load saved
-              </button>
-              <button
-                type="button"
-                onClick={clearSpec}
-                className="px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded"
-              >
-                Clear spec
-              </button>
-            </div>
-            {savedApps.length > 0 && (
-              <div className="bg-white rounded-lg border border-gray-200 p-4">
-                <h2 className="font-semibold text-gray-900 mb-2">Your saved dashboards</h2>
-                <ul className="space-y-1 max-h-40 overflow-y-auto">
-                  {savedApps.map((app) => (
-                    <li key={app.id} className="flex items-center gap-2 group">
-                      <button
-                        type="button"
-                        onClick={() => navigate(`/studio?open=${app.id}`)}
-                        className="text-left text-sm text-blue-600 hover:underline flex-1 min-w-0 py-1.5 px-2 rounded hover:bg-blue-50 truncate"
-                        title={app.name}
-                      >
-                        {app.name}
-                      </button>
-                      <a
-                        href={`/apps/${app.id}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs text-gray-500 hover:text-blue-600 shrink-0 py-1.5 px-2 rounded hover:bg-blue-50"
-                        title="View in new tab"
-                      >
-                        View
-                      </a>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            <div className="bg-white rounded-lg border border-gray-200 p-4">
-              <h2 className="font-semibold text-gray-900 mb-2">Save & share</h2>
-              <label className="block text-xs text-gray-500 mb-1">Dashboard title</label>
-              <input
-                type="text"
-                value={dashboardTitle}
-                onChange={(e) => {
-                  setDashboardTitle(e.target.value)
-                  if (spec) setSpec((s) => (s ? { ...s, title: e.target.value } : null))
-                }}
-                placeholder="e.g. Sales by Region"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm mb-3"
-              />
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={handleSaveDashboard}
-                  disabled={saving || !spec}
-                  className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {saving ? 'Saving…' : 'Save dashboard'}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleShare}
-                  disabled={!savedDashboardId}
-                  className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                  title={savedDashboardId ? 'Copy link to clipboard' : 'Save first to share'}
-                >
-                  {shareCopied ? 'Copied!' : 'Share link'}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleGetPublicLink}
-                  disabled={!spec}
-                  className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                  title="Copy view-only link (works without login)"
-                >
-                  {publicLinkCopied ? 'Copied!' : 'Get public link'}
-                </button>
-              </div>
-              {saveError && <p className="mt-2 text-xs text-red-600">{saveError}</p>}
-              {savedDashboardId && (
-                <p className="mt-2 text-xs text-green-700">Saved. Share link copies the view URL.</p>
-              )}
-            </div>
-              </div>
-            )}
-          </div>
-
-          {fullScreen && (
+      <StudioShell
+        fullScreen={fullScreen}
+        view={studioView === 'data' ? studioView : activeTab}
+        viewMeta={VIEW_META[studioView === 'data' ? studioView : activeTab]}
+        onSave={handleSaveDashboard}
+        onShare={handleShare}
+        onPublicLink={handleGetPublicLink}
+        saving={saving}
+        spec={spec}
+        savedDashboardId={savedDashboardId}
+        shareCopied={shareCopied}
+        publicLinkCopied={publicLinkCopied}
+      >
+        {studioView === 'data' && (
+        <DataView
+          datasetId={datasetId}
+          setDatasetId={setDatasetId}
+          schema={schema}
+          data={data}
+          dataLoadError={dataLoadError}
+          uploadedData={uploadedData}
+          uploadedFileName={uploadedFileName}
+          uploadLoading={uploadLoading}
+          uploadError={uploadError}
+          uploadInputRef={uploadInputRef}
+          onFileUpload={handleFileUpload}
+          onClearUploadedData={clearUploadedData}
+          dataLakeListLoading={dataLakeListLoading}
+          dataLakeList={dataLakeList}
+          saveToLakeName={saveToLakeName}
+          setSaveToLakeName={setSaveToLakeName}
+          saveToLakeLoading={saveToLakeLoading}
+          saveToLakeDisabled={!(data?.length || uploadedData?.length)}
+          onSaveToDataLake={handleSaveToDataLake}
+          onDeleteFromDataLake={handleDeleteFromDataLake}
+          userDashboards={userDashboards}
+          exampleDatasetIds={EXAMPLE_DATASET_IDS}
+          uploadDatasetId={UPLOAD_DATASET_ID}
+          onNext={() => navigate('/studio/chat')}
+        />
+      )}
+        {(studioView === 'chat' || studioView === 'preview') && (
+        <>
+          <TabHeader activeTab={activeTab} setActiveTab={setActiveTab} hasSpec={!!spec} />
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
             <div
-              role="separator"
-              aria-label="Resize panels"
-              onMouseDown={startResize('left')}
-              className={`w-1 flex-shrink-0 cursor-col-resize bg-gray-200 hover:bg-blue-400 transition-colors ${resizing === 'left' ? 'bg-blue-500' : ''}`}
-            />
-          )}
-
-          {/* Center panel: prompt + history */}
-          <div
-            className="flex flex-col bg-white rounded-lg border border-gray-200 overflow-hidden flex-shrink-0"
-            style={{ width: panelCenterW, minWidth: panelCollapsed.center ? COLLAPSED_PANEL_WIDTH : 220 }}
-          >
-            <div className="flex items-center border-b border-gray-200 bg-gray-50">
-              <button
-                type="button"
-                onClick={() => togglePanel('center')}
-                className="flex-1 flex items-center justify-between w-full px-4 py-2 text-left hover:bg-gray-100 text-sm font-semibold text-gray-900"
-              >
-                <span>Prompt</span>
-                <span className="text-gray-500" title={panelCollapsed.center ? 'Expand panel' : 'Collapse panel'}>{panelCollapsed.center ? '▶' : '▼'}</span>
-              </button>
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); expandPanel('center') }}
-                className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded shrink-0"
-                title="Expand this panel"
-              >
-                <span className="text-lg leading-none">⊞</span>
-              </button>
-            </div>
-            {!panelCollapsed.center && (
-              <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            <div className="rounded-lg border border-gray-200 p-4 bg-white">
-              <h2 className="font-semibold text-gray-900 mb-2">Prompt</h2>
-              <div className="mb-3">
-                <ChartTypeIcons
-                  disabled={!datasetId}
-                  onSelect={(phrase) => setPrompt((p) => (p ? `${p} ${phrase}` : phrase))}
-                />
-                <div className="mt-2">
-                  <FilterTypeIcons
-                    disabled={!datasetId}
-                    onSelect={(phrase) => setPrompt((p) => (p ? `${p} ${phrase}` : phrase))}
-                  />
-                </div>
-              </div>
-              <textarea
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                    e.preventDefault()
-                    if (!loading && prompt.trim() && datasetId) handleGenerate()
-                  }
-                }}
-                placeholder="e.g. Show revenue by month for 2025, add a date range filter, and a bar chart by product top 10"
-                rows={3}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+              style={{ display: activeTab === 'chat' ? 'block' : 'none' }}
+              className="flex-1 flex flex-col min-h-0 overflow-hidden"
+              aria-hidden={activeTab !== 'chat'}
+            >
+              <ReportChatView
+                chatTab={chatTab}
+                setChatTab={setChatTab}
+                chatMessages={chatMessages}
+                pendingConversationMessage={pendingConversationMessage}
+                loading={loading}
+                error={error}
+                conversationInputValue={conversationInputValue}
+                setConversationInputValue={setConversationInputValue}
+                sendConversationMessage={sendConversationMessage}
+                onSuggestionClick={onSuggestionClick}
+                spec={spec}
+                setSpec={setSpec}
+                data={data}
+                uploadedData={uploadedData}
+                dataByDatasetId={dataByDatasetId}
+                defaultDatasetId={datasetId}
+                onTabDatasetChange={onTabDatasetChange}
+                availableDatasetIds={EXAMPLE_DATASET_IDS}
+                schema={schema}
+                uploadedSchema={uploadedSchema}
+                filterValues={filterValues}
+                setFilterValues={setFilterValues}
+                dashboardTitle={dashboardTitle}
+                datasetId={datasetId}
+                hasData={hasData}
+                onGoToData={() => navigate('/studio/data')}
+                onLoadSampleData={handleLoadSampleData}
+                onUploadClick={focusFileInput}
+                setDatasetId={setDatasetId}
+                dataLoadError={dataLoadError}
+                uploadedFileName={uploadedFileName}
+                uploadLoading={uploadLoading}
+                uploadError={uploadError}
+                uploadInputRef={uploadInputRef}
+                onFileUpload={handleFileUpload}
+                onClearUploadedData={clearUploadedData}
+                dataLakeListLoading={dataLakeListLoading}
+                dataLakeList={dataLakeList}
+                saveToLakeName={saveToLakeName}
+                setSaveToLakeName={setSaveToLakeName}
+                saveToLakeLoading={saveToLakeLoading}
+                saveToLakeDisabled={!(data?.length || uploadedData?.length)}
+                onSaveToDataLake={handleSaveToDataLake}
+                onDeleteFromDataLake={handleDeleteFromDataLake}
+                userDashboards={userDashboards}
+                exampleDatasetIds={EXAMPLE_DATASET_IDS}
+                uploadDatasetId={UPLOAD_DATASET_ID}
               />
-              <button
-                type="button"
-                onClick={handleGenerate}
-                disabled={loading || !prompt.trim() || !datasetId}
-                className="mt-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
-              >
-                {loading ? 'Generating…' : 'Generate'}
-              </button>
-              {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
             </div>
-            <div className="bg-white rounded-lg border border-gray-200 p-4">
-              <h2 className="font-semibold text-gray-900 mb-2">Suggested prompts</h2>
-              <p className="text-xs text-gray-500 mb-2">Based on dataset: {datasetId}</p>
-              <ul className="space-y-1">
-                {getSuggestedPrompts(datasetId, schema).map((label, i) => (
-                  <li key={i}>
-                    <button
-                      type="button"
-                      onClick={() => setPrompt(label)}
-                      className="text-left text-sm text-blue-600 hover:underline w-full py-1.5 px-2 rounded hover:bg-blue-50 transition-colors"
-                    >
-                      {label}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-            {promptHistory.length > 0 && (
-              <div className="bg-white rounded-lg border border-gray-200 p-4">
-                <h2 className="font-semibold text-gray-900 mb-2">History</h2>
-                <ul className="text-sm space-y-1 max-h-32 overflow-y-auto">
-                  {promptHistory.slice().reverse().map((h, i) => (
-                    <li key={i} className="text-gray-600 truncate" title={h.prompt}>
-                      {h.prompt}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-              </div>
-            )}
-          </div>
-
-          {fullScreen && (
             <div
-              role="separator"
-              aria-label="Resize panels"
-              onMouseDown={startResize('right')}
-              className={`w-1 flex-shrink-0 cursor-col-resize bg-gray-200 hover:bg-blue-400 transition-colors ${resizing === 'right' ? 'bg-blue-500' : ''}`}
-            />
-          )}
-
-          {/* Right panel: preview */}
-          <div
-            className="flex flex-col bg-white rounded-lg border border-gray-200 overflow-hidden flex-shrink-0 flex-1 min-w-0"
-            style={{ width: panelRightW, minWidth: panelCollapsed.right ? COLLAPSED_PANEL_WIDTH : 280 }}
-          >
-            <div className="flex items-center border-b border-gray-200 bg-gray-50">
-              <button
-                type="button"
-                onClick={() => togglePanel('right')}
-                className="flex-1 flex items-center justify-between w-full px-4 py-2 text-left hover:bg-gray-100 text-sm font-semibold text-gray-900 min-w-0"
-              >
-                <span className="truncate">{dashboardTitle || spec?.title || 'Dashboard preview'}</span>
-                <span className="text-gray-500 shrink-0 ml-1" title={panelCollapsed.right ? 'Expand panel' : 'Collapse panel'}>{panelCollapsed.right ? '▶' : '▼'}</span>
-              </button>
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); expandPanel('right') }}
-                className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded shrink-0"
-                title="Expand this panel"
-              >
-                <span className="text-lg leading-none">⊞</span>
-              </button>
+              style={{ display: activeTab === 'preview' ? 'block' : 'none' }}
+              className="flex-1 flex flex-col min-h-0 overflow-hidden"
+              aria-hidden={activeTab !== 'preview'}
+            >
+              <PreviewView
+                spec={spec}
+                setSpec={setSpec}
+                data={data}
+                uploadedData={uploadedData}
+                dataByDatasetId={dataByDatasetId}
+                defaultDatasetId={datasetId}
+                onTabDatasetChange={onTabDatasetChange}
+                availableDatasetIds={EXAMPLE_DATASET_IDS}
+                schema={schema}
+                uploadedSchema={uploadedSchema}
+                filterValues={filterValues}
+                setFilterValues={setFilterValues}
+                loading={loading}
+                onLoadSampleData={handleLoadSampleData}
+                onUploadClick={focusFileInput}
+              />
             </div>
-            {!panelCollapsed.right && (
-              <div className="flex-1 flex min-h-0">
-                <div className="flex-1 overflow-y-auto p-4 min-w-0">
-              {loading ? (
-                <div className="min-h-[200px] flex flex-col items-center justify-center rounded-lg border border-gray-200 bg-gray-50 p-8">
-                  <div className="animate-spin rounded-full h-10 w-10 border-2 border-blue-500 border-t-transparent" />
-                  <p className="mt-4 text-gray-600 text-sm">Generating…</p>
-                </div>
-              ) : (
-                <ErrorBoundary>
-                  <DashboardRenderer
-                    spec={spec}
-                    data={data}
-                    filterValues={filterValues}
-                    onFilterChange={setFilterValues}
-                    onLayoutChange={(newLayout) => setSpec((s) => (s ? { ...s, layout: newLayout } : null))}
-                    onRemoveWidget={(id, type) =>
-                      setSpec((s) => {
-                        if (!s) return s
-                        if (type === 'kpi') return { ...s, kpis: (s.kpis || []).filter((k) => k.id !== id) }
-                        return { ...s, charts: (s.charts || []).filter((c) => c.id !== id) }
-                      })
-                    }
-                    onChartOptionChange={(chartId, options) =>
-                      setSpec((s) =>
-                        s
-                          ? {
-                              ...s,
-                              charts: (s.charts || []).map((ch) => (ch.id === chartId ? { ...ch, ...options } : ch))
-                            }
-                          : null
-                      )
-                    }
-                  />
-                </ErrorBoundary>
-              )}
-                </div>
-                <div
-                  className={`flex-shrink-0 border-l border-gray-200 bg-gray-50/80 flex flex-col overflow-hidden transition-[width] duration-200 ${styleDockCollapsed ? 'w-10' : 'w-44'}`}
+            <div
+              style={{ display: activeTab === 'clear' ? 'block' : 'none' }}
+              className="flex-1 flex flex-col min-h-0 overflow-hidden"
+              aria-hidden={activeTab !== 'clear'}
+            >
+              <div className="flex-1 flex flex-col items-center justify-center gap-4 p-6 text-center max-w-md mx-auto">
+                <p className="text-gray-600 text-sm">
+                  Clear the current report and chat to start over. This can&apos;t be undone.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    clearSpec()
+                    setActiveTab('chat')
+                  }}
+                  className="px-4 py-2.5 text-sm font-medium rounded-lg border border-red-300 bg-red-50 text-red-700 hover:bg-red-100"
                 >
-                  <button
-                    type="button"
-                    onClick={() => setStyleDockCollapsed((v) => !v)}
-                    className={`flex items-center border-gray-200 hover:bg-gray-100 min-h-10 ${styleDockCollapsed ? 'justify-center p-2 w-full border-b border-gray-200' : 'justify-between gap-1 p-2 text-left border-b border-gray-200'}`}
-                    title={styleDockCollapsed ? 'Expand style panel' : 'Collapse style panel'}
-                  >
-                    {styleDockCollapsed ? (
-                      <span className="text-gray-500 text-xs">▶</span>
-                    ) : (
-                      <>
-                        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Style</span>
-                        <span className="text-gray-400 text-xs">◀</span>
-                      </>
-                    )}
-                  </button>
-                  {!styleDockCollapsed && (
-                    <div className="flex flex-col p-3 gap-4 overflow-y-auto flex-1 min-h-0">
-                      <div className="flex flex-col gap-2">
-                        <span className="text-sm font-medium text-gray-700">Theme</span>
-                        <div className="flex flex-col gap-1">
-                          {['light', 'dark', 'executive'].map((t) => (
-                            <button
-                              key={t}
-                              type="button"
-                              onClick={() => {
-                                if (spec) setSpec((s) => ({ ...s, style: { ...(s?.style || {}), theme: t } }))
-                              }}
-                              className={`px-2 py-1.5 text-sm rounded text-left capitalize ${(spec?.style?.theme || 'light') === t ? 'bg-blue-600 text-white' : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-100'}`}
-                            >
-                              {t === 'executive' ? 'Executive' : t}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                      <div className="flex flex-col gap-2">
-                        <span className="text-sm font-medium text-gray-700">Bar look</span>
-                        <div className="flex flex-col gap-1">
-                          {['sheen', 'flat'].map((b) => (
-                            <button
-                              key={b}
-                              type="button"
-                              onClick={() => {
-                                if (spec) setSpec((s) => ({ ...s, style: { ...(s?.style || {}), barStyle: b } }))
-                              }}
-                              className={`px-2 py-1.5 text-sm rounded text-left capitalize ${(spec?.style?.barStyle || 'sheen') === b ? 'bg-blue-600 text-white' : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-100'}`}
-                            >
-                              {b}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                      <div className="flex flex-col gap-2">
-                        <span className="text-sm font-medium text-gray-700">Palette</span>
-                        <div className="flex flex-col gap-1">
-                          {['default', 'minimal', 'pastel'].map((p) => (
-                            <button
-                              key={p}
-                              type="button"
-                              onClick={() => {
-                                if (spec) setSpec((s) => ({ ...s, style: { ...(s?.style || {}), palette: p } }))
-                              }}
-                              className={`px-2 py-1.5 text-sm rounded text-left capitalize ${(spec?.style?.palette || 'default') === p ? 'bg-blue-600 text-white' : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-100'}`}
-                            >
-                              {p}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
+                  Clear dashboard
+                </button>
               </div>
-            )}
+            </div>
           </div>
-        </div>
-      </div>
-      {!fullScreen && <Footer />}
-    </div>
+        </>
+      )}
+      </StudioShell>
+    </ErrorBoundary>
   )
 }

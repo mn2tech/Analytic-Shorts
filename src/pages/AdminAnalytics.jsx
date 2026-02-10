@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import Navbar from '../components/Navbar'
 import apiClient from '../config/api'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -45,7 +44,6 @@ function AdminAnalytics() {
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50">
-        <Navbar />
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
           <div className="text-center">Loading analytics...</div>
         </div>
@@ -56,7 +54,6 @@ function AdminAnalytics() {
   if (error) {
     return (
       <div className="min-h-screen bg-gray-50">
-        <Navbar />
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
           <div className="bg-red-50 border border-red-200 rounded-lg p-6">
             <h2 className="text-xl font-semibold text-red-900 mb-2">Access Denied</h2>
@@ -75,7 +72,6 @@ function AdminAnalytics() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <Navbar />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-6 flex items-center justify-between">
           <h1 className="text-3xl font-bold text-gray-900">Admin Analytics</h1>

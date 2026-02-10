@@ -1,7 +1,5 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import Navbar from '../components/Navbar'
-import Footer from '../components/Footer'
 import FileUploader from '../components/FileUploader'
 import ExampleDatasetButton from '../components/ExampleDatasetButton'
 import OnboardingTour from '../components/OnboardingTour'
@@ -146,7 +144,6 @@ function Home() {
       {/* Analytics Watermark Pattern */}
       <div className="analytics-watermark"></div>
       <div className="analytics-watermark-icons"></div>
-      <Navbar />
       <OnboardingTour
         run={showTour}
         onComplete={handleTourComplete}
@@ -331,7 +328,7 @@ function Home() {
         )}
 
         <div className="space-y-6">
-          <div className="bg-white rounded-xl shadow-lg p-8 animate-slide-up file-upload-section">
+          <div id="upload" className="bg-white rounded-xl shadow-lg p-8 animate-slide-up file-upload-section scroll-mt-4">
             <h2 className="text-2xl font-semibold text-gray-900 mb-6 text-center">
               Upload Your Data
             </h2>
@@ -350,7 +347,6 @@ function Home() {
           </div>
         </div>
       </div>
-      <Footer />
 
       {/* Upgrade Prompt Modal */}
       {upgradePrompt && (

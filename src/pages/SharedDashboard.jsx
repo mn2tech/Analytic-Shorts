@@ -332,13 +332,18 @@ function SharedDashboard() {
               {fullScreen ? 'Exit full screen' : 'Full screen'}
             </button>
           </div>
-          <div className={fullScreen ? 'flex-1 min-h-0 overflow-auto' : undefined}>
-            <DashboardRenderer
-              spec={dashboardSpecData.spec}
-              data={dashboardSpecData.data}
-              filterValues={filterValues}
-              onFilterChange={setFilterValues}
-            />
+          <div
+            className={fullScreen ? 'flex-1 min-h-0 overflow-auto' : undefined}
+            style={fullScreen ? { scrollbarGutter: 'stable' } : undefined}
+          >
+            <div style={{ contain: 'layout', minHeight: fullScreen ? 'min-content' : undefined }}>
+              <DashboardRenderer
+                spec={dashboardSpecData.spec}
+                data={dashboardSpecData.data}
+                filterValues={filterValues}
+                onFilterChange={setFilterValues}
+              />
+            </div>
           </div>
         </div>
       </div>

@@ -45,6 +45,9 @@ Canonical list of example dataset IDs and their typical fields. Used for prompts
 | **medical**      | Date (date), Patient ID (string), Department (string), Diagnosis (string), Age (number), Blood Pressure (mmHg) (string), Heart Rate (bpm) (number), Temperature (°F) (number), Treatment Cost ($) (number), Medication (string), Visit Duration (min) (number), Status (string) |
 | **banking**      | (Varies by endpoint; typically date, category, amount/balance, etc.) |
 | **yearly-income**| (Varies; typically year and income/metric columns) |
+| **today-snapshot**| date (date), occupancy_rate (number), rooms_available (number), rooms_occupied (number), arrivals_today (number), departures_today (number), revenue_today (number), adr (number), revpar (number) |
+| **revenue-trends** | date (date), occupancy_rate (number), revenue (number), adr (number), revpar (number) |
+| **alters-insights** | date (date), alert_type (string), severity (string), description (string), recommended_action (string) |
 
 User data: `datasetId` can be `dashboard:<uuid>` for a user’s saved dashboard; schema is profiled from that dashboard’s stored data.
 

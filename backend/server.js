@@ -22,6 +22,7 @@ const studioRoutes = require('./routes/studio')
 const studioAiSchemaHandler = require('./routes/studioAiSchema')
 const aiDashboardSpecRoutes = require('./routes/aiDashboardSpec')
 const sharedRoutes = require('./routes/shared')
+const datalakeRoutes = require('./routes/datalake')
 const accessLogger = require('./middleware/accessLogger')
 
 const app = express()
@@ -103,6 +104,7 @@ if (typeof handleDashboardSpec === 'function') {
   console.log('[server] POST /api/ai/dashboard-spec registered')
 }
 app.use('/api/shared', sharedRoutes)
+app.use('/api/datalake', datalakeRoutes)
 
 // Health check
 app.get('/api/health', (req, res) => {

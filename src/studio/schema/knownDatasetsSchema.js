@@ -12,7 +12,10 @@ export const KNOWN_DATASET_IDS = [
   'donations',
   'medical',
   'banking',
-  'yearly-income'
+  'yearly-income',
+  'today-snapshot',
+  'revenue-trends',
+  'alters-insights'
 ]
 
 /**
@@ -65,6 +68,31 @@ export const KNOWN_DATASETS_FIELDS = {
   'yearly-income': [
     { name: 'Year', type: 'date' },
     { name: 'Income', type: 'number' }
+  ],
+  'today-snapshot': [
+    { name: 'date', type: 'date' },
+    { name: 'occupancy_rate', type: 'number' },
+    { name: 'rooms_available', type: 'number' },
+    { name: 'rooms_occupied', type: 'number' },
+    { name: 'arrivals_today', type: 'number' },
+    { name: 'departures_today', type: 'number' },
+    { name: 'revenue_today', type: 'number' },
+    { name: 'adr', type: 'number' },
+    { name: 'revpar', type: 'number' }
+  ],
+  'revenue-trends': [
+    { name: 'date', type: 'date' },
+    { name: 'occupancy_rate', type: 'number' },
+    { name: 'revenue', type: 'number' },
+    { name: 'adr', type: 'number' },
+    { name: 'revpar', type: 'number' }
+  ],
+  'alters-insights': [
+    { name: 'date', type: 'date' },
+    { name: 'alert_type', type: 'string' },
+    { name: 'severity', type: 'string' },
+    { name: 'description', type: 'string' },
+    { name: 'recommended_action', type: 'string' }
   ]
 }
 

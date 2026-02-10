@@ -9,6 +9,7 @@ const express = require('express')
 const OpenAI = require('openai')
 const axios = require('axios')
 const { getExampleDatasetData } = require('./examples')
+const { getDatasetById: getDatalakeDataset } = require('./datalake')
 const { detectColumnTypes } = require('../controllers/dataProcessor')
 const { getSystemPromptSchemaBlock, validate: validateDashboardSpec } = require('../schema/dashboardSpecSchema')
 
@@ -34,6 +35,14 @@ router.get('/', (req, res) => {
 async function getDataForDataset(datasetId, req) {
   if (!datasetId || typeof datasetId !== 'string') return null
   const trimmed = datasetId.trim()
+
+  // Data lake: persisted datasets
+  if (trimmed.startsWith('datalake:')) {
+    const lakeId = trimmed.replace(/^datalake:/, '')
+    const payload = getDatalakeDataset(lakeId)
+    if (payload && Array.isArray(payload.data)) return payload.data
+    return null
+  }
 
   // User dashboard: fetch from Supabase via dashboards API (we need auth)
   if (trimmed.startsWith('dashboard:')) {
@@ -228,9 +237,18 @@ async function handleDashboardSpec(req, res) {
 
 ${schemaBlock}`
 
+    const promptTrimmed = userPrompt.trim()
+    const wantsThreeTabs = /3\s*[-]?\s*tab|Overview,?\s*Analysis,?\s*Data/i.test(promptTrimmed)
+    const wantsMultiTab = wantsThreeTabs || /2\s*[-]?\s*tab|Summary and Charts|multi\s*[-]?\s*tab/i.test(promptTrimmed)
+    const multiTabHint = wantsThreeTabs
+      ? '\n\nImportant: the user requested a 3-TAB report. You MUST output a "tabs" array with exactly 3 tab objects: first tab label "Overview" (KPIs and/or a chart), second tab label "Analysis" (at least one chart), third tab label "Data" (a table). Each tab: id, label, filters, kpis, charts, layout. Do not put filters/kpis/charts at the top level. Use only field names from the dataset schema above.'
+      : wantsMultiTab
+        ? '\n\nImportant: the user requested a multi-tab report. You MUST output a "tabs" array with exactly 2 or 3 tab objects (each with id, label, filters, kpis, charts, layout). Do not put filters/kpis/charts at the top level. Every tab must contain at least one widget: e.g. Summary tab with KPIs and/or a table, Charts tab with at least one chart (bar, line, pie), Data tab with a table. Use only field names from the dataset schema above.'
+        : ''
+
     const userContent = `Dataset schema:\n${schemaDesc}\n\nUser request: ${userPrompt}\n${
       existingSpec ? `\nCurrent spec (refine/update this):\n${JSON.stringify(existingSpec)}` : ''
-    }\n\nOutput only the DashboardSpec JSON:`
+    }${multiTabHint}\n\nOutput only the DashboardSpec JSON:`
 
     let lastErrors = []
     let lastText = ''

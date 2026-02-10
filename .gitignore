@@ -29,6 +29,7 @@ Thumbs.db
 # Uploads and temporary files
 uploads
 backend/uploads
+backend/data-lake
 *.csv
 *.xlsx
 *.xls

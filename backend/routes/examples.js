@@ -347,6 +347,42 @@ const exampleDatasets = {
       { Year: 2025, Winner: 'Philadelphia Eagles' },
     ],
   },
+  'today-snapshot': {
+    data: [
+      {
+        date: '2026-02-09',
+        occupancy_rate: 82,
+        rooms_available: 100,
+        rooms_occupied: 82,
+        arrivals_today: 18,
+        departures_today: 14,
+        revenue_today: 12450,
+        adr: 151.83,
+        revpar: 124.5
+      }
+    ]
+  },
+  'revenue-trends': {
+    data: [
+      { date: '2026-02-01', occupancy_rate: 68, revenue: 8900, adr: 131, revpar: 89 },
+      { date: '2026-02-02', occupancy_rate: 72, revenue: 9400, adr: 130, revpar: 94 },
+      { date: '2026-02-03', occupancy_rate: 70, revenue: 9100, adr: 130, revpar: 91 },
+      { date: '2026-02-04', occupancy_rate: 74, revenue: 9900, adr: 134, revpar: 99 },
+      { date: '2026-02-05', occupancy_rate: 79, revenue: 10800, adr: 137, revpar: 108 },
+      { date: '2026-02-06', occupancy_rate: 88, revenue: 14200, adr: 161, revpar: 142 },
+      { date: '2026-02-07', occupancy_rate: 92, revenue: 15800, adr: 172, revpar: 158 },
+      { date: '2026-02-08', occupancy_rate: 85, revenue: 13200, adr: 155, revpar: 132 },
+      { date: '2026-02-09', occupancy_rate: 82, revenue: 12450, adr: 152, revpar: 125 }
+    ]
+  },
+  'alters-insights': {
+    data: [
+      { date: '2026-02-09', alert_type: 'Overbooking Risk', severity: 'High', description: '3 rooms overbooked for tonight', recommended_action: 'Close OTA inventory and walk low-value bookings' },
+      { date: '2026-02-09', alert_type: 'Low Occupancy Forecast', severity: 'Medium', description: 'Next Tuesday forecast at 55% occupancy', recommended_action: 'Launch midweek promotion or adjust rates' },
+      { date: '2026-02-09', alert_type: 'High Cancellations', severity: 'Medium', description: '6 cancellations in the last 24 hours', recommended_action: 'Review cancellation sources and policies' },
+      { date: '2026-02-09', alert_type: 'VIP Arrival', severity: 'Low', description: 'Repeat guest arriving today', recommended_action: 'Offer complimentary upgrade or welcome amenity' }
+    ]
+  },
   usaspending: {
     data: [
       { 'Award Date': '2024-01-15', 'Award Amount': 2500000, 'Recipient Name': 'Tech Solutions Inc', 'Awarding Agency': 'Department of Defense', 'Award Type': 'Contract', State: 'VA', 'NAICS Code': 541511, Description: 'Software Development Services' },
@@ -557,6 +593,54 @@ router.get('/superbowl-winners', (req, res) => {
     categoricalColumns,
     dateColumns,
     rowCount: processedData.length,
+  })
+})
+
+router.get('/today-snapshot', (req, res) => {
+  const dataset = exampleDatasets['today-snapshot']
+  const columns = Object.keys(dataset.data[0])
+  const { numericColumns, categoricalColumns, dateColumns } = detectColumnTypes(dataset.data, columns)
+  const processedData = processDataPreservingNumbers(dataset.data, numericColumns)
+
+  res.json({
+    data: processedData,
+    columns,
+    numericColumns,
+    categoricalColumns,
+    dateColumns,
+    rowCount: processedData.length
+  })
+})
+
+router.get('/revenue-trends', (req, res) => {
+  const dataset = exampleDatasets['revenue-trends']
+  const columns = Object.keys(dataset.data[0])
+  const { numericColumns, categoricalColumns, dateColumns } = detectColumnTypes(dataset.data, columns)
+  const processedData = processDataPreservingNumbers(dataset.data, numericColumns)
+
+  res.json({
+    data: processedData,
+    columns,
+    numericColumns,
+    categoricalColumns,
+    dateColumns,
+    rowCount: processedData.length
+  })
+})
+
+router.get('/alters-insights', (req, res) => {
+  const dataset = exampleDatasets['alters-insights']
+  const columns = Object.keys(dataset.data[0])
+  const { numericColumns, categoricalColumns, dateColumns } = detectColumnTypes(dataset.data, columns)
+  const processedData = processDataPreservingNumbers(dataset.data, numericColumns)
+
+  res.json({
+    data: processedData,
+    columns,
+    numericColumns,
+    categoricalColumns,
+    dateColumns,
+    rowCount: processedData.length
   })
 })
 
