@@ -1,12 +1,63 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, Area, AreaChart } from 'recharts'
 import { generateForecast, combineHistoricalAndForecast, analyzeTrend } from '../utils/forecasting'
 import ChartInsights from './ChartInsights'
 import { parseNumericValue } from '../utils/numberUtils'
 
-function ForecastChart({ data, selectedNumeric, selectedDate, forecastPeriods = 6 }) {
+function preferredAggregationForMetric(field) {
+  const s = String(field || '').toLowerCase()
+  if (!s) return 'sum'
+  if (
+    s.includes('rate') ||
+    s.includes('pct') ||
+    s.includes('percent') ||
+    s.includes('ratio') ||
+    s.includes('adr') ||
+    s.includes('revpar') ||
+    s.includes('occupancy') ||
+    s.includes('available') ||
+    s.includes('capacity') ||
+    s.includes('inventory') ||
+    s.includes('utilization')
+  ) return 'avg'
+  return 'sum'
+}
+
+function formatFieldLabel(field) {
+  const raw = String(field || '').trim()
+  if (!raw) return ''
+  const lower = raw.toLowerCase()
+  if (lower === 'adr') return 'ADR'
+  if (lower === 'revpar') return 'RevPAR'
+  if (lower === 'occupancy_rate') return 'Occupancy Rate'
+
+  const withSpaces = raw
+    .replace(/[_-]+/g, ' ')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .trim()
+
+  return withSpaces
+    .split(/\s+/)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ')
+}
+
+function toISODateKey(v) {
+  if (v == null || v === '') return ''
+  const d = new Date(v)
+  if (Number.isNaN(d.getTime())) {
+    // If it's already YYYY-MM-DD, keep it
+    const s = String(v).trim()
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
+    return ''
+  }
+  return d.toISOString().split('T')[0]
+}
+
+function ForecastChart({ data, selectedNumeric, selectedDate, forecastPeriods = 7, aggregation }) {
   const [showConfidenceInterval, setShowConfidenceInterval] = useState(true)
   const [chartInsights, setChartInsights] = useState(null)
+  const [periods, setPeriods] = useState(forecastPeriods || 7)
 
   if (!data || !selectedNumeric || !selectedDate || data.length === 0) {
     return (
@@ -16,15 +67,42 @@ function ForecastChart({ data, selectedNumeric, selectedDate, forecastPeriods = 
     )
   }
 
-  // Prepare historical data
-  const historicalData = data
-    .map((row) => ({
-      date: row[selectedDate] || '',
-      value: parseNumericValue(row[selectedNumeric]),
-    }))
-    .filter((item) => item.date)
-    .sort((a, b) => new Date(a.date) - new Date(b.date))
-    .slice(-30) // Use last 30 points for better performance
+  // Keep internal selector in sync with prop changes (if parent overrides).
+  useEffect(() => {
+    if (typeof forecastPeriods === 'number' && Number.isFinite(forecastPeriods) && forecastPeriods > 0) {
+      setPeriods(forecastPeriods)
+    }
+  }, [forecastPeriods])
+
+  const agg = aggregation || preferredAggregationForMetric(selectedNumeric)
+
+  // Prepare historical data (group by date, using sum/avg as appropriate).
+  const historicalData = useMemo(() => {
+    const base = Array.isArray(data) ? data : []
+    const byDay = new Map() // date -> { sum, count }
+    for (const row of base) {
+      const dateKey = toISODateKey(row?.[selectedDate])
+      if (!dateKey) continue
+      const raw = row?.[selectedNumeric]
+      if (raw === null || raw === undefined || raw === '') continue
+      const val = parseNumericValue(raw)
+      if (!Number.isFinite(val)) continue
+      if (!byDay.has(dateKey)) byDay.set(dateKey, { sum: 0, count: 0 })
+      const rec = byDay.get(dateKey)
+      rec.sum += val
+      rec.count += 1
+    }
+
+    const series = Array.from(byDay.entries())
+      .map(([date, rec]) => ({
+        date,
+        value: agg === 'avg' ? (rec.count ? rec.sum / rec.count : 0) : rec.sum,
+      }))
+      .sort((a, b) => new Date(a.date) - new Date(b.date))
+
+    // Use last N points for performance
+    return series.slice(-60)
+  }, [data, selectedDate, selectedNumeric, agg])
 
   if (historicalData.length < 2) {
     return (
@@ -35,7 +113,7 @@ function ForecastChart({ data, selectedNumeric, selectedDate, forecastPeriods = 
   }
 
   // Generate forecast
-  const forecastData = generateForecast(historicalData, forecastPeriods)
+  const forecastData = generateForecast(historicalData, periods)
   const combinedData = combineHistoricalAndForecast(historicalData, forecastData)
 
   // Analyze trend
@@ -55,7 +133,7 @@ function ForecastChart({ data, selectedNumeric, selectedDate, forecastPeriods = 
       setChartInsights({
         chartType: 'forecast',
         chartData: dataForInsights,
-        chartTitle: `${selectedNumeric} Forecast & Prediction`,
+        chartTitle: `${formatFieldLabel(selectedNumeric) || selectedNumeric} Forecast (next ${periods} days)`,
         selectedNumeric,
         selectedCategorical: null,
         selectedDate,
@@ -111,10 +189,29 @@ function ForecastChart({ data, selectedNumeric, selectedDate, forecastPeriods = 
       <div className="flex justify-between items-start mb-4">
         <div>
           <p className="text-sm text-gray-600">
-            {selectedNumeric} forecast for next {forecastPeriods} periods
+            {formatFieldLabel(selectedNumeric) || selectedNumeric} forecast for next {periods} days
+          </p>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Using {agg === 'avg' ? 'daily average' : 'daily total'} grouped by {formatFieldLabel(selectedDate) || selectedDate}
           </p>
         </div>
         <div className="flex items-center gap-4">
+          <label className="flex items-center gap-2 text-sm text-gray-600">
+            <span className="hidden sm:inline">Horizon</span>
+            <select
+              value={periods}
+              onChange={(e) => {
+                const n = Number(e.target.value)
+                setPeriods(Number.isFinite(n) && n > 0 ? n : 7)
+              }}
+              className="px-2 py-1 border border-gray-300 rounded-lg bg-white text-sm focus:ring-2 focus:ring-blue-500"
+              title="Forecast horizon"
+            >
+              <option value={7}>7 days</option>
+              <option value={14}>14 days</option>
+              <option value={30}>30 days</option>
+            </select>
+          </label>
           <button
             onClick={handleChartClick}
             className="opacity-0 group-hover:opacity-100 transition-opacity p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg"

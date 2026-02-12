@@ -5,10 +5,55 @@ const fs = require('fs')
 const Papa = require('papaparse')
 const XLSX = require('xlsx')
 const { detectColumnTypes, processData } = require('../controllers/dataProcessor')
+const { inferNumericColumnsAndConvert } = require('../utils/numericInference')
+const { validateData } = require('../controllers/dataValidator')
+const { parseCsvWithFallback, unpackSingleColumnCsvLines } = require('../utils/uploadParsing')
 const { createClient } = require('@supabase/supabase-js')
 const { checkUploadLimit } = require('../middleware/usageLimits')
 
 const router = express.Router()
+
+/**
+ * Excel edge case: the sheet contains CSV lines in a single column.
+ * `sheet_to_json` then yields one key like "date,rooms_available,..." and each row value is a full CSV line.
+ * Detect and re-parse those lines as CSV.
+ */
+function maybeReparseSingleColumnCsvFromXlsx(rawData) {
+  if (!Array.isArray(rawData) || rawData.length === 0) return rawData
+  const cols = Object.keys(rawData[0] || {})
+  if (cols.length !== 1) return rawData
+  const onlyHeader = cols[0] || ''
+  if (!onlyHeader.includes(',')) return rawData
+
+  const lines = [onlyHeader]
+  for (const row of rawData) {
+    const v = row?.[onlyHeader]
+    if (v === null || v === undefined) continue
+    const s = String(v).trim()
+    if (s) lines.push(s)
+  }
+  if (lines.length <= 1) return rawData
+
+  const reconstructed = lines.join('\n')
+  const reparsed = parseCsvWithFallback(reconstructed)
+  return reparsed.data && reparsed.data.length ? reparsed.data : rawData
+}
+
+function numericColumnsFromTypedValues(data, columns) {
+  const out = []
+  for (const col of columns || []) {
+    let foundNumber = false
+    for (let i = 0; i < (data?.length || 0); i++) {
+      const v = data[i]?.[col]
+      if (typeof v === 'number' && Number.isFinite(v)) {
+        foundNumber = true
+        break
+      }
+    }
+    if (foundNumber) out.push(col)
+  }
+  return out
+}
 
 // Initialize Supabase for authentication (optional - upload can work without auth)
 const supabaseUrl = process.env.SUPABASE_URL
@@ -179,17 +224,15 @@ router.post('/', getUserFromToken, upload.single('file'), checkUploadLimitWithTi
     // Parse file based on extension
     if (fileExt === '.csv') {
       const fileContent = fs.readFileSync(filePath, 'utf-8')
-      const parsed = Papa.parse(fileContent, {
-        header: true,
-        skipEmptyLines: true,
-        transformHeader: (header) => header.trim(),
-      })
-      rawData = parsed.data.filter((row) => Object.keys(row).length > 0)
+      const parsed = parseCsvWithFallback(fileContent)
+      rawData = unpackSingleColumnCsvLines(parsed.data) || parsed.data
     } else if (fileExt === '.xlsx' || fileExt === '.xls') {
       const workbook = XLSX.readFile(filePath)
       const sheetName = workbook.SheetNames[0]
       const worksheet = workbook.Sheets[sheetName]
       rawData = XLSX.utils.sheet_to_json(worksheet, { defval: '' })
+      rawData = maybeReparseSingleColumnCsvFromXlsx(rawData)
+      rawData = unpackSingleColumnCsvLines(rawData) || rawData
     } else {
       fs.unlinkSync(filePath) // Clean up
       return res.status(400).json({ error: 'Unsupported file format' })
@@ -200,13 +243,46 @@ router.post('/', getUserFromToken, upload.single('file'), checkUploadLimitWithTi
       return res.status(400).json({ error: 'File is empty or could not be parsed' })
     }
 
-    // Process and analyze data
     const columns = Object.keys(rawData[0])
-    const { numericColumns, categoricalColumns, dateColumns } = detectColumnTypes(rawData, columns)
-    const processedData = processData(rawData)
+ 
+    // 1) Normalize + infer numeric columns, then convert cells to actual numbers.
+    const {
+      data: processedData,
+      numericColumns: inferredNumericColumns,
+      numericInference,
+    } = inferNumericColumnsAndConvert(rawData, columns, {
+      // Default threshold: 70% of non-null-like values must parse as numbers
+      threshold: 0.7,
+      evaluationRowLimit: 5000,
+      minNonNullValues: 2,
+      allowParensNegative: true,
+    })
+ 
+    // 2) Detect date/categorical types AFTER numeric conversion.
+    //    We reuse the existing heuristic detector (it handles date columns and year-like columns).
+    const detected = detectColumnTypes(processedData, columns)
+    const dateColumns = detected.dateColumns || []
+
+    // 3) Numeric detection AFTER conversion (JS equivalent of pandas select_dtypes(include=["number"])).
+    //    Then exclude date columns (e.g. Year) from numeric measures.
+    const numericColumnsAfter = numericColumnsFromTypedValues(processedData, columns)
+      .filter((c) => !dateColumns.includes(c))
+
+    // Keep the inference list for debug/explanations, but use post-conversion numeric columns for the app.
+    const numericColumns = numericColumnsAfter
+    const categoricalColumns = (columns || []).filter((c) => !numericColumns.includes(c) && !dateColumns.includes(c))
+ 
+    // 4) Validation payload for the UI (helps explain "no charts" failures).
+    const validation = validateData(processedData, columns, numericColumns, categoricalColumns, dateColumns)
 
     // Clean up uploaded file
     fs.unlinkSync(filePath)
+ 
+    // Debug: log numeric detection (helpful for sample fixtures + troubleshooting)
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[upload] inferred numericColumns (threshold-based):', inferredNumericColumns)
+      console.log('[upload] numericColumns (post-conversion types):', numericColumns)
+    }
 
     res.json({
       data: processedData,
@@ -215,6 +291,8 @@ router.post('/', getUserFromToken, upload.single('file'), checkUploadLimitWithTi
       categoricalColumns,
       dateColumns,
       rowCount: processedData.length,
+      numericInference,
+      validation,
     })
   } catch (error) {
     console.error('Upload error:', error)

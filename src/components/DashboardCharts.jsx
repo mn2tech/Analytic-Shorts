@@ -22,6 +22,52 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
   const [hoveredSegment, setHoveredSegment] = useState(null)
   const [chartInsights, setChartInsights] = useState(null)
   const [maximized, setMaximized] = useState(null) // { type: 'line' | 'pie', title: string } | null
+
+  // Heuristic: pick "avg-like" vs "sum-like" aggregation for a metric when grouping.
+  // This avoids misleading totals like summing snapshot/rate metrics (e.g. ADR, occupancy_rate, rooms_available).
+  const preferredAggregationForMetric = (field) => {
+    const s = String(field || '').toLowerCase()
+    if (!s) return 'sum'
+    if (
+      s.includes('rate') ||
+      s.includes('pct') ||
+      s.includes('percent') ||
+      s.includes('ratio') ||
+      s.includes('adr') ||
+      s.includes('revpar') ||
+      s.includes('occupancy') ||
+      s.includes('available') ||
+      s.includes('capacity') ||
+      s.includes('inventory') ||
+      s.includes('utilization')
+    ) return 'avg'
+    return 'sum'
+  }
+
+  const formatFieldLabel = (field) => {
+    const raw = String(field || '').trim()
+    if (!raw) return ''
+    const lower = raw.toLowerCase()
+    if (lower === 'adr') return 'ADR'
+    if (lower === 'revpar') return 'RevPAR'
+    if (lower === 'occupancy_rate') return 'Occupancy Rate'
+
+    const withSpaces = raw
+      .replace(/[_-]+/g, ' ')
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .trim()
+
+    return withSpaces
+      .split(/\s+/)
+      .map((w) => {
+        const wl = w.toLowerCase()
+        if (wl === 'id') return 'ID'
+        if (wl === 'api') return 'API'
+        if (wl === 'usd') return 'USD'
+        return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()
+      })
+      .join(' ')
+  }
   
   // Use filteredData for display (slider/filters), fallback to full data
   // Add defensive check to ensure data is valid array
@@ -82,28 +128,39 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
   const preparePieChartData = useMemo(() => {
     if (!sampledPieData || sampledPieData.length === 0) return []
 
-    // Pie charts can work with categorical OR date columns (treating dates as categories)
-    const categoryColumn = selectedCategorical || selectedDate
-    if (categoryColumn && selectedNumeric) {
-      const grouped = {}
-      // Process sampled data instead of full dataset
-      sampledPieData.forEach((row) => {
-        // Use the category column (categorical or date)
-        const key = row[categoryColumn] || 'Unknown'
-        const value = parseNumericValue(row[selectedNumeric])
-        grouped[key] = (grouped[key] || 0) + value
-      })
-      return Object.entries(grouped)
-        .map(([name, value]) => ({ name, value }))
-        .sort((a, b) => b.value - a.value)
-        .slice(0, 8)
-    }
+    // Pie charts should be categorical breakdowns. Using a date as a "category"
+    // usually creates misleading slices (e.g. summing 5 days -> 600 rooms).
+    const categoryColumn = selectedCategorical
+    if (!categoryColumn || !selectedNumeric) return []
 
-    return []
-  }, [sampledPieData, selectedCategorical, selectedDate, selectedNumeric])
+    const agg = preferredAggregationForMetric(selectedNumeric)
+    const grouped = new Map() // key -> { sum, count }
+
+    // Process sampled data instead of full dataset
+    sampledPieData.forEach((row) => {
+      const key = row?.[categoryColumn] || 'Unknown'
+      const raw = row?.[selectedNumeric]
+      if (raw === null || raw === undefined || raw === '') return
+      const value = parseNumericValue(raw)
+      if (!grouped.has(key)) grouped.set(key, { sum: 0, count: 0 })
+      const rec = grouped.get(key)
+      rec.sum += value
+      rec.count += 1
+    })
+
+    const out = Array.from(grouped.entries()).map(([name, rec]) => ({
+      name,
+      value: agg === 'avg' ? (rec.count ? rec.sum / rec.count : 0) : rec.sum
+    }))
+
+    return out
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 8)
+
+  }, [sampledPieData, selectedCategorical, selectedNumeric])
 
   const handlePieClick = (data, index) => {
-    const categoryColumn = selectedCategorical || selectedDate
+    const categoryColumn = selectedCategorical
     if (categoryColumn && data && data.name) {
       const isCurrentlySelected = chartFilter?.type === 'category' && chartFilter?.value === data.name
       if (isCurrentlySelected) {
@@ -127,10 +184,31 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
 
   const lineData = prepareLineChartData
   const pieData = preparePieChartData
+  const pieAgg = useMemo(() => preferredAggregationForMetric(selectedNumeric), [selectedNumeric])
+  const pieTitle = useMemo(() => {
+    if (!selectedCategorical || !selectedNumeric) return 'Breakdown'
+    const aggLabel = pieAgg === 'avg' ? 'Average' : 'Total'
+    return `${aggLabel} ${formatFieldLabel(selectedNumeric)} by ${formatFieldLabel(selectedCategorical)}`
+  }, [selectedCategorical, selectedNumeric, pieAgg])
+
   const totalValue = useMemo(() => {
     if (!pieData || pieData.length === 0) return 0
     return pieData.reduce((sum, item) => sum + (item.value || 0), 0)
   }, [pieData])
+
+  const overallAvgValue = useMemo(() => {
+    if (pieAgg !== 'avg' || !sampledPieData?.length || !selectedNumeric) return 0
+    let sum = 0
+    let count = 0
+    for (const row of sampledPieData) {
+      const raw = row?.[selectedNumeric]
+      if (raw === null || raw === undefined || raw === '') continue
+      const v = parseNumericValue(raw)
+      sum += v
+      count += 1
+    }
+    return count ? sum / count : 0
+  }, [pieAgg, sampledPieData, selectedNumeric])
   
   // Add safety checks to prevent rendering with invalid data
   const hasValidLineData = lineData && Array.isArray(lineData) && lineData.length > 0
@@ -329,7 +407,7 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
       <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200 hover:shadow-md transition-shadow relative group">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-semibold text-gray-900">
-            {selectedCategorical || selectedDate || 'Distribution'}
+            {pieTitle}
           </h3>
           {hasValidPieData && (
             <div className="flex items-center gap-2">
@@ -348,7 +426,7 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
                 onClick={() =>
                   setMaximized({
                     type: 'pie',
-                    title: `Distribution by ${selectedCategorical || selectedDate || 'Category'}`,
+                    title: pieTitle,
                   })
                 }
                 className="opacity-0 group-hover:opacity-100 transition-opacity p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-50 rounded-lg"
@@ -359,7 +437,7 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
                 </svg>
               </button>
               <button
-                onClick={() => handleChartClick('pie', pieData, `Distribution by ${selectedCategorical || selectedDate || 'Category'}`)}
+                onClick={() => handleChartClick('pie', pieData, pieTitle)}
                 className="opacity-0 group-hover:opacity-100 transition-opacity p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg"
                 title="Get AI insights for this chart"
               >
@@ -375,7 +453,7 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
             {/* Chart on left */}
             <div className="relative flex-1" style={{ maxWidth: '300px' }}>
               <ResponsiveContainer width="100%" height={300}>
-                <PieChart key={`pie-${pieData.length}-${selectedCategorical || selectedDate}`}>
+                <PieChart key={`pie-${pieData.length}-${selectedCategorical}`}>
                   <Pie
                     data={pieData}
                     cx="50%"
@@ -415,20 +493,29 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
                       borderRadius: '6px',
                       boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
                     }}
-                    formatter={(value) => [value.toLocaleString(), 'Value']}
+                    formatter={(value) => [
+                      value.toLocaleString(),
+                      `${pieAgg === 'avg' ? 'Avg' : 'Total'} ${formatFieldLabel(selectedNumeric) || 'Value'}`
+                    ]}
                   />
                 </PieChart>
               </ResponsiveContainer>
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                <p className="text-3xl font-bold text-gray-900">{totalValue.toLocaleString()}</p>
-                <p className="text-sm text-gray-600">{selectedNumeric || 'Total'}</p>
+                <p className="text-3xl font-bold text-gray-900">
+                  {(pieAgg === 'avg' ? overallAvgValue : totalValue).toLocaleString()}
+                </p>
+                <p className="text-sm text-gray-600">
+                  {pieAgg === 'avg' ? `Avg ${formatFieldLabel(selectedNumeric)}` : `Total ${formatFieldLabel(selectedNumeric)}`}
+                </p>
               </div>
             </div>
             
             {/* Legend on right */}
             <div className="flex-1 space-y-2">
               {pieData.slice(0, 8).map((item, index) => {
-                const percentage = ((item.value / totalValue) * 100).toFixed(1)
+                const percentage = pieAgg === 'sum' && totalValue > 0
+                  ? ((item.value / totalValue) * 100).toFixed(1)
+                  : null
                 const isHovered = hoveredSegment === index
                 return (
                   <div 
@@ -438,7 +525,7 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
                       chartFilter?.type === 'category' && chartFilter?.value === item.name
                         ? 'bg-red-50 border border-red-200' : 'hover:bg-gray-50'
                     }`}
-                    title={`${item.name}: ${item.value.toLocaleString()} (${percentage}%) - Click to filter`}
+                    title={`${item.name}: ${item.value.toLocaleString()}${percentage ? ` (${percentage}%)` : ''} - Click to filter`}
                     onMouseEnter={() => setHoveredSegment(index)}
                     onMouseLeave={() => setHoveredSegment(null)}
                     onClick={() => handlePieClick({ name: item.name }, index)}

@@ -1,8 +1,10 @@
-import { useMemo, memo } from 'react'
+import { useMemo, memo, useState } from 'react'
 import { parseNumericValue } from '../utils/numberUtils'
 
 function MetricCards({ data, numericColumns, selectedNumeric, stats }) {
   if (!data || data.length === 0 || !stats || !selectedNumeric) return null
+
+  const [showAdvanced, setShowAdvanced] = useState(false)
 
   // Memoize expensive calculations to prevent recalculation on every render
   const metrics = useMemo(() => {
@@ -122,18 +124,24 @@ function MetricCards({ data, numericColumns, selectedNumeric, stats }) {
   const range = stats.max - stats.min
 
   // Build card data - conditionally show "Total Sum" or "Range" based on data type
-  const cardData = [
+  const keyMetric = isPercentageData
+    ? { label: 'Range', value: formatValue(range), color: 'purple' }
+    : { label: 'Total', value: formatValue(stats.sum), color: 'purple' }
+
+  // Keep Simple view focused: show a compact set by default.
+  const primaryCards = [
+    keyMetric,
+    { label: 'Average', value: formatValue(stats.avg), color: 'indigo' },
+    { label: 'Min', value: formatValue(stats.min), color: 'gray' },
+    { label: 'Max', value: formatValue(stats.max), color: 'blue' },
+    { label: 'Trend', value: formatValue(growthRate, 'percentage'), color: growthRate >= 0 ? 'green' : 'red' },
+  ]
+
+  // Advanced stats (available via toggle)
+  const advancedCards = [
     { label: 'Total Items', value: metrics.totalItems, color: 'gray' },
     { label: 'Engagement Rate', value: formatValue(metrics.engagementRate, 'percentage'), color: 'green' },
-    // Show "Range" for percentage data, "Total Sum" for other numeric data
-    isPercentageData 
-      ? { label: 'Range', value: formatValue(range), color: 'purple' }
-      : { label: 'Total Sum', value: formatValue(stats.sum), color: 'purple' },
-    { label: 'Average Value', value: formatValue(stats.avg), color: 'indigo' },
-    { label: 'Median Value', value: formatValue(metrics.median), color: 'pink' },
-    { label: 'Max Value', value: formatValue(stats.max), color: 'blue' },
-    { label: 'Min Value', value: formatValue(stats.min), color: 'gray' },
-    { label: 'Growth Rate', value: formatValue(growthRate, 'percentage'), color: growthRate >= 0 ? 'green' : 'red' },
+    { label: 'Median', value: formatValue(metrics.median), color: 'pink' },
     { label: 'Unique Values', value: metrics.uniqueValues, color: 'purple' },
     { label: 'Std Deviation', value: formatValue(metrics.stdDev), color: 'indigo' },
     { label: 'IQR (Spread)', value: formatValue(iqr), color: 'blue' },
@@ -152,9 +160,20 @@ function MetricCards({ data, numericColumns, selectedNumeric, stats }) {
 
   return (
     <div className="space-y-4">
-      {/* First Row */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        {cardData.slice(0, 6).map((card, index) => (
+      {/* Primary (default) */}
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm font-semibold text-gray-900">Key metrics</p>
+        <button
+          type="button"
+          onClick={() => setShowAdvanced((v) => !v)}
+          className="text-sm text-blue-700 hover:text-blue-900 font-medium"
+        >
+          {showAdvanced ? 'Hide advanced stats' : 'Show advanced stats'}
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+        {primaryCards.map((card, index) => (
           <div
             key={index}
             className={`bg-white rounded-lg shadow-sm p-4 border-l-4 ${colorClasses[card.color] || 'border-gray-500'} border border-gray-200 hover:shadow-md hover:scale-105 transition-all duration-200 cursor-pointer group`}
@@ -166,19 +185,21 @@ function MetricCards({ data, numericColumns, selectedNumeric, stats }) {
         ))}
       </div>
 
-      {/* Second Row */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        {cardData.slice(6, 12).map((card, index) => (
-          <div
-            key={index + 6}
-            className={`bg-white rounded-lg shadow-sm p-4 border-l-4 ${colorClasses[card.color] || 'border-gray-500'} border border-gray-200 hover:shadow-md hover:scale-105 transition-all duration-200 cursor-pointer group`}
-            title={`${card.label}: ${card.value}`}
-          >
-            <p className="text-xs text-gray-600 font-medium mb-1 group-hover:text-gray-900 transition-colors">{card.label}</p>
-            <p className="text-xl font-bold text-gray-900 group-hover:text-blue-600 transition-colors">{card.value}</p>
-          </div>
-        ))}
-      </div>
+      {/* Advanced (toggle) */}
+      {showAdvanced && (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-4">
+          {advancedCards.map((card, index) => (
+            <div
+              key={`adv-${index}`}
+              className={`bg-white rounded-lg shadow-sm p-4 border-l-4 ${colorClasses[card.color] || 'border-gray-500'} border border-gray-200 hover:shadow-md hover:scale-105 transition-all duration-200 cursor-pointer group`}
+              title={`${card.label}: ${card.value}`}
+            >
+              <p className="text-xs text-gray-600 font-medium mb-1 group-hover:text-gray-900 transition-colors">{card.label}</p>
+              <p className="text-xl font-bold text-gray-900 group-hover:text-blue-600 transition-colors">{card.value}</p>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

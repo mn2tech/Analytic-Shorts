@@ -348,20 +348,31 @@ const exampleDatasets = {
     ],
   },
   'today-snapshot': {
-    data: [
-      {
-        date: '2026-02-09',
-        occupancy_rate: 82,
-        rooms_available: 100,
-        rooms_occupied: 82,
-        arrivals_today: 18,
-        departures_today: 14,
-        revenue_today: 12450,
-        adr: 151.83,
-        revpar: 124.5
-      }
-    ]
-  },
+  data: [
+    {
+      date: '2026-02-08',
+      occupancy_rate: 81,
+      rooms_available: 100,
+      rooms_occupied: 81,
+      arrivals_today: 17,
+      departures_today: 15,
+      revenue_today: 12100,
+      adr: 149.20,
+      revpar: 120.50
+    },
+    {
+      date: '2026-02-09',
+      occupancy_rate: 82,
+      rooms_available: 100,
+      rooms_occupied: 82,
+      arrivals_today: 18,
+      departures_today: 14,
+      revenue_today: 12450,
+      adr: 151.83,
+      revpar: 124.50
+    }
+  ]
+},
   'revenue-trends': {
     data: [
       { date: '2026-02-01', occupancy_rate: 68, revenue: 8900, adr: 131, revpar: 89 },
@@ -897,6 +908,140 @@ router.get('/usaspending/live', async (req, res) => {
         documentation: 'https://api.usaspending.gov/docs/'
       })
     }
+  }
+})
+
+// Route to fetch real-time SAM.gov opportunities (Get Opportunities Public API)
+// Docs: https://open.gsa.gov/api/get-opportunities-public-api/
+// Dataset id used by Studio: "samgov/live" (endpoint: /api/example/samgov/live)
+const SAMGOV_CACHE_TTL_MS = 5 * 60 * 1000
+const samgovCache = new Map() // key -> { ts, payload }
+
+function formatMmDdYyyy(d) {
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  const yyyy = String(d.getFullYear())
+  return `${mm}/${dd}/${yyyy}`
+}
+
+router.get('/samgov/live', async (req, res) => {
+  try {
+    const apiKey = (process.env.SAM_GOV_API_KEY || req.query.api_key || '').toString().trim()
+    if (!apiKey) {
+      return res.status(503).json({
+        error: 'SAM.gov API key not configured',
+        message: 'Set SAM_GOV_API_KEY in backend environment (.env) to use this dataset.',
+        docs: 'https://open.gsa.gov/api/get-opportunities-public-api/'
+      })
+    }
+
+    const limit = Math.min(Math.max(parseInt(req.query.limit) || 100, 1), 1000)
+    const offset = Math.max(parseInt(req.query.offset) || 0, 0)
+    const ptype = (req.query.ptype || '').toString().trim() || undefined
+    const title = (req.query.title || req.query.q || '').toString().trim() || undefined
+    const state = (req.query.state || '').toString().trim() || undefined
+    const ncode = (req.query.ncode || '').toString().trim() || undefined
+
+    // postedFrom/postedTo are mandatory; default to last 30 days (MM/dd/yyyy)
+    const postedFromRaw = (req.query.postedFrom || req.query.posted_from || '').toString().trim()
+    const postedToRaw = (req.query.postedTo || req.query.posted_to || '').toString().trim()
+    const now = new Date()
+    const postedTo = postedToRaw || formatMmDdYyyy(now)
+    const from = new Date(now)
+    from.setDate(from.getDate() - 30)
+    const postedFrom = postedFromRaw || formatMmDdYyyy(from)
+
+    const cacheKey = JSON.stringify({ limit, offset, ptype, title, state, ncode, postedFrom, postedTo })
+    const cached = samgovCache.get(cacheKey)
+    if (cached && Date.now() - cached.ts < SAMGOV_CACHE_TTL_MS) {
+      res.setHeader('X-Cache', 'HIT')
+      return res.json(cached.payload)
+    }
+    res.setHeader('X-Cache', 'MISS')
+
+    const apiUrl = 'https://api.sam.gov/opportunities/v2/search'
+    const params = {
+      api_key: apiKey,
+      limit,
+      offset,
+      postedFrom,
+      postedTo,
+      ...(ptype ? { ptype } : {}),
+      ...(title ? { title } : {}),
+      ...(state ? { state } : {}),
+      ...(ncode ? { ncode } : {})
+    }
+
+    const response = await axios.get(apiUrl, { params, timeout: 15000 })
+    const raw = response.data
+    const items = Array.isArray(raw?.opportunitiesData) ? raw.opportunitiesData : (Array.isArray(raw) ? raw : [])
+
+    if (!items.length) {
+      return res.status(404).json({
+        error: 'No opportunities found',
+        message: 'Try adjusting postedFrom/postedTo, title, state, ncode, or ptype.',
+        hint: 'Example: /api/example/samgov/live?postedFrom=01/01/2026&postedTo=02/09/2026&ptype=o&limit=50'
+      })
+    }
+
+    const transformedData = items.map((o) => {
+      const popState = o?.placeOfPerformance?.state?.code || o?.placeOfPerformance?.state || o?.officeAddress?.state || ''
+      const awardAmountRaw = o?.award?.amount
+      const award_amount = awardAmountRaw == null || awardAmountRaw === '' ? null : Number(String(awardAmountRaw).replace(/[$,\s]/g, ''))
+      return {
+        noticeId: o.noticeId || '',
+        title: o.title || '',
+        solicitationNumber: o.solicitationNumber || '',
+        postedDate: o.postedDate || '',
+        responseDeadLine: o.responseDeadLine || '',
+        type: o.type || '',
+        baseType: o.baseType || '',
+        active: o.active || '',
+        organization: o.fullParentPathName || o.organizationName || '',
+        naicsCode: o.naicsCode || '',
+        classificationCode: o.classificationCode || '',
+        setAside: o.setAside || o.typeOfSetAsideDescription || '',
+        state: popState,
+        uiLink: o.uiLink || '',
+        award_amount: Number.isFinite(award_amount) ? award_amount : null
+      }
+    })
+
+    const columns = Object.keys(transformedData[0])
+    const { numericColumns, categoricalColumns, dateColumns } = detectColumnTypes(transformedData, columns)
+    const processedData = processDataPreservingNumbers(transformedData, numericColumns)
+
+    const payload = {
+      data: processedData,
+      columns,
+      numericColumns,
+      categoricalColumns,
+      dateColumns,
+      rowCount: processedData.length,
+      source: 'SAM.gov Opportunities API (Real-time)',
+      filters: { postedFrom, postedTo, limit, offset, ptype, title, state, ncode }
+    }
+
+    samgovCache.set(cacheKey, { ts: Date.now(), payload })
+    return res.json(payload)
+  } catch (error) {
+    console.error('Error fetching SAM.gov opportunities:', error.message)
+    const status = error.response?.status
+    const data = error.response?.data
+    if (status) {
+      return res.status(502).json({
+        error: 'SAM.gov API error',
+        status,
+        message: data?.message || data?.error || error.message,
+        hint: status === 400 ? 'Check date format (MM/dd/yyyy) and required postedFrom/postedTo parameters.' : undefined,
+        docs: 'https://open.gsa.gov/api/get-opportunities-public-api/'
+      })
+    }
+    return res.status(500).json({
+      error: 'Failed to fetch SAM.gov opportunities',
+      message: error.message,
+      docs: 'https://open.gsa.gov/api/get-opportunities-public-api/'
+    })
   }
 })
 

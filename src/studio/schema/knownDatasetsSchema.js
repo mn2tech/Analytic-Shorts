@@ -15,7 +15,8 @@ export const KNOWN_DATASET_IDS = [
   'yearly-income',
   'today-snapshot',
   'revenue-trends',
-  'alters-insights'
+  'alters-insights',
+  'samgov/live'
 ]
 
 /**
@@ -93,6 +94,23 @@ export const KNOWN_DATASETS_FIELDS = {
     { name: 'severity', type: 'string' },
     { name: 'description', type: 'string' },
     { name: 'recommended_action', type: 'string' }
+  ],
+  'samgov/live': [
+    { name: 'noticeId', type: 'string' },
+    { name: 'title', type: 'string' },
+    { name: 'solicitationNumber', type: 'string' },
+    { name: 'postedDate', type: 'date' },
+    { name: 'responseDeadLine', type: 'date' },
+    { name: 'type', type: 'string' },
+    { name: 'baseType', type: 'string' },
+    { name: 'active', type: 'string' },
+    { name: 'organization', type: 'string' },
+    { name: 'naicsCode', type: 'string' },
+    { name: 'classificationCode', type: 'string' },
+    { name: 'setAside', type: 'string' },
+    { name: 'state', type: 'string' },
+    { name: 'uiLink', type: 'string' },
+    { name: 'award_amount', type: 'number' }
   ]
 }
 

@@ -10,6 +10,23 @@ export const AuthProvider = ({ children }) => {
   const [userProfile, setUserProfile] = useState(null)
   const [loading, setLoading] = useState(true)
   const navigate = useNavigate()
+  // Prevent repeated signOut loops if multiple requests detect the same broken session
+  const [didRecoverInvalidRefresh, setDidRecoverInvalidRefresh] = useState(false)
+
+  const maybeRecoverInvalidRefreshToken = async (err) => {
+    if (didRecoverInvalidRefresh) return false
+    const msg = (err?.message || err?.error_description || '').toString()
+    if (!msg) return false
+    if (!/invalid refresh token/i.test(msg)) return false
+    // Clear local session to stop repeated refresh attempts / 400s.
+    setDidRecoverInvalidRefresh(true)
+    try {
+      await supabase.auth.signOut({ scope: 'local' })
+    } catch (_) {
+      // ignore
+    }
+    return true
+  }
 
   // Load user profile when user changes
   useEffect(() => {
@@ -41,6 +58,10 @@ export const AuthProvider = ({ children }) => {
       .then(({ data: { session }, error }) => {
         if (error) {
           console.error('Error getting session:', error)
+          // If refresh token is invalid/missing, clear local auth state so the app can recover.
+          maybeRecoverInvalidRefreshToken(error).then((didRecover) => {
+            if (didRecover) navigate('/login')
+          })
           setUser(null)
         } else {
           setUser(session?.user ?? null)
@@ -49,6 +70,9 @@ export const AuthProvider = ({ children }) => {
       })
       .catch((error) => {
         console.error('Error in getSession:', error)
+        maybeRecoverInvalidRefreshToken(error).then((didRecover) => {
+          if (didRecover) navigate('/login')
+        })
         setUser(null)
         setLoading(false)
       })

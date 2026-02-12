@@ -3,7 +3,7 @@
  * Data tab: DataView. Chat tab: conversation UI. Preview tab: PreviewPanel + StyleDock or empty state.
  */
 
-import { useRef, useEffect, useMemo } from 'react'
+import { useRef, useEffect, useMemo, useState } from 'react'
 import DataView from './DataView'
 import PreviewPanel from './components/PreviewPanel'
 import StyleDock from './components/StyleDock'
@@ -86,6 +86,7 @@ export default function ReportChatView({
   uploadDatasetId
 }) {
   const conversationScrollRef = useRef(null)
+  const [selectedWidget, setSelectedWidget] = useState(null)
 
   useEffect(() => {
     conversationScrollRef.current?.scrollTo({ top: conversationScrollRef.current.scrollHeight, behavior: 'smooth' })
@@ -250,6 +251,8 @@ export default function ReportChatView({
             uploadedSchema={uploadedSchema}
             filterValues={filterValues}
             setFilterValues={setFilterValues}
+            selectedWidget={selectedWidget}
+            onSelectWidget={setSelectedWidget}
             loading={loading}
             title={previewTitle}
             showTitleBar={false}
@@ -257,7 +260,12 @@ export default function ReportChatView({
             onUploadClick={onUploadClick}
           />
         </div>
-        <StyleDock spec={spec} onSpecChange={setSpec} />
+        <StyleDock
+          spec={spec}
+          onSpecChange={setSpec}
+          selectedWidget={selectedWidget}
+          onClearSelection={() => setSelectedWidget(null)}
+        />
       </div>
     )
   }

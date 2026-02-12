@@ -27,6 +27,10 @@ export default function StudioShell({
   fullScreen,
   view,
   viewMeta,
+  onBackToDashboards,
+  onBackHome,
+  dashboardName,
+  onDashboardNameChange,
   onSave,
   onShare,
   onPublicLink,
@@ -65,6 +69,41 @@ export default function StudioShell({
             )}
           </div>
           <div className="flex items-center gap-2">
+            {typeof onDashboardNameChange === 'function' && (
+              <div className="flex items-center gap-2 min-w-[220px] max-w-[420px]">
+                <span className="text-xs font-medium text-gray-500 whitespace-nowrap">Dashboard</span>
+                <input
+                  value={(dashboardName ?? '').toString()}
+                  onChange={(e) => onDashboardNameChange(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') e.currentTarget.blur()
+                  }}
+                  placeholder="Untitled Dashboard"
+                  className="w-full px-3 py-1.5 text-sm rounded-lg border border-gray-300 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  title="Rename dashboard"
+                />
+              </div>
+            )}
+            {typeof onBackHome === 'function' && (
+              <button
+                type="button"
+                onClick={onBackHome}
+                className="px-3 py-1.5 text-sm rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                title="Go to Home"
+              >
+                Home
+              </button>
+            )}
+            {typeof onBackToDashboards === 'function' && (
+              <button
+                type="button"
+                onClick={onBackToDashboards}
+                className="px-3 py-1.5 text-sm rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                title="Go to My Dashboards"
+              >
+                My Dashboards
+              </button>
+            )}
             <button type="button" onClick={onSave} disabled={saving || !spec} className="px-3 py-1.5 text-sm rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50" title="Save dashboard">
               {saving ? 'Saving…' : 'Save'}
             </button>

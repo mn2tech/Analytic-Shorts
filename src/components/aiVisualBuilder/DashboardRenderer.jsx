@@ -34,12 +34,14 @@ import {
   LabelList
 } from 'recharts'
 import { parseNumericValue } from '../../utils/numberUtils'
+import OwnerSummaryCard from '../OwnerSummaryCard'
+import { generateOwnerSummary } from '../../studio/utils/ownerSummary'
 
 // Format number for display (currency, percent, decimals)
 function formatValue(val, format = {}) {
   if (val == null || Number.isNaN(val)) return '—'
   const num = Number(val)
-  const { type, decimals = 2, prefix = '', suffix = '' } = typeof format === 'object' ? format : {}
+  const { type, decimals = 2, prefix = '', suffix = '', grouping } = typeof format === 'object' ? format : {}
   let s = num
   if (type === 'currency') {
     s = num.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
@@ -47,6 +49,11 @@ function formatValue(val, format = {}) {
   }
   if (type === 'percent') {
     s = (num * 100).toFixed(decimals) + '%'
+    return prefix + s + suffix
+  }
+  if (grouping === true) {
+    const d = (typeof decimals === 'number' && Number.isFinite(decimals)) ? Math.max(0, Math.min(10, decimals)) : 2
+    s = num.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d, useGrouping: true })
     return prefix + s + suffix
   }
   // Use locale grouping for large integers so labels don't get cut off and are readable (e.g. 914,100)
@@ -108,17 +115,124 @@ function isGridLayout(layout) {
 const CHART_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444', '#6366f1', '#14b8a6']
 const CHART_COLORS_MINIMAL = ['#4b5563', '#6b7280', '#9ca3af', '#374151', '#6b7280', '#9ca3af', '#4b5563', '#6b7280']
 const CHART_COLORS_PASTEL = ['#93c5fd', '#c4b5fd', '#f9a8d4', '#fcd34d', '#6ee7b7', '#fca5a5', '#a5b4fc', '#67e8f9']
-// Sheen/gloss gradient for bars: diagonal highlight streak (state-of-the-art look)
+
+// Color helpers (for SAS VA-like subtle bevel)
+function clamp01(n) { return Math.max(0, Math.min(1, n)) }
+function hexToRgb(hex) {
+  const h = String(hex || '').trim()
+  const m = h.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i)
+  if (!m) return null
+  const raw = m[1]
+  const full = raw.length === 3 ? raw.split('').map((c) => c + c).join('') : raw
+  const r = parseInt(full.slice(0, 2), 16)
+  const g = parseInt(full.slice(2, 4), 16)
+  const b = parseInt(full.slice(4, 6), 16)
+  return { r, g, b }
+}
+function rgbToHex({ r, g, b }) {
+  const to = (v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')
+  return `#${to(r)}${to(g)}${to(b)}`
+}
+function mixHex(a, b, t) {
+  const A = hexToRgb(a)
+  const B = hexToRgb(b)
+  if (!A || !B) return a
+  const tt = clamp01(t)
+  return rgbToHex({
+    r: A.r + (B.r - A.r) * tt,
+    g: A.g + (B.g - A.g) * tt,
+    b: A.b + (B.b - A.b) * tt
+  })
+}
+
+// Sheen/gloss gradient for bars: NM2 Sheen (our own look)
 function BarSheenGradient({ id, baseColor = CHART_COLORS[0] }) {
+  // NM2 sheen: gentle depth + a soft diagonal highlight band.
+  const top = mixHex(baseColor, '#ffffff', 0.14)
+  const mid = baseColor
+  const bottom = mixHex(baseColor, '#000000', 0.16)
   return (
     <linearGradient id={id} x1="0" y1="0" x2="1" y2="1" gradientUnits="objectBoundingBox">
-      <stop offset="0%" stopColor={baseColor} stopOpacity={1} />
-      <stop offset="28%" stopColor={baseColor} stopOpacity={0.95} />
-      <stop offset="35%" stopColor="rgba(255,255,255,0.5)" stopOpacity={1} />
-      <stop offset="42%" stopColor="rgba(255,255,255,0.2)" stopOpacity={1} />
-      <stop offset="55%" stopColor={baseColor} stopOpacity={0.92} />
-      <stop offset="100%" stopColor={baseColor} stopOpacity={0.85} />
+      {/* NOTE: stops must be in ascending offset order */}
+      <stop offset="0%" stopColor={top} stopOpacity={1} />
+      <stop offset="22%" stopColor={top} stopOpacity={1} />
+      <stop offset="32%" stopColor="#ffffff" stopOpacity={0.10} />
+      <stop offset="42%" stopColor={mid} stopOpacity={1} />
+      <stop offset="55%" stopColor={mid} stopOpacity={1} />
+      <stop offset="100%" stopColor={bottom} stopOpacity={1} />
     </linearGradient>
+  )
+}
+
+function BarSheenShadowFilter({ id }) {
+  return (
+    <filter id={id} x="-20%" y="-20%" width="140%" height="160%">
+      {/* NM2 shadow: very subtle lift */}
+      <feDropShadow dx="0" dy="0.8" stdDeviation="1.05" floodColor="#000000" floodOpacity="0.14" />
+    </filter>
+  )
+}
+
+function toCornerRadius(radius) {
+  if (Array.isArray(radius)) {
+    const r = radius.filter((n) => typeof n === 'number' && Number.isFinite(n))
+    return r.length ? Math.max(0, Math.min(...r)) : 0
+  }
+  return typeof radius === 'number' && Number.isFinite(radius) ? Math.max(0, radius) : 0
+}
+
+function SheenBarShape(props) {
+  const {
+    x,
+    y,
+    width,
+    height,
+    fill,
+    baseColor,
+    radius,
+    onClick,
+    onMouseEnter,
+    onMouseLeave,
+    cursor
+  } = props
+
+  const w = Math.max(0, width)
+  const h = Math.max(0, height)
+  if (!w || !h) return null
+
+  const r = Math.min(toCornerRadius(radius), Math.min(w, h) / 2)
+  // `fill` is often a url(#...) when using gradients; use baseColor for stroke math.
+  const stroke = mixHex(baseColor || '#111827', '#000000', 0.26)
+  const inset = Math.min(1.2, Math.min(w, h) / 10)
+  const hiH = Math.max(2, Math.min(9, h * 0.28))
+
+  return (
+    <g onClick={onClick} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} style={{ cursor }}>
+      <rect
+        x={x}
+        y={y}
+        width={w}
+        height={h}
+        rx={r}
+        ry={r}
+        fill={fill}
+        filter="url(#nm2-bar-sheen-shadow)"
+        stroke={stroke}
+        strokeOpacity={0.45}
+        strokeWidth={1}
+      />
+      {/* subtle top lift (matte highlight) */}
+      <rect
+        x={x + inset}
+        y={y + inset}
+        width={Math.max(0, w - inset * 2)}
+        height={Math.max(0, hiH - inset)}
+        rx={Math.max(0, r - 1)}
+        ry={Math.max(0, r - 1)}
+        fill="rgba(255,255,255,0.06)"
+        pointerEvents="none"
+      />
+    </g>
   )
 }
 
@@ -215,18 +329,36 @@ function aggregate(data, field, agg) {
   return values.reduce((a, b) => a + b, 0) / values.length
 }
 
-// Group by dimension for bar/pie; when aggregation is 'count', count rows per dimension instead of summing metric
+function aggValue(rec, aggregation) {
+  if (aggregation === 'count') return rec.count
+  if (aggregation === 'avg') return rec.count ? rec.sum / rec.count : 0
+  if (aggregation === 'min') return rec.min === Infinity ? 0 : rec.min
+  if (aggregation === 'max') return rec.max === -Infinity ? 0 : rec.max
+  return rec.sum
+}
+
+// Group by dimension for bar/pie
 function groupBy(data, dimension, metric, limit = 10, aggregation = 'sum') {
   if (!data || data.length === 0) return []
-  const map = new Map()
-  const isCount = aggregation === 'count'
+  const map = new Map() // key -> { sum, count, min, max }
   for (const row of data) {
     const key = String(row[dimension] ?? '')
-    const val = isCount ? 1 : parseNumericValue(row[metric])
-    map.set(key, (map.get(key) || 0) + val)
+    if (!map.has(key)) map.set(key, { sum: 0, count: 0, min: Infinity, max: -Infinity })
+    const rec = map.get(key)
+    if (aggregation === 'count') {
+      rec.count += 1
+      continue
+    }
+    const raw = row?.[metric]
+    if (raw === null || raw === undefined || raw === '') continue
+    const val = parseNumericValue(raw)
+    rec.sum += val
+    rec.count += 1
+    if (val < rec.min) rec.min = val
+    if (val > rec.max) rec.max = val
   }
   return Array.from(map.entries())
-    .map(([name, value]) => ({ name, value }))
+    .map(([name, rec]) => ({ name, value: aggValue(rec, aggregation) }))
     .sort((a, b) => b.value - a.value)
     .slice(0, limit)
 }
@@ -234,34 +366,54 @@ function groupBy(data, dimension, metric, limit = 10, aggregation = 'sum') {
 // Group by dimension with a list of detail values per group (e.g. Team -> wins + list of years)
 function groupByWithDetails(data, dimension, metric, detailField, limit = 10, aggregation = 'sum') {
   if (!data || data.length === 0) return []
-  const map = new Map()
-  const isCount = aggregation === 'count'
+  const map = new Map() // key -> { sum, count, min, max, details }
   for (const row of data) {
     const key = String(row[dimension] ?? '')
-    const val = isCount ? 1 : parseNumericValue(row[metric])
     const detail = row[detailField]
-    if (!map.has(key)) map.set(key, { value: 0, details: [] })
+    if (!map.has(key)) map.set(key, { sum: 0, count: 0, min: Infinity, max: -Infinity, details: [] })
     const rec = map.get(key)
-    rec.value += val
+    if (aggregation === 'count') {
+      rec.count += 1
+    } else {
+      const raw = row?.[metric]
+      if (raw !== null && raw !== undefined && raw !== '') {
+        const val = parseNumericValue(raw)
+        rec.sum += val
+        rec.count += 1
+        if (val < rec.min) rec.min = val
+        if (val > rec.max) rec.max = val
+      }
+    }
     if (detail != null && detail !== '') rec.details.push(String(detail))
   }
   return Array.from(map.entries())
-    .map(([name, { value, details }]) => ({ name, value, details: details.sort((a, b) => Number(a) - Number(b) || String(a).localeCompare(b)) }))
+    .map(([name, rec]) => ({ name, value: aggValue(rec, aggregation), details: rec.details.sort((a, b) => Number(a) - Number(b) || String(a).localeCompare(b)) }))
     .sort((a, b) => b.value - a.value)
     .slice(0, limit)
 }
 
-// Line chart: group by date (xField), sum yField
-function lineChartData(data, xField, yField) {
+// Line chart: group by xField with aggregation (sum/avg/count/min/max)
+function lineChartData(data, xField, yField, aggregation = 'sum') {
   if (!data || data.length === 0) return []
-  const map = new Map()
+  const map = new Map() // key -> { sum, count, min, max }
   for (const row of data) {
     const key = row[xField] != null ? String(row[xField]) : ''
-    const val = parseNumericValue(row[yField])
-    map.set(key, (map.get(key) || 0) + val)
+    if (!map.has(key)) map.set(key, { sum: 0, count: 0, min: Infinity, max: -Infinity })
+    const rec = map.get(key)
+    if (aggregation === 'count') {
+      rec.count += 1
+      continue
+    }
+    const raw = row?.[yField]
+    if (raw === null || raw === undefined || raw === '') continue
+    const val = parseNumericValue(raw)
+    rec.sum += val
+    rec.count += 1
+    if (val < rec.min) rec.min = val
+    if (val > rec.max) rec.max = val
   }
   return Array.from(map.entries())
-    .map(([name, value]) => ({ name, value }))
+    .map(([name, rec]) => ({ name, value: aggValue(rec, aggregation) }))
     .sort((a, b) => new Date(a.name) - new Date(b.name))
 }
 
@@ -573,18 +725,34 @@ function BarChartFilterPopover({ chartId, dimension, metric, detailField, aggreg
   )
 }
 
-function DashboardRenderer({ spec, data, dataByDatasetId, defaultDatasetId, availableDatasetIds, filterValues, onFilterChange, onLayoutChange, onRemoveWidget, onChartOptionChange, onFilterOrderChange, onTabDatasetChange }) {
+function DashboardRenderer({
+  spec,
+  data,
+  dataByDatasetId,
+  defaultDatasetId,
+  availableDatasetIds,
+  filterValues,
+  onFilterChange,
+  onLayoutChange,
+  onRemoveWidget,
+  onChartOptionChange,
+  onFilterOrderChange,
+  onTabDatasetChange,
+  selectedWidget,
+  onSelectWidget
+}) {
   const [localFilters, setLocalFilters] = useState({})
   const [chartFilter, setChartFilter] = useState(null)
   const [openBarFilterChartId, setOpenBarFilterChartId] = useState(null)
   const [openPieFilterChartId, setOpenPieFilterChartId] = useState(null)
-  const [insightCollapsed, setInsightCollapsed] = useState(false)
   const [filtersCollapsed, setFiltersCollapsed] = useState(false)
   const [draggedFilterId, setDraggedFilterId] = useState(null)
   const [dragOverFilterId, setDragOverFilterId] = useState(null)
   const [activeTabIndex, setActiveTabIndex] = useState(0)
   const chartRefs = useRef({})
   const filterDropTargetRef = useRef(null)
+  const [ownerSummary, setOwnerSummary] = useState('')
+  const [ownerSummaryLoading, setOwnerSummaryLoading] = useState(false)
 
   const tabs = useMemo(() => (spec?.tabs && spec.tabs.length >= 2 ? spec.tabs : null), [spec?.tabs])
   const safeTabIndex = tabs ? Math.min(activeTabIndex, tabs.length - 1) : 0
@@ -682,6 +850,84 @@ function DashboardRenderer({ spec, data, dataByDatasetId, defaultDatasetId, avai
     return out
   }, [baseFilteredData, chartFilter])
 
+  // Owner Summary – Today (Tab 1 only): generate from KPI values and cache by date + dataset + KPI signature.
+  const ownerKpis = useMemo(() => {
+    if (!tabs || safeTabIndex !== 0) return null
+    const firstRow = filteredData?.[0]
+    if (!firstRow) return null
+
+    const kpis = currentSpec?.kpis || []
+    const resolve = (field) => resolveFieldName(firstRow, field)
+    const findKpiDef = (field) => kpis.find((k) => String(k.field || '').toLowerCase() === field.toLowerCase())
+    const compute = (field, fallbackAgg) => {
+      const def = findKpiDef(field)
+      const agg = def?.aggregation || fallbackAgg
+      const col = resolve(def?.field || field)
+      const val = aggregate(filteredData, col, agg)
+      return val == null ? null : Number(val)
+    }
+
+    const occupancy_rate = compute('occupancy_rate', 'avg')
+    const revenue_today = compute('revenue_today', 'sum')
+    const arrivals_today = compute('arrivals_today', 'sum')
+    const adr = compute('adr', 'avg')
+    const revpar = compute('revpar', 'avg')
+    if ([occupancy_rate, revenue_today, arrivals_today, adr, revpar].some((v) => v == null || Number.isNaN(v))) return null
+
+    const dateField = resolve('date') || resolve('Date') || 'date'
+    const date = firstRow?.[dateField] ? String(firstRow[dateField]).slice(0, 10) : ''
+
+    return {
+      date,
+      occupancy_rate: Math.round(occupancy_rate),
+      revenue_today: Math.round(revenue_today),
+      arrivals_today: Math.round(arrivals_today),
+      adr: Math.round(adr * 100) / 100,
+      revpar: Math.round(revpar * 100) / 100
+    }
+  }, [tabs, safeTabIndex, filteredData, currentSpec?.kpis])
+  useEffect(() => {
+    let cancelled = false
+    if (!ownerKpis) {
+      setOwnerSummary('')
+      setOwnerSummaryLoading(false)
+      return
+    }
+    setOwnerSummaryLoading(true)
+    generateOwnerSummary(
+      {
+        occupancy_rate: ownerKpis.occupancy_rate,
+        revenue_today: ownerKpis.revenue_today,
+        arrivals_today: ownerKpis.arrivals_today,
+        adr: ownerKpis.adr,
+        revpar: ownerKpis.revpar
+      },
+      { date: ownerKpis.date, datasetId: currentTab?.dataset || defaultId || '' }
+    )
+      .then((text) => {
+        if (cancelled) return
+        setOwnerSummary((text || '').trim())
+      })
+      .catch(() => {
+        if (cancelled) return
+        setOwnerSummary('')
+      })
+      .finally(() => {
+        if (cancelled) return
+        setOwnerSummaryLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [
+    ownerKpis?.date,
+    ownerKpis?.occupancy_rate,
+    ownerKpis?.revenue_today,
+    ownerKpis?.arrivals_today,
+    ownerKpis?.adr,
+    ownerKpis?.revpar,
+    currentTab?.dataset,
+    defaultId
+  ])
+
   const handleFilterChange = (id, value) => {
     setLocalFilters((prev) => ({ ...prev, [id]: value }))
     onFilterChange?.({ ...filterState, [id]: value })
@@ -704,10 +950,16 @@ function DashboardRenderer({ spec, data, dataByDatasetId, defaultDatasetId, avai
   const theme = spec.style?.theme === 'dark' ? 'dark' : (spec.style?.theme === 'executive' || spec.style?.theme === 'executive_clean' ? 'executive' : 'light')
   const cardClass = theme === 'dark' ? 'bg-gray-800 border-gray-700 text-gray-100' : theme === 'executive' ? 'bg-slate-50 border-slate-200' : 'bg-white border-gray-200'
   const chartTheme = getChartTheme(theme)
-  const chartFmt = (c) => (c.format && typeof c.format === 'object' ? c.format : {})
   const styleOpts = spec.style || {}
-  const chartColors = styleOpts.palette === 'minimal' ? CHART_COLORS_MINIMAL : styleOpts.palette === 'pastel' ? CHART_COLORS_PASTEL : CHART_COLORS
-  const useBarSheen = styleOpts.barStyle !== 'flat'
+  const globalValueFormat = (styleOpts.valueFormat && typeof styleOpts.valueFormat === 'object') ? styleOpts.valueFormat : null
+  const chartFmt = (c) => (c.format && typeof c.format === 'object' ? c.format : (globalValueFormat || {}))
+
+  const paletteFor = (palette) =>
+    palette === 'minimal' ? CHART_COLORS_MINIMAL : palette === 'pastel' ? CHART_COLORS_PASTEL : CHART_COLORS
+  const globalPalette = styleOpts.palette || 'default'
+  const chartColorsFor = (c) => paletteFor(c?.palette || globalPalette)
+  const effectiveBarStyleFor = (c) => (c?.barStyle ?? styleOpts.barStyle ?? 'sheen')
+  const useBarSheenFor = (c) => effectiveBarStyleFor(c) !== 'flat'
   const measureSize = styleOpts.measureSize || 'medium'
   const chartSizes = measureSize === 'small' ? { tick: 12, axis: 11, dataLabel: 14 } : measureSize === 'large' ? { tick: 20, axis: 18, dataLabel: 22 } : { tick: 16, axis: 14, dataLabel: 18 }
   const chartTickFontSize = chartSizes.tick
@@ -716,26 +968,20 @@ function DashboardRenderer({ spec, data, dataByDatasetId, defaultDatasetId, avai
   const chartFontFamily = styleOpts.fontFamily === 'serif' ? 'Georgia, serif' : styleOpts.fontFamily === 'mono' ? 'ui-monospace, monospace' : styleOpts.fontFamily === 'sans' ? 'system-ui, -apple-system, sans-serif' : undefined
   const chartTextStyle = chartFontFamily ? { fontFamily: chartFontFamily } : {}
 
-  // Insight explaining the dashboard: use currentSpec.insight or auto-generate from title/kpis/charts
-  const insightText =
-    currentSpec?.insight && String(currentSpec.insight).trim()
-      ? String(currentSpec.insight).trim()
-      : (() => {
-          const title = spec.title ? String(spec.title).trim() : 'your data'
-          const kpis = currentSpec?.kpis || []
-          const charts = currentSpec?.charts || []
-          const k = kpis.length
-          const c = charts.length
-          const parts = [`This dashboard shows ${title}.`]
-          if (k > 0 || c > 0) {
-            const items = []
-            if (k > 0) items.push(`${k} KPI${k !== 1 ? 's' : ''}`)
-            if (c > 0) items.push(`${c} chart${c !== 1 ? 's' : ''}`)
-            parts.push(` It includes ${items.join(' and ')}.`)
-          }
-          parts.push(' Use the filters to narrow the view; click a bar, pie segment, or line point to cross-filter the whole dashboard.')
-          return parts.join('')
-        })()
+  // Recharts needs explicit margins for long currency labels and axis titles,
+  // otherwise ticks/labels get clipped (especially with overflow-hidden tiles).
+  const chartMarginStandard = { top: 30, right: 24, bottom: 56, left: 84 }
+  const chartMarginTight = { top: 26, right: 18, bottom: 44, left: 76 }
+
+  const selectionStyle = (kind, id) => {
+    if (!selectedWidget?.type || !selectedWidget?.id) return undefined
+    if (selectedWidget.type !== kind || selectedWidget.id !== id) return undefined
+    // Inline style so it's visible even if Tailwind "ring" utilities aren't available.
+    return {
+      outline: '2px solid rgba(59,130,246,0.95)',
+      outlineOffset: 2
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -777,37 +1023,10 @@ function DashboardRenderer({ spec, data, dataByDatasetId, defaultDatasetId, avai
           ))}
         </div>
       )}
-      {/* Insight explaining the dashboard — collapsible */}
-      <div className={`rounded-lg border ${cardClass}`}>
-        <button
-          type="button"
-          onClick={() => setInsightCollapsed((c) => !c)}
-          className={`flex w-full items-center gap-3 p-4 text-left hover:opacity-90 ${insightCollapsed ? 'rounded-lg' : 'rounded-t-lg'}`}
-          aria-expanded={!insightCollapsed}
-        >
-          <div className={`flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center ${theme === 'dark' ? 'bg-blue-900/50 text-blue-300' : 'bg-blue-100 text-blue-600'}`} aria-hidden>
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          </div>
-          <h3 className={`text-sm font-semibold flex-1 ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`}>Insight</h3>
-          <span className={`text-gray-500 text-lg leading-none ${theme === 'dark' ? 'text-gray-400' : ''}`} aria-hidden>
-            {insightCollapsed ? '▶' : '▼'}
-          </span>
-        </button>
-        {!insightCollapsed && (
-          <div className="px-4 pb-4 pt-0 flex gap-3">
-            <div className="flex-shrink-0 w-8" aria-hidden />
-            <p className={`text-sm leading-relaxed min-w-0 flex-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}`}>{insightText}</p>
-          </div>
-        )}
-      </div>
 
-      {/* Hint: charts are clickable for cross-filtering */}
-      {((currentSpec?.charts || []).some((ch) => ['bar', 'pie', 'line', 'area', 'stacked_bar', 'stacked_area'].includes(ch.type))) && (
-        <p className="text-sm text-gray-500">
-          Click a bar, pie segment, line, or area to filter the whole dashboard; click again or use &quot;Clear selection&quot; to reset.
-        </p>
+      {/* Owner Summary – Today (Tab 1 only) */}
+      {ownerKpis && (
+        <OwnerSummaryCard summary={ownerSummary} loading={ownerSummaryLoading} />
       )}
 
       {/* Chart click filter (cross-filter) — show when a chart segment is selected */}
@@ -1056,14 +1275,26 @@ function DashboardRenderer({ spec, data, dataByDatasetId, defaultDatasetId, avai
           rowHeight={ROW_HEIGHT}
           isDraggable
           isResizable
+          // Allow vertical scroll/interaction on touch and inside charts/controls.
+          // Without this, swiping in the Preview panel can be captured as a drag gesture.
+          draggableCancel="input,textarea,select,option,button,a,.recharts-wrapper,.recharts-surface,.recharts-responsive-container"
           compactType="vertical"
           preventCollision={false}
         >
           {(currentSpec?.kpis || []).map((k) => {
             const val = aggregate(filteredData, k.field, k.aggregation || 'sum')
-            const fmt = k.format || {}
+            const fmt = (k.format && typeof k.format === 'object') ? k.format : (globalValueFormat || {})
             return (
-              <div key={k.id} className={`p-4 rounded-lg border ${cardClass} h-full overflow-auto relative group`}>
+              <div
+                key={k.id}
+                className={`p-4 rounded-lg border ${cardClass} h-full overflow-hidden relative group min-h-0 min-w-0`}
+                style={selectionStyle('kpi', k.id)}
+                onMouseDownCapture={(e) => {
+                  const tag = String(e?.target?.tagName || '').toLowerCase()
+                  if (['button', 'input', 'select', 'textarea', 'option', 'a'].includes(tag)) return
+                  onSelectWidget?.({ type: 'kpi', id: k.id })
+                }}
+              >
                 {onRemoveWidget && (
                   <button
                     type="button"
@@ -1086,7 +1317,13 @@ function DashboardRenderer({ spec, data, dataByDatasetId, defaultDatasetId, avai
             <div
               key={c.id}
               ref={(el) => { if (el != null) chartRefs.current[c.id] = el }}
-              className={`p-4 rounded-lg border ${cardClass} h-full overflow-auto flex flex-col`}
+              className={`p-4 rounded-lg border ${cardClass} h-full overflow-hidden flex flex-col min-h-0 min-w-0`}
+              style={selectionStyle('chart', c.id)}
+              onMouseDownCapture={(e) => {
+                const tag = String(e?.target?.tagName || '').toLowerCase()
+                if (['button', 'input', 'select', 'textarea', 'option', 'a'].includes(tag)) return
+                onSelectWidget?.({ type: 'chart', id: c.id })
+              }}
             >
               <div className="flex justify-between items-center gap-2 mb-1">
                 <h3 className="text-xl font-medium">{c.title || c.id}</h3>
@@ -1279,15 +1516,22 @@ function DashboardRenderer({ spec, data, dataByDatasetId, defaultDatasetId, avai
                 </div>
               )}
               {c.type === 'line' && (
-                <div className="flex-1 min-h-[320px]">
+                <div className="flex-1 min-h-0 min-w-0">
                   {filteredData.length === 0 ? (
                     <div className="h-full flex items-center justify-center text-gray-500 text-base">No data</div>
                   ) : (
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={lineChartData(filteredData, c.xField, c.yField)}>
+                      <LineChart
+                        data={lineChartData(filteredData, c.xField, c.yField, c.aggregation || 'sum')}
+                        margin={chartMarginStandard}
+                      >
                         <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.gridStroke} />
                         <XAxis dataKey="name" tick={{ fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }} />
-                        <YAxis tick={{ fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }} tickFormatter={(v) => formatValue(v, chartFmt(c))} label={{ value: getMeasureLabel(c), angle: -90, position: 'insideLeft', style: { fill: chartTheme.tickFill, fontSize: chartAxisLabelFontSize, ...chartTextStyle } }} />
+                        <YAxis
+                          width={96}
+                          tick={{ fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }}
+                          tickFormatter={(v) => formatValue(v, chartFmt(c))}
+                        />
                         <Tooltip
                           contentStyle={{ fontSize: 14, backgroundColor: chartTheme.tooltipBg, border: `1px solid ${chartTheme.tooltipBorder}`, color: chartTheme.tooltipText }}
                           formatter={(val) => [formatValue(Array.isArray(val) ? val[0] : val, chartFmt(c)), c.yField || 'Value']}
@@ -1299,7 +1543,7 @@ function DashboardRenderer({ spec, data, dataByDatasetId, defaultDatasetId, avai
                         <Line
                           type="monotone"
                           dataKey="value"
-                          stroke={chartColors[0]}
+                          stroke={chartColorsFor(c)[0]}
                           strokeWidth={2}
                           dot={{ r: 4, cursor: 'pointer' }}
                           activeDot={{ r: 6, cursor: 'pointer' }}
@@ -1313,21 +1557,28 @@ function DashboardRenderer({ spec, data, dataByDatasetId, defaultDatasetId, avai
                 </div>
               )}
               {c.type === 'area' && (
-                <div className="flex-1 min-h-[320px]">
+                <div className="flex-1 min-h-0 min-w-0">
                   {filteredData.length === 0 ? (
                     <div className="h-full flex items-center justify-center text-gray-500 text-base">No data</div>
                   ) : (
                     <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={lineChartData(filteredData, c.xField, c.yField)}>
+                      <AreaChart
+                        data={lineChartData(filteredData, c.xField, c.yField, c.aggregation || 'sum')}
+                        margin={chartMarginStandard}
+                      >
                         <defs>
                           <linearGradient id={`area-fill-${c.id}`} x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor={chartColors[0]} stopOpacity={0.4} />
-                            <stop offset="100%" stopColor={chartColors[0]} stopOpacity={0.05} />
+                            <stop offset="0%" stopColor={chartColorsFor(c)[0]} stopOpacity={0.4} />
+                            <stop offset="100%" stopColor={chartColorsFor(c)[0]} stopOpacity={0.05} />
                           </linearGradient>
                         </defs>
                         <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.gridStroke} />
                         <XAxis dataKey="name" tick={{ fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }} />
-                        <YAxis tick={{ fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }} tickFormatter={(v) => formatValue(v, chartFmt(c))} label={{ value: getMeasureLabel(c), angle: -90, position: 'insideLeft', style: { fill: chartTheme.tickFill, fontSize: chartAxisLabelFontSize, ...chartTextStyle } }} />
+                        <YAxis
+                          width={96}
+                          tick={{ fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }}
+                          tickFormatter={(v) => formatValue(v, chartFmt(c))}
+                        />
                         <Tooltip
                           contentStyle={{ fontSize: 14, backgroundColor: chartTheme.tooltipBg, border: `1px solid ${chartTheme.tooltipBorder}`, color: chartTheme.tooltipText }}
                           formatter={(val) => [formatValue(Array.isArray(val) ? val[0] : val, chartFmt(c)), c.yField || 'Value']}
@@ -1338,7 +1589,7 @@ function DashboardRenderer({ spec, data, dataByDatasetId, defaultDatasetId, avai
                         <Area
                           type="monotone"
                           dataKey="value"
-                          stroke={chartColors[0]}
+                          stroke={chartColorsFor(c)[0]}
                           strokeWidth={2}
                           fill={`url(#area-fill-${c.id})`}
                           onClick={(data) => data?.name != null && handleChartClick(c.xField, data.name)}
@@ -1381,12 +1632,12 @@ function DashboardRenderer({ spec, data, dataByDatasetId, defaultDatasetId, avai
                       ? `url(#bar-gradient-${c.id})`
                       : effectiveBarStyle === 'outline'
                         ? 'transparent'
-                        : chartColors[0]
+                        : chartColorsFor(c)[0]
                 const barRadius = effectiveBarStyle === 'rounded' ? (isVertical ? [10, 10, 0, 0] : [0, 10, 10, 0]) : (isVertical ? [4, 4, 0, 0] : [0, 4, 4, 0])
-                const barStroke = effectiveBarStyle === 'outline' ? chartColors[0] : undefined
+                const barStroke = effectiveBarStyle === 'outline' ? chartColorsFor(c)[0] : undefined
                 const barStrokeWidth = effectiveBarStyle === 'outline' ? 2 : undefined
                 return (
-                  <div className="flex-1 min-h-[320px] overflow-visible">
+                  <div className="flex-1 min-h-0 min-w-0 overflow-visible">
                     {filteredData.length === 0 ? (
                       <div className="h-full flex items-center justify-center text-gray-500 text-base">No data</div>
                     ) : (
@@ -1397,8 +1648,9 @@ function DashboardRenderer({ spec, data, dataByDatasetId, defaultDatasetId, avai
                           margin={isVertical ? { bottom: bottomMargin, right: 20 } : { left: leftMargin, right: 90 }}
                         >
                           <defs>
-                            {effectiveBarStyle === 'sheen' && <BarSheenGradient id={`bar-fill-${c.id}`} baseColor={chartColors[0]} />}
-                            {effectiveBarStyle === 'gradient' && <BarVerticalGradient id={`bar-gradient-${c.id}`} baseColor={chartColors[0]} />}
+                            {effectiveBarStyle === 'sheen' && <BarSheenGradient id={`bar-fill-${c.id}`} baseColor={chartColorsFor(c)[0]} />}
+                            {effectiveBarStyle === 'gradient' && <BarVerticalGradient id={`bar-gradient-${c.id}`} baseColor={chartColorsFor(c)[0]} />}
+                            {effectiveBarStyle === 'sheen' && <BarSheenShadowFilter id="nm2-bar-sheen-shadow" />}
                           </defs>
                           <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.gridStroke} />
                           <XAxis
@@ -1446,6 +1698,7 @@ function DashboardRenderer({ spec, data, dataByDatasetId, defaultDatasetId, avai
                             cursor="pointer"
                             isAnimationActive
                             onClick={(data) => data?.name != null && handleChartClick(c.xField || c.dimension, data.name)}
+                            shape={effectiveBarStyle === 'sheen' ? (p) => <SheenBarShape {...p} baseColor={chartColorsFor(c)[0]} /> : undefined}
                           >
                             {(c.showDataLabels !== false) && (
                               <LabelList
@@ -1470,25 +1723,40 @@ function DashboardRenderer({ spec, data, dataByDatasetId, defaultDatasetId, avai
               {c.type === 'stacked_bar' && c.stackField && (() => {
                 const stackedData = groupByStacked(filteredData, c.xField || c.dimension, c.stackField, c.yField || c.metric, c.limit ?? 10)
                 const stackKeys = stackedData.length ? Object.keys(stackedData[0]).filter((k) => k !== 'name') : []
+                const colors = chartColorsFor(c)
+                const useSheen = useBarSheenFor(c)
                 return (
-                  <div className="flex-1 min-h-[320px]">
+                  <div className="flex-1 min-h-0 min-w-0">
                     {filteredData.length === 0 || stackKeys.length === 0 ? (
                       <div className="h-full flex items-center justify-center text-gray-500 text-base">No data</div>
                     ) : (
                       <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={stackedData} margin={{ left: 20, right: 90, bottom: 60 }}>
+                        <BarChart data={stackedData} margin={{ ...chartMarginTight, right: 90, bottom: 60 }}>
                           <defs>
-                            {useBarSheen && stackKeys.map((key, i) => (
-                              <BarSheenGradient key={key} id={`stacked-sheen-${c.id}-${i}`} baseColor={chartColors[i % chartColors.length]} />
+                            {useSheen && stackKeys.map((key, i) => (
+                              <BarSheenGradient key={key} id={`stacked-sheen-${c.id}-${i}`} baseColor={colors[i % colors.length]} />
                             ))}
+                            {useSheen && <BarSheenShadowFilter id="nm2-bar-sheen-shadow" />}
                           </defs>
                           <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.gridStroke} />
                           <XAxis dataKey="name" tick={{ fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }} />
-                          <YAxis tick={{ fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }} tickFormatter={(v) => formatValue(v, chartFmt(c))} label={{ value: getMeasureLabel(c), angle: -90, position: 'insideLeft', style: { fill: chartTheme.tickFill, fontSize: chartAxisLabelFontSize, ...chartTextStyle } }} />
+                          <YAxis
+                            width={96}
+                            tick={{ fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }}
+                            tickFormatter={(v) => formatValue(v, chartFmt(c))}
+                          />
                           <Tooltip contentStyle={{ fontSize: 14, backgroundColor: chartTheme.tooltipBg, border: `1px solid ${chartTheme.tooltipBorder}`, color: chartTheme.tooltipText }} formatter={(val) => formatValue(val, chartFmt(c))} />
                           <Legend />
                           {stackKeys.map((key, i) => (
-                            <Bar key={key} dataKey={key} stackId="stack" fill={useBarSheen ? `url(#stacked-sheen-${c.id}-${i})` : chartColors[i % chartColors.length]} name={key} radius={[0, 0, 0, 0]}>
+                            <Bar
+                              key={key}
+                              dataKey={key}
+                              stackId="stack"
+                              fill={useSheen ? `url(#stacked-sheen-${c.id}-${i})` : colors[i % colors.length]}
+                              name={key}
+                              radius={[0, 0, 0, 0]}
+                              shape={useSheen ? (p) => <SheenBarShape {...p} baseColor={colors[i % colors.length]} /> : undefined}
+                            >
                               {(c.showDataLabels !== false) && <LabelList position="center" formatter={(v) => formatValue(v, chartFmt(c))} style={{ fontSize: chartDataLabelFontSize, ...chartTextStyle }} />}
                             </Bar>
                           ))}
@@ -1501,25 +1769,40 @@ function DashboardRenderer({ spec, data, dataByDatasetId, defaultDatasetId, avai
               {c.type === 'grouped_bar' && c.stackField && (() => {
                 const groupedData = groupByStacked(filteredData, c.xField || c.dimension, c.stackField, c.yField || c.metric, c.limit ?? 12)
                 const groupKeys = groupedData.length ? Object.keys(groupedData[0]).filter((k) => k !== 'name') : []
+                const colors = chartColorsFor(c)
+                const useSheen = useBarSheenFor(c)
                 return (
-                  <div className="flex-1 min-h-[320px] overflow-visible">
+                  <div className="flex-1 min-h-0 min-w-0 overflow-visible">
                     {filteredData.length === 0 || groupKeys.length === 0 ? (
                       <div className="h-full flex items-center justify-center text-gray-500 text-base">No data</div>
                     ) : (
                       <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={groupedData} margin={{ left: 20, right: 90, bottom: 60 }}>
+                        <BarChart data={groupedData} margin={{ ...chartMarginTight, right: 90, bottom: 60 }}>
                           <defs>
-                            {useBarSheen && groupKeys.map((key, i) => (
-                              <BarSheenGradient key={key} id={`grouped-sheen-${c.id}-${i}`} baseColor={chartColors[i % chartColors.length]} />
+                            {useSheen && groupKeys.map((key, i) => (
+                              <BarSheenGradient key={key} id={`grouped-sheen-${c.id}-${i}`} baseColor={colors[i % colors.length]} />
                             ))}
+                            {useSheen && <BarSheenShadowFilter id="nm2-bar-sheen-shadow" />}
                           </defs>
                           <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.gridStroke} />
                           <XAxis dataKey="name" tick={{ fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }} />
-                          <YAxis tick={{ fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }} tickFormatter={(v) => formatValue(v, chartFmt(c))} label={{ value: getMeasureLabel(c), angle: -90, position: 'insideLeft', style: { fill: chartTheme.tickFill, fontSize: chartAxisLabelFontSize, ...chartTextStyle } }} />
+                          <YAxis
+                            width={96}
+                            tick={{ fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }}
+                            tickFormatter={(v) => formatValue(v, chartFmt(c))}
+                          />
                           <Tooltip contentStyle={{ fontSize: 14, backgroundColor: chartTheme.tooltipBg, border: `1px solid ${chartTheme.tooltipBorder}`, color: chartTheme.tooltipText }} formatter={(val) => formatValue(val, chartFmt(c))} />
                           <Legend />
                           {groupKeys.map((key, i) => (
-                            <Bar key={key} dataKey={key} fill={useBarSheen ? `url(#grouped-sheen-${c.id}-${i})` : chartColors[i % chartColors.length]} name={key} radius={[4, 4, 0, 0]} isAnimationActive>
+                            <Bar
+                              key={key}
+                              dataKey={key}
+                              fill={useSheen ? `url(#grouped-sheen-${c.id}-${i})` : colors[i % colors.length]}
+                              name={key}
+                              radius={[4, 4, 0, 0]}
+                              isAnimationActive
+                              shape={useSheen ? (p) => <SheenBarShape {...p} baseColor={colors[i % colors.length]} /> : undefined}
+                            >
                               {(c.showDataLabels !== false) && <LabelList position="top" formatter={(v) => formatValue(v, chartFmt(c))} style={{ fontSize: chartDataLabelFontSize, ...chartTextStyle }} />}
                             </Bar>
                           ))}
@@ -1537,10 +1820,10 @@ function DashboardRenderer({ spec, data, dataByDatasetId, defaultDatasetId, avai
                   name: d.name,
                   value: d.value,
                   fill: maxV ? (d.value / maxV) * 100 : 0,
-                  color: chartColors[i % chartColors.length]
+                  color: chartColorsFor(c)[i % chartColorsFor(c).length]
                 }))
                 return (
-                  <div className="flex-1 min-h-[320px]">
+                  <div className="flex-1 min-h-0 min-w-0">
                     {filteredData.length === 0 || radialData.length === 0 ? (
                       <div className="h-full flex items-center justify-center text-gray-500 text-base">No data</div>
                     ) : (
@@ -1574,19 +1857,23 @@ function DashboardRenderer({ spec, data, dataByDatasetId, defaultDatasetId, avai
                 const stackedData = groupByStacked(filteredData, c.xField, c.stackField, c.yField || c.metric, c.limit ?? 15)
                 const stackKeys = stackedData.length ? Object.keys(stackedData[0]).filter((k) => k !== 'name') : []
                 return (
-                  <div className="flex-1 min-h-[320px]">
+                  <div className="flex-1 min-h-0 min-w-0">
                     {filteredData.length === 0 || stackKeys.length === 0 ? (
                       <div className="h-full flex items-center justify-center text-gray-500 text-base">No data</div>
                     ) : (
                       <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={stackedData} margin={{ left: 20, right: 20, bottom: 60 }}>
+                        <AreaChart data={stackedData} margin={{ ...chartMarginTight, right: 20, bottom: 60 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.gridStroke} />
                           <XAxis dataKey="name" tick={{ fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }} />
-                          <YAxis tick={{ fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }} tickFormatter={(v) => formatValue(v, chartFmt(c))} label={{ value: getMeasureLabel(c), angle: -90, position: 'insideLeft', style: { fill: chartTheme.tickFill, fontSize: chartAxisLabelFontSize, ...chartTextStyle } }} />
+                          <YAxis
+                            width={96}
+                            tick={{ fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }}
+                            tickFormatter={(v) => formatValue(v, chartFmt(c))}
+                          />
                           <Tooltip contentStyle={{ fontSize: 14, backgroundColor: chartTheme.tooltipBg, border: `1px solid ${chartTheme.tooltipBorder}`, color: chartTheme.tooltipText }} formatter={(val) => formatValue(val, chartFmt(c))} />
                           <Legend />
                           {stackKeys.map((key, i) => (
-                            <Area key={key} type="monotone" dataKey={key} stackId="stack" stroke={chartColors[i % chartColors.length]} fill={chartColors[i % chartColors.length]} fillOpacity={0.6} name={key} />
+                            <Area key={key} type="monotone" dataKey={key} stackId="stack" stroke={chartColorsFor(c)[i % chartColorsFor(c).length]} fill={chartColorsFor(c)[i % chartColorsFor(c).length]} fillOpacity={0.6} name={key} />
                           ))}
                         </AreaChart>
                       </ResponsiveContainer>
@@ -1595,7 +1882,7 @@ function DashboardRenderer({ spec, data, dataByDatasetId, defaultDatasetId, avai
                 )
               })()}
               {c.type === 'scatter' && (
-                <div className="flex-1 min-h-[320px]">
+                <div className="flex-1 min-h-0 min-w-0">
                   {filteredData.length === 0 ? (
                     <div className="h-full flex items-center justify-center text-gray-500 text-base">No data</div>
                   ) : (
@@ -1612,7 +1899,7 @@ function DashboardRenderer({ spec, data, dataByDatasetId, defaultDatasetId, avai
                             return [`${c.xField || 'X'}: ${formatValue(p.x, chartFmt(c))} · ${c.yField || 'Y'}: ${formatValue(p.y, chartFmt(c))}`, '']
                           }}
                         />
-                        <Scatter data={scatterData(filteredData, c.xField, c.yField)} fill={chartColors[0]} fillOpacity={0.7} />
+                        <Scatter data={scatterData(filteredData, c.xField, c.yField)} fill={chartColorsFor(c)[0]} fillOpacity={0.7} />
                       </ScatterChart>
                     </ResponsiveContainer>
                   )}
@@ -1625,11 +1912,11 @@ function DashboardRenderer({ spec, data, dataByDatasetId, defaultDatasetId, avai
                   : fullPieData.slice(0, c.limit ?? 8)
                 const isDonut = c.pieStyle === 'donut'
                 return (
-                  <div className="flex-1 min-h-[320px]">
+                  <div className="flex-1 min-h-0 min-w-0">
                     {filteredData.length === 0 ? (
                       <div className="h-full flex items-center justify-center text-gray-500 text-base">No data</div>
                     ) : (
-                      <ResponsiveContainer width="100%" height="100%" minHeight={320}>
+                      <ResponsiveContainer width="100%" height="100%" minHeight={260}>
                         <PieChart>
                           <Pie
                             data={pieData}
@@ -1637,14 +1924,14 @@ function DashboardRenderer({ spec, data, dataByDatasetId, defaultDatasetId, avai
                             nameKey="name"
                             cx="50%"
                             cy="50%"
-                            outerRadius={100}
-                            innerRadius={isDonut ? 60 : 0}
+                            outerRadius="80%"
+                            innerRadius={isDonut ? '55%' : 0}
                             label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
                             cursor="pointer"
                             onClick={(data) => data?.name != null && handleChartClick(c.dimension || c.xField, data.name)}
                           >
                             {pieData.map((_, i) => (
-                              <Cell key={i} fill={chartColors[i % chartColors.length]} cursor="pointer" />
+                              <Cell key={i} fill={chartColorsFor(c)[i % chartColorsFor(c).length]} cursor="pointer" />
                             ))}
                           </Pie>
                           <Tooltip

@@ -5,6 +5,39 @@ import apiClient from '../../config/api'
  * Functions to interact with the dashboard CRUD endpoints for Studio dashboards
  */
 
+function truncateRowsForStorage(rows, { maxRows = 2000, maxBytes = 600_000 } = {}) {
+  if (!Array.isArray(rows) || rows.length === 0) return []
+
+  const sliced = rows.slice(0, Math.max(0, maxRows))
+  try {
+    const json = JSON.stringify(sliced)
+    if (json.length <= maxBytes) return sliced
+  } catch (_) {
+    // If rows aren't serializable, don't store them.
+    return []
+  }
+
+  // If we exceeded maxBytes, keep shrinking until we fit (simple halving loop).
+  let lo = 0
+  let hi = sliced.length
+  let best = 0
+  while (lo <= hi) {
+    const mid = Math.floor((lo + hi) / 2)
+    try {
+      const json = JSON.stringify(sliced.slice(0, mid))
+      if (json.length <= maxBytes) {
+        best = mid
+        lo = mid + 1
+      } else {
+        hi = mid - 1
+      }
+    } catch (_) {
+      hi = mid - 1
+    }
+  }
+  return sliced.slice(0, best)
+}
+
 /**
  * List all saved Studio dashboards
  * @returns {Promise<Array>} Array of dashboard objects
@@ -77,19 +110,25 @@ export async function getDashboard(id) {
  * Save a dashboard schema
  * @param {Object} dashboardJson - The complete Studio dashboard schema JSON
  * @param {string} dashboardId - Optional dashboard ID for updates (if not provided, creates new)
+ * @param {Object} options
+ * @param {Array<Object>} options.data - Optional data rows to store for sharing
  * @returns {Promise<Object>} Saved dashboard object
  */
-export async function saveDashboard(dashboardJson, dashboardId = null) {
+export async function saveDashboard(dashboardJson, dashboardId = null, options = {}) {
   try {
     const dashboardName = dashboardJson.metadata?.name || dashboardJson.title || 'Untitled Dashboard'
     const dashboardDescription = dashboardJson.metadata?.description || ''
-    
+
+    const rowsToStore = truncateRowsForStorage(options?.data, { maxRows: 2000, maxBytes: 600_000 })
+
     // Prepare the payload
     // Note: The backend may need to be updated to support the 'schema' field
     // For now, we'll send it and it will be stored if the database column exists
     const payload = {
       name: dashboardName,
-      data: [], // Empty data array for Studio dashboards (data comes from data_source)
+      // For Studio dashboards we also store a safe/truncated copy of rows,
+      // so public sharing from "My Dashboards" can render without auth.
+      data: rowsToStore,
       columns: [],
       numericColumns: [],
       categoricalColumns: [],

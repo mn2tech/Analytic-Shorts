@@ -34,7 +34,8 @@ const EXAMPLE_DATASET_IDS = [
   'superbowl-winners',
   'today-snapshot',
   'revenue-trends',
-  'alters-insights'
+  'alters-insights',
+  'samgov/live'
 ]
 const UPLOAD_DATASET_ID = 'upload'
 
@@ -106,6 +107,150 @@ function buildAssistantSummary(spec) {
   return parts.join('\n')
 }
 
+function formatFieldLabel(field) {
+  const raw = String(field || '').trim()
+  if (!raw) return ''
+  const lower = raw.toLowerCase()
+  if (lower === 'adr') return 'ADR'
+  if (lower === 'revpar') return 'RevPAR'
+  if (lower === 'occupancy_rate') return 'Occupancy Rate'
+  const withSpaces = raw
+    .replace(/[_-]+/g, ' ')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .trim()
+  return withSpaces
+    .split(/\s+/)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ')
+}
+
+function buildDatasetProfile({ datasetId, uploadedFileName, schema, data }) {
+  const fields = schema?.fields || []
+  const rowCount = Array.isArray(data) ? data.length : (schema?.rowCount ?? 0)
+  const numeric = fields.filter((f) => (f.type || '').toLowerCase() === 'number').map((f) => f.name)
+  const dates = fields.filter((f) => (f.type || '').toLowerCase() === 'date').map((f) => f.name)
+  const categorical = fields
+    .filter((f) => {
+      const t = (f.type || '').toLowerCase()
+      return t !== 'number' && t !== 'date'
+    })
+    .map((f) => f.name)
+
+  // Lightweight cardinality preview for the first categorical field (if we have data).
+  let topCategory = null
+  if (Array.isArray(data) && categorical.length) {
+    const dim = categorical[0]
+    const counts = new Map()
+    for (const r of data.slice(0, 500)) {
+      const v = r?.[dim]
+      if (v == null || v === '') continue
+      const k = String(v)
+      counts.set(k, (counts.get(k) || 0) + 1)
+    }
+    const sorted = Array.from(counts.entries()).sort((a, b) => (b[1] - a[1]) || String(a[0]).localeCompare(String(b[0])))
+    topCategory = { field: dim, distinct: counts.size, top: sorted.slice(0, 5) }
+  }
+
+  return {
+    key: `${datasetId || ''}:${uploadedFileName || ''}:${rowCount}:${fields.length}`,
+    datasetId,
+    uploadedFileName,
+    rowCount,
+    totalColumns: fields.length,
+    numeric,
+    dates,
+    categorical,
+    topCategory
+  }
+}
+
+function buildDatasetSummaryMessage(profile) {
+  if (!profile) return ''
+  const name = profile.datasetId === 'upload'
+    ? `your upload${profile.uploadedFileName ? ` (${profile.uploadedFileName})` : ''}`
+    : `dataset "${profile.datasetId}"`
+  const parts = []
+  parts.push(`I’m ready to help with ${name}.`)
+  parts.push(`**Data summary:** ${profile.rowCount} rows • ${profile.totalColumns} columns`)
+  parts.push(`**Types:** ${profile.numeric.length} numeric • ${profile.dates.length} date • ${profile.categorical.length} categorical`)
+  if (profile.numeric.length) parts.push(`**Numeric:** ${profile.numeric.slice(0, 8).map(formatFieldLabel).join(', ')}${profile.numeric.length > 8 ? '…' : ''}`)
+  if (profile.dates.length) parts.push(`**Date:** ${profile.dates.slice(0, 4).map(formatFieldLabel).join(', ')}${profile.dates.length > 4 ? '…' : ''}`)
+  if (profile.categorical.length) parts.push(`**Categorical:** ${profile.categorical.slice(0, 8).map(formatFieldLabel).join(', ')}${profile.categorical.length > 8 ? '…' : ''}`)
+  if (profile.topCategory) {
+    const top = profile.topCategory.top
+      .map(([v, n]) => `${v} (${n})`)
+      .join(', ')
+    parts.push(`**Example categories (${formatFieldLabel(profile.topCategory.field)}):** ${profile.topCategory.distinct} distinct • top: ${top}`)
+  }
+  parts.push('')
+  parts.push('Ask me things like:')
+  parts.push('- “How many rows and columns?”')
+  parts.push('- “What are the numeric columns?”')
+  parts.push('- “What do you suggest?”')
+  parts.push('- “Create a report for this dataset.”')
+  return parts.join('\n')
+}
+
+function buildAutoReportPrompt(profile) {
+  const dateField = profile?.dates?.[0]
+  const metric = profile?.numeric?.[0]
+  const dim = profile?.categorical?.[0]
+  const lines = []
+  lines.push('Create a sensible executive dashboard for this dataset.')
+  lines.push('Requirements:')
+  lines.push('- Add 3–5 KPI cards for the most important numeric metrics (use avg for rates like ADR/RevPAR/occupancy_rate, sum for revenue/cost/rooms_sold).')
+  if (dateField) lines.push(`- Add a trend chart over time using date field "${dateField}".`)
+  else lines.push('- If no date column exists, skip time trend and focus on categorical breakdowns.')
+  if (dim) lines.push(`- Add a bar chart of the main metric by "${dim}" (top 10).`)
+  lines.push('- Avoid pie charts over date/time.')
+  if (metric) lines.push(`Prioritize metric "${metric}" if it makes sense.`)
+  lines.push('Make titles human-friendly and readable.')
+  return lines.join('\n')
+}
+
+function maybeAnswerLocally(text, profile) {
+  const t = String(text || '').trim()
+  const lower = t.toLowerCase()
+  if (!t || !profile) return null
+
+  const asksRows = /how many.*rows|number of rows|rows do we have/.test(lower)
+  const asksCols = /how many.*columns|number of columns|what columns/.test(lower)
+  const asksNumeric = /numeric columns|number columns|measures|metrics/.test(lower)
+  const asksTypes = /data types|types|schema|what type/.test(lower)
+  const asksCats = /categories|categorical|dimensions/.test(lower)
+  const asksSuggest = /what do you suggest|suggest.*report|recommend|what should i do/.test(lower)
+  const asksCreate = /create .*report|create .*dashboard|generate .*report|generate .*dashboard|build .*report|build .*dashboard|auto.*report/.test(lower)
+
+  if (asksCreate) return { kind: 'generate' }
+
+  if (asksRows || asksCols || asksNumeric || asksTypes || asksCats) {
+    const lines = []
+    if (asksRows || asksCols) lines.push(`This dataset has **${profile.rowCount} rows** and **${profile.totalColumns} columns**.`)
+    if (asksTypes || asksNumeric || asksCats) {
+      lines.push(`Types: **${profile.numeric.length} numeric**, **${profile.dates.length} date**, **${profile.categorical.length} categorical**.`)
+    }
+    if (asksNumeric) lines.push(`Numeric columns: ${profile.numeric.length ? profile.numeric.map(formatFieldLabel).join(', ') : 'None detected.'}`)
+    if (asksCats) lines.push(`Categorical columns: ${profile.categorical.length ? profile.categorical.map(formatFieldLabel).join(', ') : 'None detected.'}`)
+    if (asksTypes) {
+      if (profile.dates.length) lines.push(`Date columns: ${profile.dates.map(formatFieldLabel).join(', ')}`)
+    }
+    return { kind: 'answer', content: lines.join('\n') }
+  }
+
+  if (asksSuggest) {
+    const lines = []
+    lines.push('Here are good next steps for this dataset:')
+    lines.push('- Generate an executive dashboard (KPIs + trend + breakdown).')
+    if (profile.dates.length) lines.push(`- Add a forecast for ${formatFieldLabel(profile.numeric[0] || 'your main metric')} over ${formatFieldLabel(profile.dates[0])}.`)
+    if (profile.categorical.length) lines.push(`- Slice results by ${formatFieldLabel(profile.categorical[0])}.`)
+    lines.push('')
+    lines.push('If you want, say: **“Create a report for this dataset.”**')
+    return { kind: 'answer', content: lines.join('\n') }
+  }
+
+  return null
+}
+
 export default function AiVisualBuilderStudio() {
   const [datasetId, setDatasetId] = useState(() => localStorage.getItem(STORAGE_KEY_DATASET) || 'sales')
   const [schema, setSchema] = useState(null)
@@ -140,7 +285,9 @@ export default function AiVisualBuilderStudio() {
   const [publicLinkCopied, setPublicLinkCopied] = useState(false)
   const [fullScreen, setFullScreen] = useState(() => {
     try {
-      return localStorage.getItem(STORAGE_KEY_FULLSCREEN) === 'true'
+      const stored = localStorage.getItem(STORAGE_KEY_FULLSCREEN) === 'true'
+      const urlForcesFullscreen = (typeof window !== 'undefined' && /(?:\?|&)fs=1(?:&|$)/.test(window.location.search))
+      return stored || urlForcesFullscreen
     } catch { return false }
   })
   const [pendingConversationMessage, setPendingConversationMessage] = useState(null)
@@ -156,11 +303,22 @@ export default function AiVisualBuilderStudio() {
   const [saveToLakeLoading, setSaveToLakeLoading] = useState(false)
   const [dataByDatasetIdExtra, setDataByDatasetIdExtra] = useState({}) // data for tab.dataset ids (when different from primary)
   const uploadInputRef = useRef(null)
+  const lastDatasetSummaryKeyRef = useRef('')
 
   const navigate = useNavigate()
   const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
   const openId = searchParams.get('open')
+  const forceFullscreen = searchParams.get('fs') === '1'
+
+  // If the URL forces fullscreen (e.g. from My Dashboards), persist it for this session.
+  useEffect(() => {
+    if (!forceFullscreen) return
+    setFullScreen(true)
+    try {
+      localStorage.setItem(STORAGE_KEY_FULLSCREEN, 'true')
+    } catch (_) {}
+  }, [forceFullscreen])
 
   // Redirect /studio or /studio/ to /studio/chat (preserve search e.g. ?open=)
   if (location.pathname === '/studio' || location.pathname === '/studio/') {
@@ -324,6 +482,25 @@ export default function AiVisualBuilderStudio() {
     return () => { cancelled = true }
   }, [datasetId, uploadedData])
 
+  const datasetProfile = useMemo(() => {
+    const s = schema || (uploadedSchema?.fields ? { fields: uploadedSchema.fields, rowCount: uploadedSchema.rowCount } : null)
+    const d = datasetId === UPLOAD_DATASET_ID ? uploadedData : data
+    if (!datasetId || !s) return null
+    return buildDatasetProfile({ datasetId, uploadedFileName, schema: s, data: d })
+  }, [datasetId, schema, uploadedSchema, uploadedData, data, uploadedFileName])
+
+  // Post an automatic dataset summary message when a dataset is selected/loaded.
+  useEffect(() => {
+    if (!datasetProfile) return
+    const key = datasetProfile.key
+    if (lastDatasetSummaryKeyRef.current === key) return
+    lastDatasetSummaryKeyRef.current = key
+    const msg = buildDatasetSummaryMessage(datasetProfile)
+    if (!msg) return
+    const uid = `${Date.now()}-${Math.random().toString(16).slice(2)}`
+    setChatMessages((m) => [...m, { id: `msg-${uid}-assistant`, role: 'assistant', content: msg }])
+  }, [datasetProfile])
+
   // Load data for tab.dataset ids when spec has tabs with different datasets (so each tab can use a different dataset)
   const tabDatasetIds = useMemo(() => {
     const ids = new Set()
@@ -405,8 +582,9 @@ export default function AiVisualBuilderStudio() {
     } catch (_) {}
   }, [fullScreen])
 
-  const handleGenerate = useCallback(async (overridePrompt) => {
+  const handleGenerate = useCallback(async (overridePrompt, displayPrompt) => {
     const userPrompt = (overridePrompt !== undefined ? String(overridePrompt || '') : (prompt || '')).trim()
+    const shownPrompt = (displayPrompt !== undefined ? String(displayPrompt || '') : userPrompt).trim()
     if (!userPrompt) {
       setError('Enter a prompt.')
       return
@@ -429,11 +607,11 @@ export default function AiVisualBuilderStudio() {
       const newSpec = res.data?.spec
       if (newSpec) {
         setSpec(newSpec)
-        setPromptHistory((h) => [...h, { prompt: userPrompt, at: new Date().toISOString() }])
+        setPromptHistory((h) => [...h, { prompt: shownPrompt, at: new Date().toISOString() }])
         const uid = `${Date.now()}-${Math.random().toString(16).slice(2)}`
         setChatMessages((m) => [
           ...m,
-          { id: `msg-${uid}-user`, role: 'user', content: userPrompt },
+          { id: `msg-${uid}-user`, role: 'user', content: shownPrompt },
           { id: `msg-${uid}-assistant`, role: 'assistant', content: buildAssistantSummary(newSpec) }
         ])
         setActiveTab('preview')
@@ -465,13 +643,63 @@ export default function AiVisualBuilderStudio() {
       setError('Upload a file first or select another dataset.')
       return
     }
-    setPrompt(text)
+    const local = maybeAnswerLocally(text, datasetProfile)
+    if (local?.kind === 'answer') {
+      const uid = `${Date.now()}-${Math.random().toString(16).slice(2)}`
+      setChatMessages((m) => [
+        ...m,
+        { id: `msg-${uid}-user`, role: 'user', content: text },
+        { id: `msg-${uid}-assistant`, role: 'assistant', content: local.content }
+      ])
+      setConversationInputValue('')
+      setError(null)
+      return
+    }
+
+    // Auto-report generation: convert a generic request into a dataset-aware prompt.
+    if (local?.kind === 'generate') {
+      const sent = buildAutoReportPrompt(datasetProfile)
+      setPrompt(text)
+      setPendingConversationMessage(text)
+      setConversationInputValue('')
+      setError(null)
+      handleGenerate(sent, text)
+      return
+    }
+
+    // Dataset-aware Q&A via backend (ChatGPT-like on this dataset)
+    const uid = `${Date.now()}-${Math.random().toString(16).slice(2)}`
+    const activeSchema = schema || (uploadedSchema?.fields ? { fields: uploadedSchema.fields, rowCount: uploadedSchema.rowCount } : null)
+    const activeData = datasetId === UPLOAD_DATASET_ID ? (uploadedData || []) : (data || [])
+    const safeSample = Array.isArray(activeData)
+      ? activeData.slice(0, 40).map((r) => (r && typeof r === 'object' ? r : {}))
+      : []
+
     setPendingConversationMessage(text)
     setConversationInputValue('')
     setError(null)
-    // Pass text so we don't rely on prompt state (which may not have updated yet)
-    handleGenerate(text)
-  }, [conversationInputValue, loading, datasetId, uploadedData, handleGenerate])
+    setLoading(true)
+    apiClient.post('/api/ai/dataset-chat', {
+      message: text,
+      datasetId,
+      schema: activeSchema,
+      rowCount: Array.isArray(activeData) ? activeData.length : (activeSchema?.rowCount ?? 0),
+      sampleRows: safeSample
+    }).then((res) => {
+      const reply = (res.data?.reply || '').toString().trim() || 'No reply.'
+      setChatMessages((m) => [
+        ...m,
+        { id: `msg-${uid}-user`, role: 'user', content: text },
+        { id: `msg-${uid}-assistant`, role: 'assistant', content: reply }
+      ])
+      setPendingConversationMessage(null)
+    }).catch((err) => {
+      const msg = err.response?.data?.message || err.response?.data?.error || err.message || 'Chat failed'
+      setError(msg)
+    }).finally(() => {
+      setLoading(false)
+    })
+  }, [conversationInputValue, loading, datasetId, uploadedData, handleGenerate, datasetProfile])
 
   const loadSavedSpec = () => {
     try {
@@ -586,6 +814,7 @@ export default function AiVisualBuilderStudio() {
     setSaveError(null)
     try {
       const title = dashboardTitle.trim() || 'Untitled Dashboard'
+      const activeRows = datasetId === UPLOAD_DATASET_ID ? (uploadedData || []) : (data || [])
       const fullSpec = {
         title,
         filters: Array.isArray(spec.filters) ? spec.filters : [],
@@ -601,14 +830,14 @@ export default function AiVisualBuilderStudio() {
           updated_at: new Date().toISOString()
         }
       }
-      const saved = await saveDashboard(fullSpec, savedDashboardId)
+      const saved = await saveDashboard(fullSpec, savedDashboardId, { data: activeRows })
       setSavedDashboardId(saved?.id ?? null)
     } catch (err) {
       setSaveError(err.message || 'Failed to save')
     } finally {
       setSaving(false)
     }
-  }, [spec, dashboardTitle, datasetId, savedDashboardId])
+  }, [spec, dashboardTitle, datasetId, savedDashboardId, data, uploadedData])
 
   const handleShare = useCallback(async () => {
     if (!savedDashboardId) {
@@ -630,16 +859,21 @@ export default function AiVisualBuilderStudio() {
       setSaveError('Generate a dashboard first.')
       return
     }
+    const activeRows = datasetId === UPLOAD_DATASET_ID ? (uploadedData || []) : (data || null)
     const payload = {
       dashboardType: 'dashboardSpec',
       spec,
       datasetId: datasetId || spec.datasetId || 'sales',
-      data: data || null
+      data: activeRows
     }
     const shareId = generateShareId()
-    const ok = await saveSharedDashboard(shareId, payload)
-    if (!ok) {
+    const result = await saveSharedDashboard(shareId, payload)
+    if (!result?.ok) {
       setSaveError('Could not create public link.')
+      return
+    }
+    if (!result.backendSaved) {
+      setSaveError('Share link saved locally only (backend not configured). This link will only work in this browser.')
       return
     }
     const url = getShareableUrl(shareId)
@@ -651,7 +885,7 @@ export default function AiVisualBuilderStudio() {
     } else {
       setSaveError('Could not copy link.')
     }
-  }, [spec, datasetId, data])
+  }, [spec, datasetId, data, uploadedData])
 
   // Studio steps progress (non-blocking)
   const hasData = !!datasetId && (!!(data?.length) || !!(uploadedData?.length))
@@ -684,6 +918,34 @@ export default function AiVisualBuilderStudio() {
         fullScreen={fullScreen}
         view={studioView === 'data' ? studioView : activeTab}
         viewMeta={VIEW_META[studioView === 'data' ? studioView : activeTab]}
+        dashboardName={dashboardTitle}
+        onDashboardNameChange={(next) => {
+          const name = String(next ?? '')
+          setDashboardTitle(name)
+          setSpec((s) => {
+            if (!s) return s
+            const trimmed = name.trim()
+            const title = trimmed || 'Untitled Dashboard'
+            return {
+              ...s,
+              title,
+              metadata: {
+                ...(s.metadata && typeof s.metadata === 'object' ? s.metadata : {}),
+                name: title
+              }
+            }
+          })
+        }}
+        onBackHome={() => {
+          try { localStorage.setItem(STORAGE_KEY_FULLSCREEN, 'false') } catch (_) {}
+          setFullScreen(false)
+          navigate('/')
+        }}
+        onBackToDashboards={() => {
+          try { localStorage.setItem(STORAGE_KEY_FULLSCREEN, 'false') } catch (_) {}
+          setFullScreen(false)
+          navigate('/dashboards')
+        }}
         onSave={handleSaveDashboard}
         onShare={handleShare}
         onPublicLink={handleGetPublicLink}
@@ -726,7 +988,7 @@ export default function AiVisualBuilderStudio() {
           <TabHeader activeTab={activeTab} setActiveTab={setActiveTab} hasSpec={!!spec} />
           <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
             <div
-              style={{ display: activeTab === 'chat' ? 'block' : 'none' }}
+              style={{ display: activeTab === 'chat' ? 'flex' : 'none' }}
               className="flex-1 flex flex-col min-h-0 overflow-hidden"
               aria-hidden={activeTab !== 'chat'}
             >
@@ -781,7 +1043,7 @@ export default function AiVisualBuilderStudio() {
               />
             </div>
             <div
-              style={{ display: activeTab === 'preview' ? 'block' : 'none' }}
+              style={{ display: activeTab === 'preview' ? 'flex' : 'none' }}
               className="flex-1 flex flex-col min-h-0 overflow-hidden"
               aria-hidden={activeTab !== 'preview'}
             >
@@ -804,7 +1066,7 @@ export default function AiVisualBuilderStudio() {
               />
             </div>
             <div
-              style={{ display: activeTab === 'clear' ? 'block' : 'none' }}
+              style={{ display: activeTab === 'clear' ? 'flex' : 'none' }}
               className="flex-1 flex flex-col min-h-0 overflow-hidden"
               aria-hidden={activeTab !== 'clear'}
             >

@@ -1,5 +1,7 @@
-// Quick test script to verify Supabase setup
+// Quick script to verify Supabase setup (manual).
 // Run with: node test-auth.js
+//
+// Note: This is NOT a unit test. It is excluded from `node --test` runs.
 
 require('dotenv').config()
 const { createClient } = require('@supabase/supabase-js')

@@ -53,6 +53,205 @@ function Dashboard() {
   const [noDataReason, setNoDataReason] = useState(null) // 'no-storage' | 'invalid-data' when dashboard has nothing to show
   const hasInitialized = useRef(false)
   const isUpdatingMetadata = useRef(false)
+  const lastAutoTitleMetric = useRef('')
+  const MAX_CATEGORY_TABS = 12
+  const MAX_METRIC_TABS = 10
+
+  const formatFieldLabel = useCallback((field) => {
+    const raw = String(field || '').trim()
+    if (!raw) return ''
+    const lower = raw.toLowerCase()
+    // Known abbreviations
+    if (lower === 'adr') return 'ADR'
+    if (lower === 'revpar') return 'RevPAR'
+    if (lower === 'occupancy_rate') return 'Occupancy Rate'
+
+    // Split snake_case, kebab-case, and camelCase into words
+    const withSpaces = raw
+      .replace(/[_-]+/g, ' ')
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .trim()
+
+    return withSpaces
+      .split(/\s+/)
+      .map((w) => {
+        const wl = w.toLowerCase()
+        if (wl === 'id') return 'ID'
+        if (wl === 'api') return 'API'
+        if (wl === 'usd') return 'USD'
+        return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()
+      })
+      .join(' ')
+  }, [])
+
+  // Auto-adjust dashboard title based on the selected metric.
+  // Example: selecting "food_revenue" -> "Food Revenue"
+  useEffect(() => {
+    if (!selectedNumeric) return
+    const pretty = formatFieldLabel(selectedNumeric)
+    if (!pretty) return
+    // Avoid redundant state updates
+    if (lastAutoTitleMetric.current === selectedNumeric) return
+    lastAutoTitleMetric.current = selectedNumeric
+    setDashboardTitle(pretty)
+  }, [selectedNumeric, formatFieldLabel])
+
+  // Build "category tabs" from the selected categorical column values.
+  const categoryTabs = useMemo(() => {
+    if (!selectedCategorical) return null
+    const base = (sidebarFilteredData !== null ? sidebarFilteredData : data) || []
+    if (!Array.isArray(base) || base.length === 0) return null
+
+    const counts = new Map()
+    for (const row of base) {
+      const raw = row?.[selectedCategorical]
+      if (raw === null || raw === undefined || raw === '') continue
+      const key = String(raw)
+      counts.set(key, (counts.get(key) || 0) + 1)
+    }
+
+    if (counts.size < 2) return null
+
+    const sorted = Array.from(counts.entries())
+      .sort((a, b) => (b[1] - a[1]) || String(a[0]).localeCompare(String(b[0])))
+
+    const values = sorted.slice(0, MAX_CATEGORY_TABS).map(([v]) => v)
+    return {
+      values,
+      total: counts.size,
+      truncated: counts.size > MAX_CATEGORY_TABS
+    }
+  }, [selectedCategorical, sidebarFilteredData, data])
+
+  const activeCategoryTabValue = chartFilter?.type === 'category' ? String(chartFilter.value) : 'All'
+
+  const CategoryTabsBar = () => {
+    if (!categoryTabs?.values?.length) return null
+    const label = formatFieldLabel(selectedCategorical)
+    return (
+      <div className="mb-4">
+        <div className="flex items-center justify-between gap-3 mb-2">
+          <p className="text-sm font-medium text-gray-700">
+            View by <span className="font-semibold text-gray-900">{label || selectedCategorical}</span>
+          </p>
+          {categoryTabs.truncated && (
+            <p className="text-xs text-gray-500">
+              Showing top {MAX_CATEGORY_TABS} of {categoryTabs.total}
+            </p>
+          )}
+        </div>
+        <div
+          className="flex items-center gap-2 overflow-x-auto overflow-y-hidden pb-1 select-none"
+          style={{ scrollbarGutter: 'stable' }}
+        >
+          <button
+            type="button"
+            onClick={() => setChartFilter(null)}
+            className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-sm border transition-colors ${
+              activeCategoryTabValue === 'All'
+                ? 'bg-blue-600 text-white border-blue-600'
+                : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+            }`}
+            title="Show all categories"
+          >
+            All
+          </button>
+          {categoryTabs.values.map((v) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => setChartFilter({ type: 'category', value: v })}
+              className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-sm border transition-colors ${
+                activeCategoryTabValue === v
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+              }`}
+              title={`Filter to: ${v}`}
+            >
+              {v}
+            </button>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  // Metric tabs: quick switch between numeric measures inside the report
+  const metricTabs = useMemo(() => {
+    const cols = Array.isArray(numericColumns) ? numericColumns : []
+    if (cols.length < 2) return null
+
+    const score = (col) => {
+      const s = String(col || '').toLowerCase()
+      if (!s) return -Infinity
+      if (s.includes('id') || s.includes('uuid') || s.includes('code') || s.includes('zip') || s.includes('phone')) return -50
+      let v = 0
+      if (s.includes('revenue') || s.includes('sales') || s.includes('amount') || s.includes('total')) v += 100
+      if (s.includes('cost') || s.includes('expense') || s.includes('spend')) v += 90
+      if (s.includes('rooms_sold') || (s.includes('rooms') && s.includes('sold'))) v += 85
+      if (s.includes('rooms_occupied') || (s.includes('rooms') && s.includes('occupied'))) v += 80
+      if (s.includes('arrivals') || s.includes('departures') || s.includes('bookings')) v += 70
+      if (s.includes('adr') || s.includes('revpar') || s.includes('occupancy')) v += 60
+      if (s.includes('available') || s.includes('capacity') || s.includes('inventory')) v += 35
+      return v
+    }
+
+    // Stable ordering to avoid flicker: do NOT re-order based on the active selection.
+    const sorted = cols
+      .map((c) => ({ c, s: score(c) }))
+      .sort((a, b) => (b.s - a.s) || String(a.c).localeCompare(String(b.c)))
+      .map(({ c }) => c)
+
+    const values = sorted.slice(0, MAX_METRIC_TABS)
+    // Ensure current selection is available without reordering the whole list.
+    if (selectedNumeric && !values.includes(selectedNumeric)) {
+      if (values.length < MAX_METRIC_TABS) values.push(selectedNumeric)
+      else values[values.length - 1] = selectedNumeric
+    }
+    return {
+      values,
+      total: cols.length,
+      truncated: cols.length > MAX_METRIC_TABS
+    }
+  }, [numericColumns, selectedNumeric])
+
+  const MetricTabsBar = () => {
+    if (!metricTabs?.values?.length) return null
+    const active = selectedNumeric || metricTabs.values[0]
+    return (
+      <div className="mb-4">
+        <div className="flex items-center justify-between gap-3 mb-2">
+          <p className="text-sm font-medium text-gray-700">
+            View metric: <span className="font-semibold text-gray-900">{formatFieldLabel(active) || active}</span>
+          </p>
+          {metricTabs.truncated && (
+            <p className="text-xs text-gray-500">Top {MAX_METRIC_TABS} of {metricTabs.total}</p>
+          )}
+        </div>
+        <div
+          className="flex items-center gap-2 overflow-x-auto overflow-y-hidden pb-1 select-none"
+          style={{ scrollbarGutter: 'stable' }}
+        >
+          {metricTabs.values.map((m) => (
+            <button
+              key={m}
+              type="button"
+              onMouseDown={() => setSelectedNumeric(m)}
+              onClick={() => setSelectedNumeric(m)}
+              className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-sm border transition-colors ${
+                active === m
+                  ? 'bg-purple-600 text-white border-purple-600'
+                  : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+              }`}
+              title={`Switch metric to: ${m}`}
+            >
+              {formatFieldLabel(m) || m}
+            </button>
+          ))}
+        </div>
+      </div>
+    )
+  }
 
   // Debug: Check if layouts are saved
   useEffect(() => {
@@ -317,18 +516,83 @@ function Dashboard() {
       }
 
       // Auto-select first columns
+      const pickBestNumeric = (numericCols) => {
+        const cols = Array.isArray(numericCols) ? numericCols : []
+        const score = (col) => {
+          const s = String(col || '').toLowerCase()
+          if (!s) return -Infinity
+          // Strongly avoid ID-like fields
+          if (s.includes('id') || s.includes('uuid') || s.includes('code') || s.includes('zip') || s.includes('phone')) return -50
+          let v = 0
+          // Money/volume flows
+          if (s.includes('revenue') || s.includes('sales') || s.includes('amount') || s.includes('total')) v += 100
+          if (s.includes('cost') || s.includes('expense') || s.includes('spend')) v += 90
+          // Hotel-ish volumes
+          if (s.includes('rooms_sold') || (s.includes('rooms') && s.includes('sold'))) v += 85
+          if (s.includes('rooms_occupied') || (s.includes('rooms') && s.includes('occupied'))) v += 80
+          if (s.includes('arrivals') || s.includes('departures') || s.includes('bookings')) v += 70
+          // Rates/snapshots (useful but less ideal as "total" metric)
+          if (s.includes('adr') || s.includes('revpar') || s.includes('occupancy')) v += 60
+          if (s.includes('available') || s.includes('capacity') || s.includes('inventory')) v += 35
+          // Prefer common measure names
+          if (s === 'revenue' || s === 'sales' || s === 'amount') v += 20
+          return v
+        }
+        return cols
+          .map((c) => ({ c, s: score(c) }))
+          .sort((a, b) => b.s - a.s)[0]?.c || ''
+      }
+
+      const pickBestCategorical = (categoricalCols, sampleRows) => {
+        const cols = Array.isArray(categoricalCols) ? categoricalCols : []
+        const rows = Array.isArray(sampleRows) ? sampleRows : []
+        const sample = rows.slice(0, 500)
+
+        const card = (col) => {
+          const set = new Set()
+          for (const r of sample) {
+            const v = r?.[col]
+            if (v == null || v === '') continue
+            set.add(String(v))
+            if (set.size > 50) break
+          }
+          return set.size
+        }
+
+        const score = (col) => {
+          const s = String(col || '').toLowerCase()
+          if (!s) return -Infinity
+          // Avoid date-like fields as categorical defaults
+          if (s.includes('date') || s.includes('time') || s.includes('year') || s.includes('month')) return -20
+          const distinct = card(col)
+          // Prefer modest cardinality categories; avoid huge unique sets.
+          if (distinct < 2) return -10
+          if (distinct > 25) return -15
+          let v = 0
+          if (distinct <= 12) v += 25
+          if (s.includes('category') || s.includes('type') || s.includes('status')) v += 30
+          if (s.includes('region') || s.includes('department') || s.includes('product') || s.includes('segment')) v += 20
+          return v
+        }
+
+        return cols
+          .map((c) => ({ c, s: score(c) }))
+          .sort((a, b) => b.s - a.s)[0]?.c || ''
+      }
+
       if (parsedData.numericColumns && parsedData.numericColumns.length > 0) {
-        setSelectedNumeric(parsedData.numericColumns[0])
+        setSelectedNumeric(pickBestNumeric(parsedData.numericColumns))
       }
       if (parsedData.categoricalColumns && parsedData.categoricalColumns.length > 0) {
-        // Auto-select priority columns: Budget Category > Metric > first categorical
-        const budgetCategoryColumn = parsedData.categoricalColumns.find(col => 
+        // Auto-select priority columns: Budget Category > Metric > best categorical (low/moderate cardinality)
+        const budgetCategoryColumn = parsedData.categoricalColumns.find(col =>
           col.toLowerCase().includes('budget') && col.toLowerCase().includes('category')
         )
-        const metricColumn = parsedData.categoricalColumns.find(col => 
+        const metricColumn = parsedData.categoricalColumns.find(col =>
           col.toLowerCase() === 'metric' || col === 'Metric'
         )
-        const columnToSelect = budgetCategoryColumn || metricColumn || parsedData.categoricalColumns[0]
+        const bestCategorical = pickBestCategorical(parsedData.categoricalColumns, displayData)
+        const columnToSelect = budgetCategoryColumn || metricColumn || bestCategorical || parsedData.categoricalColumns[0]
         setSelectedCategorical(columnToSelect)
       }
       if (parsedData.dateColumns && parsedData.dateColumns.length > 0) {
@@ -1058,10 +1322,12 @@ function Dashboard() {
     
     const storedData = sessionStorage.getItem('analyticsData')
     let validation = null
+    let numericInference = null
     try {
       if (storedData) {
         const parsed = JSON.parse(storedData)
         validation = parsed.validation
+        numericInference = parsed.numericInference
       }
     } catch (e) {
       // Ignore parse errors
@@ -1125,10 +1391,53 @@ function Dashboard() {
                   <p className="text-blue-900 font-medium mb-2">💡 Solution:</p>
                   <ol className="list-decimal list-inside text-blue-800 text-sm space-y-1">
                     <li>Add a column with numbers (e.g., Sales, Amount, Quantity, Count)</li>
-                    <li>Or remove currency symbols and commas from existing number columns</li>
+                    <li>Or remove currency symbols and commas from existing number columns (Auto-clean runs on upload, but messy formats can still fail)</li>
                     <li>Re-upload your corrected file</li>
                   </ol>
                 </div>
+              </div>
+            )}
+
+            {numericInference && numericInference.columns && (
+              <div className="bg-white border border-yellow-200 rounded-lg p-4 mb-4">
+                <h3 className="text-gray-900 font-semibold mb-2">Numeric auto-clean results</h3>
+                <p className="text-sm text-gray-700 mb-3">
+                  We tried to auto-clean and convert columns to numbers. A column only converts if at least{' '}
+                  <strong>{Math.round((numericInference.threshold ?? 0.7) * 100)}%</strong> of non-empty values parse as numbers.
+                </p>
+                {(() => {
+                  const entries = Object.entries(numericInference.columns || {})
+                  // Show lowest-success columns first to explain "why not converted"
+                  entries.sort((a, b) => (a[1]?.ratio ?? 0) - (b[1]?.ratio ?? 0))
+                  const shown = entries.slice(0, 12)
+                  const remaining = entries.length - shown.length
+                  return (
+                    <>
+                      <ul className="text-sm text-gray-800 space-y-1">
+                        {shown.map(([col, info]) => {
+                          const attempted = info?.attempted ?? 0
+                          const parsed = info?.parsed ?? 0
+                          const ratio = info?.ratio ?? 0
+                          const pct = attempted === 0 ? 0 : Math.round(ratio * 100)
+                          return (
+                            <li key={col} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 border-b border-gray-100 pb-1">
+                              <span className="font-medium text-gray-900">&quot;{col}&quot;</span>
+                              <span className="text-gray-700">
+                                {pct}% numeric parse success ({parsed}/{attempted || 0}) — {info?.reason || 'Not converted'}
+                              </span>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                      {remaining > 0 && (
+                        <p className="text-xs text-gray-500 mt-2">And {remaining} more column(s).</p>
+                      )}
+                      <p className="text-xs text-gray-600 mt-3">
+                        Tip: remove <code className="bg-gray-100 px-1 rounded">$</code> and commas (e.g. <code className="bg-gray-100 px-1 rounded">12,450</code> → <code className="bg-gray-100 px-1 rounded">12450</code>) or enable Auto-clean, then re-upload.
+                      </p>
+                    </>
+                  )
+                })()}
               </div>
             )}
             
@@ -1314,6 +1623,10 @@ function Dashboard() {
             </div>
           )}
 
+          {/* Category Tabs: quick "separate dashboards" by category */}
+          <MetricTabsBar />
+          <CategoryTabsBar />
+
           {/* Charts Section */}
           {dashboardView === 'data' ? (
             <DataMetadataEditor
@@ -1326,7 +1639,7 @@ function Dashboard() {
             />
           ) : dashboardView === 'timeseries' ? (
             <TimeSeriesReport
-              data={data}
+              data={filteredData || data}
               numericColumns={numericColumns}
               dateColumns={dateColumns}
               selectedNumeric={selectedNumeric}
@@ -1583,6 +1896,10 @@ function Dashboard() {
           </div>
         </div>
 
+        {/* Category Tabs: quick "separate dashboards" by category */}
+        <MetricTabsBar />
+        <CategoryTabsBar />
+
         {/* Save & Share Buttons */}
         <div className="mb-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -1632,13 +1949,18 @@ function Dashboard() {
                     layouts: dashboardLayouts, // Include widget layouts
                     widgetVisibility: dashboardWidgetVisibility, // Include widget visibility
                   }
-                  if (saveSharedDashboard(newShareId, dashboardData)) {
+                  const result = await saveSharedDashboard(newShareId, dashboardData)
+                  if (result?.ok) {
                     setShareId(newShareId)
                     const shareUrl = getShareableUrl(newShareId)
                     const copied = await copyToClipboard(shareUrl)
                     if (copied) {
                       setShareLinkCopied(true)
                       setTimeout(() => setShareLinkCopied(false), 3000)
+                    }
+                    if (!result.backendSaved) {
+                      // Not fatal: link will only work in this browser.
+                      console.warn('Share link saved locally only (backend not configured).')
                     }
                   }
                 } else {
@@ -1697,7 +2019,7 @@ function Dashboard() {
           />
         ) : dashboardView === 'timeseries' ? (
           <TimeSeriesReport
-            data={data}
+            data={filteredData || data}
             numericColumns={numericColumns}
             dateColumns={dateColumns}
             selectedNumeric={selectedNumeric}

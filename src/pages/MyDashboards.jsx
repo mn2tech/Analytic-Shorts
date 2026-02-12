@@ -3,6 +3,10 @@ import { useNavigate } from 'react-router-dom'
 import Loader from '../components/Loader'
 import { getDashboards, deleteDashboard } from '../services/dashboardService'
 import { useAuth } from '../contexts/AuthContext'
+import { generateShareId, saveSharedDashboard, getShareableUrl, copyToClipboard } from '../utils/shareUtils'
+import apiClient from '../config/api'
+
+const STORAGE_KEY_VIEW_MODE = 'myDashboards_viewMode' // 'grid' | 'list'
 
 function MyDashboards() {
   const { user } = useAuth()
@@ -11,6 +15,88 @@ function MyDashboards() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [deletingId, setDeletingId] = useState(null)
+  const [sharingId, setSharingId] = useState(null)
+  const [shareLinkCopiedId, setShareLinkCopiedId] = useState(null)
+  const [viewMode, setViewMode] = useState(() => {
+    try {
+      const v = localStorage.getItem(STORAGE_KEY_VIEW_MODE)
+      return v === 'list' ? 'list' : 'grid'
+    } catch {
+      return 'grid'
+    }
+  })
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_VIEW_MODE, viewMode)
+    } catch (_) {}
+  }, [viewMode])
+
+  const handleShareDashboard = async (dashboard, e) => {
+    e.stopPropagation() // Prevent loading the dashboard when clicking share
+    try {
+      setSharingId(dashboard.id)
+      const newShareId = generateShareId()
+
+      // Studio / AI Visual Builder dashboards: share as dashboardSpec so SharedDashboard uses DashboardRenderer.
+      const isStudio = dashboard.dashboard_view === 'studio' || dashboard.schema
+      let payload
+      if (isStudio && dashboard.schema) {
+        let spec = dashboard.schema
+        if (typeof spec === 'string') {
+          try { spec = JSON.parse(spec) } catch (_) {}
+        }
+        let rows = dashboard.data || []
+        const datasetId = spec?.datasetId
+        if ((!Array.isArray(rows) || rows.length === 0) && typeof datasetId === 'string' && datasetId && datasetId !== 'upload') {
+          try {
+            const resp = await apiClient.get(`/api/ai/dataset-data?dataset=${encodeURIComponent(datasetId)}`)
+            rows = resp?.data?.data || rows
+          } catch (err) {
+            console.warn('Could not fetch dataset rows for sharing:', err?.response?.data || err?.message || err)
+          }
+        }
+        if (!Array.isArray(rows) || rows.length === 0) {
+          alert('This Studio dashboard has no stored rows to share. Open it in Studio and click Save to embed a shareable snapshot of the data.')
+          return
+        }
+        payload = { dashboardType: 'dashboardSpec', spec, data: rows }
+      } else {
+        // Regular dashboards: share the same payload shape as Dashboard.jsx
+        payload = {
+          data: dashboard.data,
+          columns: dashboard.columns,
+          numericColumns: dashboard.numeric_columns,
+          categoricalColumns: dashboard.categorical_columns,
+          dateColumns: dashboard.date_columns,
+          selectedNumeric: dashboard.selected_numeric,
+          selectedCategorical: dashboard.selected_categorical,
+          selectedDate: dashboard.selected_date,
+          dashboardView: dashboard.dashboard_view || 'advanced'
+        }
+      }
+
+      const result = await saveSharedDashboard(newShareId, payload)
+      if (!result?.ok) {
+        alert('Failed to create share link. Please try again.')
+        return
+      }
+      if (!result.backendSaved) {
+        alert('Share link saved locally only (backend not configured). This link will only work in this browser.')
+      }
+
+      const url = getShareableUrl(newShareId)
+      const copied = await copyToClipboard(url)
+      if (copied) {
+        setShareLinkCopiedId(dashboard.id)
+        setTimeout(() => setShareLinkCopiedId(null), 2500)
+      } else {
+        window.prompt('Copy share link:', url)
+      }
+    } finally {
+      setSharingId(null)
+    }
+  }
 
   useEffect(() => {
     if (user) {
@@ -35,7 +121,8 @@ function MyDashboards() {
   const handleLoadDashboard = (dashboard) => {
     // Studio / AI Visual Builder dashboards: open in Studio (AI Visual Builder) for editing
     if (dashboard.dashboard_view === 'studio' || dashboard.schema) {
-      navigate(`/studio?open=${dashboard.id}`)
+      // Land on Preview in full-screen
+      navigate(`/studio/preview?open=${dashboard.id}&fs=1`)
       return
     }
 
@@ -108,12 +195,39 @@ function MyDashboards() {
                 : `${dashboards.length} saved dashboard${dashboards.length !== 1 ? 's' : ''}`}
             </p>
           </div>
-          <button
-            onClick={() => navigate('/')}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-          >
-            Create New Dashboard
-          </button>
+          <div className="flex items-center gap-2">
+            <div className="hidden sm:flex items-center rounded-lg border border-gray-200 bg-white p-1">
+              <button
+                type="button"
+                onClick={() => setViewMode('grid')}
+                className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                  viewMode === 'grid' ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-gray-50'
+                }`}
+                aria-pressed={viewMode === 'grid'}
+                title="Grid view"
+              >
+                Grid
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('list')}
+                className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                  viewMode === 'list' ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-gray-50'
+                }`}
+                aria-pressed={viewMode === 'list'}
+                title="List view"
+              >
+                List
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate('/')}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+            >
+              Create New Dashboard
+            </button>
+          </div>
         </div>
 
         {error && (
@@ -154,6 +268,83 @@ function MyDashboards() {
               Create Dashboard
             </button>
           </div>
+        ) : viewMode === 'list' ? (
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+            <div className="divide-y divide-gray-100">
+              {dashboards.map((dashboard) => (
+                <div
+                  key={dashboard.id}
+                  onClick={() => handleLoadDashboard(dashboard)}
+                  className="p-4 sm:p-5 hover:bg-gray-50 cursor-pointer flex flex-col sm:flex-row sm:items-center gap-3"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start gap-2">
+                      <h3 className="font-semibold text-gray-900 truncate">
+                        {dashboard.name || 'Untitled Dashboard'}
+                      </h3>
+                      {dashboard.dashboard_view === 'studio' || dashboard.schema ? (
+                        <span className="shrink-0 text-xs px-2 py-0.5 bg-purple-50 text-purple-700 rounded">
+                          Studio
+                        </span>
+                      ) : (
+                        <span className="shrink-0 text-xs px-2 py-0.5 bg-blue-50 text-blue-700 rounded">
+                          {dashboard.dashboard_view === 'simple' ? 'Simple' : 'Advanced'}
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-1 text-sm text-gray-600 flex flex-wrap gap-x-4 gap-y-1">
+                      <span>{dashboard.data?.length || 0} records{dashboard.columns ? ` • ${dashboard.columns.length} columns` : ''}</span>
+                      <span>Created {formatDate(dashboard.created_at)}</span>
+                      {dashboard.updated_at !== dashboard.created_at && (
+                        <span>Updated {formatDate(dashboard.updated_at)}</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0">
+                    <span className="text-xs text-gray-500">Open →</span>
+                    <button
+                      type="button"
+                      onClick={(e) => handleShareDashboard(dashboard, e)}
+                      disabled={sharingId === dashboard.id}
+                      className="text-gray-400 hover:text-blue-600 transition-colors p-2 rounded hover:bg-blue-50 disabled:opacity-50"
+                      title="Share dashboard"
+                    >
+                      {shareLinkCopiedId === dashboard.id ? (
+                        <span className="text-xs font-medium text-blue-700">Copied</span>
+                      ) : sharingId === dashboard.id ? (
+                        <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                      ) : (
+                        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                        </svg>
+                      )}
+                    </button>
+                    <button
+                      onClick={(e) => handleDeleteDashboard(dashboard.id, e)}
+                      disabled={deletingId === dashboard.id}
+                      className="text-gray-400 hover:text-red-600 transition-colors p-2 rounded hover:bg-red-50 disabled:opacity-50"
+                      title="Delete dashboard"
+                    >
+                      {deletingId === dashboard.id ? (
+                        <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                      ) : (
+                        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {dashboards.map((dashboard) => (
@@ -166,23 +357,45 @@ function MyDashboards() {
                   <h3 className="text-lg font-semibold text-gray-900 group-hover:text-blue-600 transition-colors">
                     {dashboard.name || 'Untitled Dashboard'}
                   </h3>
-                  <button
-                    onClick={(e) => handleDeleteDashboard(dashboard.id, e)}
-                    disabled={deletingId === dashboard.id}
-                    className="text-gray-400 hover:text-red-600 transition-colors p-1 rounded hover:bg-red-50 disabled:opacity-50"
-                    title="Delete dashboard"
-                  >
-                    {deletingId === dashboard.id ? (
-                      <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                    ) : (
-                      <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                    )}
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={(e) => handleShareDashboard(dashboard, e)}
+                      disabled={sharingId === dashboard.id}
+                      className="text-gray-400 hover:text-blue-600 transition-colors p-1 rounded hover:bg-blue-50 disabled:opacity-50"
+                      title="Share dashboard"
+                    >
+                      {shareLinkCopiedId === dashboard.id ? (
+                        <span className="text-xs font-medium text-blue-700">Copied</span>
+                      ) : sharingId === dashboard.id ? (
+                        <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                      ) : (
+                        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                        </svg>
+                      )}
+                    </button>
+                    <button
+                      onClick={(e) => handleDeleteDashboard(dashboard.id, e)}
+                      disabled={deletingId === dashboard.id}
+                      className="text-gray-400 hover:text-red-600 transition-colors p-1 rounded hover:bg-red-50 disabled:opacity-50"
+                      title="Delete dashboard"
+                    >
+                      {deletingId === dashboard.id ? (
+                        <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                      ) : (
+                        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
                 </div>
                 
                 <div className="space-y-2 text-sm text-gray-600 mb-4">

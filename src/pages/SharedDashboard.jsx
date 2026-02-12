@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import Navbar from '../components/Navbar'
 import Loader from '../components/Loader'
@@ -11,6 +11,55 @@ import AIInsights from '../components/AIInsights'
 import { loadSharedDashboard } from '../utils/shareUtils'
 import SharedStudioDashboardView from '../components/SharedStudioDashboardView'
 import DashboardRenderer from '../components/aiVisualBuilder/DashboardRenderer'
+import { applyQuickSwitchToSpec } from '../studio/utils/specQuickSwitch'
+
+function inferFieldsFromRows(rows) {
+  const sample = Array.isArray(rows) ? rows.slice(0, 200) : []
+  const columns = sample.length ? Object.keys(sample[0] || {}) : []
+  const looksLikeDate = (v) => {
+    if (v == null || v === '') return false
+    const s = String(v).trim()
+    if (!s) return false
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return true
+    if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(s)) return true
+    const d = new Date(s)
+    return !Number.isNaN(d.getTime())
+  }
+  const looksLikeNumber = (v) => {
+    if (v == null || v === '') return false
+    if (typeof v === 'number') return Number.isFinite(v)
+    const s = String(v).trim()
+    if (!s) return false
+    const cleaned = s
+      .replace(/^\((.*)\)$/, '-$1')
+      .replace(/[$€£¥₦₹₩₫฿₽₺₴₱,\s]/g, '')
+      .replace(/^"|"$/g, '')
+    return /^-?\d+(\.\d+)?$/.test(cleaned)
+  }
+
+  const numericFields = []
+  const dateFields = []
+  const categoricalFields = []
+  for (const col of columns) {
+    let attempted = 0
+    let numOk = 0
+    let dateOk = 0
+    for (const r of sample) {
+      const v = r?.[col]
+      if (v == null || v === '') continue
+      attempted++
+      if (looksLikeNumber(v)) numOk++
+      if (looksLikeDate(v)) dateOk++
+    }
+    const numRatio = attempted ? numOk / attempted : 0
+    const dateRatio = attempted ? dateOk / attempted : 0
+    if (dateRatio >= 0.6) dateFields.push(col)
+    else if (numRatio >= 0.6) numericFields.push(col)
+    else categoricalFields.push(col)
+  }
+
+  return { columns, numericFields, dateFields, categoricalFields }
+}
 
 function SharedDashboard() {
   const navigate = useNavigate()
@@ -33,8 +82,214 @@ function SharedDashboard() {
   const [dashboardTitle, setDashboardTitle] = useState('Analytics Dashboard')
   const [studioDashboardData, setStudioDashboardData] = useState(null)
   const [dashboardSpecData, setDashboardSpecData] = useState(null)
+  const [dashboardSpecViewSpec, setDashboardSpecViewSpec] = useState(null)
   const [filterValues, setFilterValues] = useState({})
   const [fullScreen, setFullScreen] = useState(false)
+  const lastAutoTitleMetric = useRef('')
+  const MAX_METRIC_TABS = 10
+  const MAX_CATEGORY_TABS = 12
+  const [specQuickMetric, setSpecQuickMetric] = useState('')
+  const [specQuickDimension, setSpecQuickDimension] = useState('')
+  const specFields = useMemo(() => inferFieldsFromRows(dashboardSpecData?.data || []), [dashboardSpecData])
+
+  const formatFieldLabel = useCallback((field) => {
+    const raw = String(field || '').trim()
+    if (!raw) return ''
+    const lower = raw.toLowerCase()
+    if (lower === 'adr') return 'ADR'
+    if (lower === 'revpar') return 'RevPAR'
+    if (lower === 'occupancy_rate') return 'Occupancy Rate'
+
+    const withSpaces = raw
+      .replace(/[_-]+/g, ' ')
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .trim()
+
+    return withSpaces
+      .split(/\s+/)
+      .map((w) => {
+        const wl = w.toLowerCase()
+        if (wl === 'id') return 'ID'
+        if (wl === 'api') return 'API'
+        if (wl === 'usd') return 'USD'
+        return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()
+      })
+      .join(' ')
+  }, [])
+
+  // Match /dashboard behavior: auto-adjust title to the selected metric.
+  useEffect(() => {
+    if (!selectedNumeric) return
+    const pretty = formatFieldLabel(selectedNumeric)
+    if (!pretty) return
+    if (lastAutoTitleMetric.current === selectedNumeric) return
+    lastAutoTitleMetric.current = selectedNumeric
+    setDashboardTitle(pretty)
+  }, [selectedNumeric, formatFieldLabel])
+
+  // Initialize spec quick-switch defaults when the shared spec loads.
+  useEffect(() => {
+    if (!dashboardSpecData) return
+    if (!specQuickMetric && specFields.numericFields.length) setSpecQuickMetric(specFields.numericFields[0])
+    if (!specQuickDimension && specFields.categoricalFields.length) setSpecQuickDimension(specFields.categoricalFields[0])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dashboardSpecData, specFields.numericFields.join('|'), specFields.categoricalFields.join('|')])
+
+  const metricTabs = useMemo(() => {
+    const cols = Array.isArray(numericColumns) ? numericColumns : []
+    if (cols.length < 2) return null
+
+    const score = (col) => {
+      const s = String(col || '').toLowerCase()
+      if (!s) return -Infinity
+      if (s.includes('id') || s.includes('uuid') || s.includes('code') || s.includes('zip') || s.includes('phone')) return -50
+      let v = 0
+      if (s.includes('revenue') || s.includes('sales') || s.includes('amount') || s.includes('total')) v += 100
+      if (s.includes('cost') || s.includes('expense') || s.includes('spend')) v += 90
+      if (s.includes('rooms_sold') || (s.includes('rooms') && s.includes('sold'))) v += 85
+      if (s.includes('rooms_occupied') || (s.includes('rooms') && s.includes('occupied'))) v += 80
+      if (s.includes('arrivals') || s.includes('departures') || s.includes('bookings')) v += 70
+      if (s.includes('adr') || s.includes('revpar') || s.includes('occupancy')) v += 60
+      if (s.includes('available') || s.includes('capacity') || s.includes('inventory')) v += 35
+      return v
+    }
+
+    // Stable ordering to avoid flicker: do NOT re-order based on the active selection.
+    const sorted = cols
+      .map((c) => ({ c, s: score(c) }))
+      .sort((a, b) => (b.s - a.s) || String(a.c).localeCompare(String(b.c)))
+      .map(({ c }) => c)
+
+    const values = sorted.slice(0, MAX_METRIC_TABS)
+    // Ensure current selection is available without reordering the whole list.
+    if (selectedNumeric && !values.includes(selectedNumeric)) {
+      if (values.length < MAX_METRIC_TABS) values.push(selectedNumeric)
+      else values[values.length - 1] = selectedNumeric
+    }
+    return {
+      values,
+      total: cols.length,
+      truncated: cols.length > MAX_METRIC_TABS
+    }
+  }, [numericColumns, selectedNumeric])
+
+  const MetricTabsBar = () => {
+    if (!metricTabs?.values?.length) return null
+    const active = selectedNumeric || metricTabs.values[0]
+    return (
+      <div className="mb-4">
+        <div className="flex items-center justify-between gap-3 mb-2">
+          <p className="text-sm font-medium text-gray-700">
+            View metric: <span className="font-semibold text-gray-900">{formatFieldLabel(active) || active}</span>
+          </p>
+          {metricTabs.truncated && (
+            <p className="text-xs text-gray-500">Top {MAX_METRIC_TABS} of {metricTabs.total}</p>
+          )}
+        </div>
+        <div
+          className="flex items-center gap-2 overflow-x-auto overflow-y-hidden pb-1 select-none"
+          style={{ scrollbarGutter: 'stable' }}
+        >
+          {metricTabs.values.map((m) => (
+            <button
+              key={m}
+              type="button"
+              onMouseDown={() => setSelectedNumeric(m)}
+              onClick={() => setSelectedNumeric(m)}
+              className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-sm border transition-colors ${
+                active === m
+                  ? 'bg-purple-600 text-white border-purple-600'
+                  : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+              }`}
+              title={`Switch metric to: ${m}`}
+            >
+              {formatFieldLabel(m) || m}
+            </button>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  // Category value tabs (like /dashboard): quick "separate dashboards" by category value
+  const categoryTabs = useMemo(() => {
+    if (!selectedCategorical) return null
+    const base = (sidebarFilteredData !== null ? sidebarFilteredData : data) || []
+    if (!Array.isArray(base) || base.length === 0) return null
+
+    const counts = new Map()
+    for (const row of base) {
+      const raw = row?.[selectedCategorical]
+      if (raw === null || raw === undefined || raw === '') continue
+      const key = String(raw)
+      counts.set(key, (counts.get(key) || 0) + 1)
+    }
+    if (counts.size < 2) return null
+
+    const sorted = Array.from(counts.entries())
+      .sort((a, b) => (b[1] - a[1]) || String(a[0]).localeCompare(String(b[0])))
+
+    const values = sorted.slice(0, MAX_CATEGORY_TABS).map(([v]) => v)
+    return {
+      values,
+      total: counts.size,
+      truncated: counts.size > MAX_CATEGORY_TABS
+    }
+  }, [selectedCategorical, sidebarFilteredData, data])
+
+  const activeCategoryTabValue = chartFilter?.type === 'category' ? String(chartFilter.value) : 'All'
+
+  const CategoryTabsBar = () => {
+    if (!categoryTabs?.values?.length) return null
+    const label = formatFieldLabel(selectedCategorical)
+    return (
+      <div className="mb-4">
+        <div className="flex items-center justify-between gap-3 mb-2">
+          <p className="text-sm font-medium text-gray-700">
+            View by <span className="font-semibold text-gray-900">{label || selectedCategorical}</span>
+          </p>
+          {categoryTabs.truncated && (
+            <p className="text-xs text-gray-500">
+              Showing top {MAX_CATEGORY_TABS} of {categoryTabs.total}
+            </p>
+          )}
+        </div>
+        <div
+          className="flex items-center gap-2 overflow-x-auto overflow-y-hidden pb-1 select-none"
+          style={{ scrollbarGutter: 'stable' }}
+        >
+          <button
+            type="button"
+            onClick={() => setChartFilter(null)}
+            className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-sm border transition-colors ${
+              activeCategoryTabValue === 'All'
+                ? 'bg-blue-600 text-white border-blue-600'
+                : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+            }`}
+            title="Show all categories"
+          >
+            All
+          </button>
+          {categoryTabs.values.map((v) => (
+            <button
+              key={v}
+              type="button"
+              onMouseDown={() => setChartFilter({ type: 'category', value: v })}
+              onClick={() => setChartFilter({ type: 'category', value: v })}
+              className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-sm border transition-colors ${
+                activeCategoryTabValue === v
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+              }`}
+              title={`Filter to: ${v}`}
+            >
+              {v}
+            </button>
+          ))}
+        </div>
+      </div>
+    )
+  }
 
   useEffect(() => {
     const loadDashboard = async () => {
@@ -63,7 +318,14 @@ function SharedDashboard() {
 
       // Check if this is an AI Visual Builder (DashboardSpec) share
       if (sharedData.dashboardType === 'dashboardSpec' && sharedData.spec) {
-        setDashboardSpecData({ spec: sharedData.spec, data: sharedData.data || [] })
+        const rows = Array.isArray(sharedData.data) ? sharedData.data : []
+        if (!rows.length) {
+          setError('This shared Studio dashboard is missing a data snapshot. Ask the owner to re-share after saving the dashboard (so it embeds shareable rows).')
+          setLoading(false)
+          return
+        }
+        setDashboardSpecData({ spec: sharedData.spec, data: rows })
+        setDashboardSpecViewSpec(sharedData.spec)
         setLoading(false)
         return
       }
@@ -336,9 +598,71 @@ function SharedDashboard() {
             className={fullScreen ? 'flex-1 min-h-0 overflow-auto' : undefined}
             style={fullScreen ? { scrollbarGutter: 'stable' } : undefined}
           >
+            {(specFields.numericFields.length > 1 || specFields.categoricalFields.length > 1) && (
+              <div className="mb-4 space-y-3">
+                {specFields.numericFields.length > 1 && (
+                  <div>
+                    <p className="text-xs font-medium text-gray-600 mb-2">View metric</p>
+                    <div className="flex items-center gap-2 overflow-x-auto overflow-y-hidden pb-1 select-none" style={{ scrollbarGutter: 'stable' }}>
+                      {specFields.numericFields.slice(0, 10).map((m) => (
+                        <button
+                          key={m}
+                          type="button"
+                          onMouseDown={() => {
+                            setSpecQuickMetric(m)
+                            setDashboardSpecViewSpec((s) => applyQuickSwitchToSpec(s || dashboardSpecData.spec, { metric: m, dimension: specQuickDimension }))
+                          }}
+                          onClick={() => {
+                            setSpecQuickMetric(m)
+                            setDashboardSpecViewSpec((s) => applyQuickSwitchToSpec(s || dashboardSpecData.spec, { metric: m, dimension: specQuickDimension }))
+                          }}
+                          className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-sm border transition-colors ${
+                            specQuickMetric === m
+                              ? 'bg-purple-600 text-white border-purple-600'
+                              : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                          }`}
+                          title={`Switch metric to: ${m}`}
+                        >
+                          {formatFieldLabel(m) || m}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {specFields.categoricalFields.length > 1 && (
+                  <div>
+                    <p className="text-xs font-medium text-gray-600 mb-2">View by</p>
+                    <div className="flex items-center gap-2 overflow-x-auto overflow-y-hidden pb-1 select-none" style={{ scrollbarGutter: 'stable' }}>
+                      {specFields.categoricalFields.slice(0, 10).map((d) => (
+                        <button
+                          key={d}
+                          type="button"
+                          onMouseDown={() => {
+                            setSpecQuickDimension(d)
+                            setDashboardSpecViewSpec((s) => applyQuickSwitchToSpec(s || dashboardSpecData.spec, { metric: specQuickMetric, dimension: d }))
+                          }}
+                          onClick={() => {
+                            setSpecQuickDimension(d)
+                            setDashboardSpecViewSpec((s) => applyQuickSwitchToSpec(s || dashboardSpecData.spec, { metric: specQuickMetric, dimension: d }))
+                          }}
+                          className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-sm border transition-colors ${
+                            specQuickDimension === d
+                              ? 'bg-blue-600 text-white border-blue-600'
+                              : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                          }`}
+                          title={`Switch dimension to: ${d}`}
+                        >
+                          {formatFieldLabel(d) || d}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
             <div style={{ contain: 'layout', minHeight: fullScreen ? 'min-content' : undefined }}>
               <DashboardRenderer
-                spec={dashboardSpecData.spec}
+                spec={dashboardSpecViewSpec || dashboardSpecData.spec}
                 data={dashboardSpecData.data}
                 filterValues={filterValues}
                 onFilterChange={setFilterValues}
@@ -416,6 +740,10 @@ function SharedDashboard() {
             </button>
           </div>
         </div>
+
+        {/* View Metric Tabs */}
+        <MetricTabsBar />
+        <CategoryTabsBar />
 
         {/* Active Filter Indicator */}
         {chartFilter && (

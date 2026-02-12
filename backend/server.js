@@ -23,6 +23,7 @@ const studioAiSchemaHandler = require('./routes/studioAiSchema')
 const aiDashboardSpecRoutes = require('./routes/aiDashboardSpec')
 const sharedRoutes = require('./routes/shared')
 const datalakeRoutes = require('./routes/datalake')
+const ownerSummaryRoutes = require('./routes/ownerSummary')
 const accessLogger = require('./middleware/accessLogger')
 
 const app = express()
@@ -35,12 +36,28 @@ const corsOptions = {
     // Allow requests with no origin (mobile apps, Postman, etc.)
     if (!origin) return callback(null, true)
     
-    // In production, you can restrict to specific origins
-    const allowedOrigins = process.env.ALLOWED_ORIGINS 
-      ? process.env.ALLOWED_ORIGINS.split(',')
-      : ['*'] // Allow all in development
-    
-    if (allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+    const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production'
+
+    // In non-production, allow localhost + common private LAN origins so Vite can change ports freely.
+    // This avoids confusing 500s like "Not allowed by CORS" during development.
+    if (!isProd) {
+      const o = String(origin)
+      const isLocalhost =
+        /^https?:\/\/localhost:\d+$/i.test(o) ||
+        /^https?:\/\/127\.0\.0\.1:\d+$/i.test(o)
+      const isPrivateLan =
+        /^https?:\/\/192\.168\.\d{1,3}\.\d{1,3}:\d+$/i.test(o) ||
+        /^https?:\/\/10\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+$/i.test(o) ||
+        /^https?:\/\/172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}:\d+$/i.test(o)
+      if (isLocalhost || isPrivateLan) return callback(null, true)
+    }
+
+    // In production, restrict to specific origins (or '*' to allow all).
+    const allowedOrigins = process.env.ALLOWED_ORIGINS
+      ? process.env.ALLOWED_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean)
+      : ['*']
+
+    if (allowedOrigins.includes('*') || allowedOrigins.includes(String(origin))) {
       callback(null, true)
     } else {
       callback(new Error('Not allowed by CORS'))
@@ -105,6 +122,7 @@ if (typeof handleDashboardSpec === 'function') {
 }
 app.use('/api/shared', sharedRoutes)
 app.use('/api/datalake', datalakeRoutes)
+app.use('/api/owner-summary', ownerSummaryRoutes)
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -143,6 +161,7 @@ app.use((req, res) => {
       'GET /api/ai/dataset-schema',
       'GET /api/ai/dataset-data',
       'POST /api/ai/dashboard-spec',
+      'POST /api/owner-summary',
       'POST /api/upload',
       'POST /api/insights',
       'GET /api/example/sales',

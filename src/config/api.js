@@ -60,6 +60,13 @@ apiClient.interceptors.request.use(async (config) => {
     
     if (error) {
       console.error('Error getting session in API interceptor:', error)
+      // If the refresh token is invalid/missing, clear local auth state so we stop spamming 400s.
+      const msg = (error?.message || '').toString()
+      if (/invalid refresh token/i.test(msg)) {
+        try {
+          await supabase.auth.signOut({ scope: 'local' })
+        } catch (_) {}
+      }
     }
     
     if (session?.access_token) {
@@ -69,6 +76,12 @@ apiClient.interceptors.request.use(async (config) => {
     }
   } catch (error) {
     console.error('Error getting session:', error)
+    const msg = (error?.message || '').toString()
+    if (/invalid refresh token/i.test(msg)) {
+      try {
+        await supabase.auth.signOut({ scope: 'local' })
+      } catch (_) {}
+    }
   }
   return config
 })

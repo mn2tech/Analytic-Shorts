@@ -584,7 +584,7 @@ function AdvancedDashboard({ data, filteredData, selectedNumeric, selectedCatego
             data={filteredData || data}
             selectedNumeric={selectedNumeric}
             selectedDate={selectedDate}
-            forecastPeriods={6}
+            forecastPeriods={7}
           />
         </div>
       )}

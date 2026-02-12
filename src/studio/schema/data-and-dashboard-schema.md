@@ -48,6 +48,7 @@ Canonical list of example dataset IDs and their typical fields. Used for prompts
 | **today-snapshot**| date (date), occupancy_rate (number), rooms_available (number), rooms_occupied (number), arrivals_today (number), departures_today (number), revenue_today (number), adr (number), revpar (number) |
 | **revenue-trends** | date (date), occupancy_rate (number), revenue (number), adr (number), revpar (number) |
 | **alters-insights** | date (date), alert_type (string), severity (string), description (string), recommended_action (string) |
+| **samgov/live** | postedDate (date), title (string), solicitationNumber (string), type (string), organization (string), naicsCode (string), state (string), responseDeadLine (date), award_amount (number), uiLink (string) |
 
 User data: `datasetId` can be `dashboard:<uuid>` for a user’s saved dashboard; schema is profiled from that dashboard’s stored data.
 

@@ -1099,7 +1099,7 @@ function StudioDashboard() {
       const saveResult = await saveSharedDashboard(newShareId, sharedData)
       console.log('Step 4: Save result:', saveResult)
       
-      if (saveResult) {
+      if (saveResult?.ok) {
         const shareUrl = getShareableUrl(newShareId)
         console.log('Step 5: Share URL generated:', shareUrl)
         
@@ -1118,6 +1118,9 @@ function StudioDashboard() {
         setSaveSuccess(true)
         console.log('Publish completed successfully!')
         setTimeout(() => setSaveSuccess(false), 5000)
+        if (!saveResult.backendSaved) {
+          console.warn('Share link saved locally only (backend not configured). Link will only work in this browser.')
+        }
       } else {
         console.error('Failed to save shared dashboard to localStorage')
         throw new Error('Failed to save shared dashboard. Please check browser console for details.')

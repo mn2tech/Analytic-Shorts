@@ -75,7 +75,7 @@ function WidgetRenderer({
           data={filteredData || data}
           selectedNumeric={selectedNumeric}
           selectedDate={selectedDate}
-          forecastPeriods={6}
+          forecastPeriods={7}
         />
       )
     

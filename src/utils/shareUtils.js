@@ -15,6 +15,7 @@ export const saveSharedDashboard = async (shareId, dashboardData) => {
     })
     
     let backendSaved = false
+    let localSaved = false
     
     // First save to backend (database)
     try {
@@ -47,19 +48,21 @@ export const saveSharedDashboard = async (shareId, dashboardData) => {
         console.warn('⚠️ Dashboard saved to localStorage only. Share link will only work in this browser.')
       }
       
-      return true
+      localSaved = true
     } catch (localStorageError) {
       console.error('❌ Error saving to localStorage:', localStorageError)
       if (!backendSaved) {
         console.error('❌ Both backend and localStorage saves failed!')
-        return false
+        return { ok: false, backendSaved: false, localSaved: false }
       }
       // If backend saved but localStorage failed, that's okay
-      return true
+      return { ok: true, backendSaved: true, localSaved: false }
     }
+
+    return { ok: backendSaved || localSaved, backendSaved, localSaved }
   } catch (error) {
     console.error('❌ Unexpected error saving shared dashboard:', error)
-    return false
+    return { ok: false, backendSaved: false, localSaved: false }
   }
 }
 

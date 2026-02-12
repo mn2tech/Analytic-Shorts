@@ -261,7 +261,8 @@ const datasetRegistry = {
   'treasury': { type: 'api', endpoint: '/api/example/treasury' },
   'today-snapshot': { type: 'api', endpoint: '/api/example/today-snapshot' },
   'revenue-trends': { type: 'api', endpoint: '/api/example/revenue-trends' },
-  'alters-insights': { type: 'api', endpoint: '/api/example/alters-insights' }
+  'alters-insights': { type: 'api', endpoint: '/api/example/alters-insights' },
+  'samgov/live': { type: 'api', endpoint: '/api/example/samgov/live' }
 }
 
 // Helper to parse numeric values

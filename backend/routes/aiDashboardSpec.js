@@ -23,10 +23,41 @@ router.get('/', (req, res) => {
     routes: [
       'GET /api/ai/dataset-schema?dataset=<id>',
       'GET /api/ai/dataset-data?dataset=<id>',
+      'POST /api/ai/dataset-chat',
       'POST /api/ai/dashboard-spec'
     ]
   })
 })
+
+// Basic PII blocklist for column names (avoid echoing sensitive values in samples)
+const PII_BLOCKLIST = [
+  'name', 'email', 'ssn', 'phone', 'address',
+  'firstname', 'lastname', 'first_name', 'last_name',
+  'email_address', 'phone_number', 'mobile',
+  'social_security', 'ssn_number', 'social_security_number',
+  'street_address', 'home_address', 'mailing_address',
+  'credit_card', 'card_number', 'account_number',
+  'password', 'pin', 'secret'
+]
+function isPIIField(fieldName) {
+  const lowerField = String(fieldName || '').toLowerCase()
+  return PII_BLOCKLIST.some((blocked) => lowerField.includes(blocked))
+}
+
+function safeSampleRows(sampleRows, schemaFields, { maxRows = 30, maxCols = 18 } = {}) {
+  const rows = Array.isArray(sampleRows) ? sampleRows.slice(0, maxRows) : []
+  if (rows.length === 0) return []
+  const fields = Array.isArray(schemaFields) ? schemaFields : []
+  const orderedCols = fields.map((f) => f.name).filter(Boolean)
+  const cols = (orderedCols.length ? orderedCols : Object.keys(rows[0] || {}))
+    .filter((c) => c && !isPIIField(c))
+    .slice(0, maxCols)
+  return rows.map((r) => {
+    const o = {}
+    cols.forEach((c) => { o[c] = r?.[c] })
+    return o
+  })
+}
 
 /**
  * Resolve datasetId to raw data array.
@@ -191,6 +222,103 @@ router.get('/dataset-data', async (req, res) => {
   } catch (err) {
     console.error('GET /api/ai/dataset-data', err)
     res.status(500).json({ error: err.message || 'Server error' })
+  }
+})
+
+// POST /api/ai/dataset-chat
+// Body: { message: string, datasetId?: string, schema?: {rowCount, fields}, rowCount?: number, sampleRows?: any[] }
+router.post('/dataset-chat', async (req, res) => {
+  try {
+    if (!openai) {
+      return res.status(503).json({
+        error: 'AI not configured',
+        message: 'OPENAI_API_KEY is required. Set it in backend .env.'
+      })
+    }
+
+    const { message, datasetId, schema, rowCount, sampleRows } = req.body || {}
+    if (typeof message !== 'string' || !message.trim()) {
+      return res.status(400).json({ error: 'message is required' })
+    }
+
+    let resolvedSchema = schema && typeof schema === 'object' ? schema : null
+    let resolvedRows = Array.isArray(sampleRows) ? sampleRows : null
+    let resolvedRowCount = typeof rowCount === 'number' ? rowCount : null
+
+    // If schema/sample not provided, fall back to datasetId fetch (server-side).
+    if ((!resolvedSchema || !Array.isArray(resolvedSchema.fields)) && typeof datasetId === 'string' && datasetId.trim()) {
+      const data = await getDataForDataset(datasetId.trim(), req)
+      if (!data || data.length === 0) {
+        return res.status(404).json({ error: 'Dataset not found or empty' })
+      }
+      resolvedRowCount = data.length
+      resolvedSchema = profileSchema(data)
+      resolvedRows = data.slice(0, 30)
+    }
+
+    if (!resolvedSchema || !Array.isArray(resolvedSchema.fields)) {
+      return res.status(400).json({ error: 'schema.fields is required (or provide datasetId)' })
+    }
+
+    const safeRows = safeSampleRows(resolvedRows || [], resolvedSchema.fields, { maxRows: 30, maxCols: 18 })
+    const rowCountFinal = resolvedRowCount ?? resolvedSchema.rowCount ?? (Array.isArray(resolvedRows) ? resolvedRows.length : 0)
+
+    const numeric = resolvedSchema.fields.filter((f) => (f.type || '').toLowerCase() === 'number').map((f) => f.name)
+    const dates = resolvedSchema.fields.filter((f) => (f.type || '').toLowerCase() === 'date').map((f) => f.name)
+    const categorical = resolvedSchema.fields
+      .filter((f) => {
+        const t = (f.type || '').toLowerCase()
+        return t !== 'number' && t !== 'date'
+      })
+      .map((f) => f.name)
+
+    const schemaDesc = resolvedSchema.fields
+      .filter((f) => f?.name && !isPIIField(f.name))
+      .slice(0, 60)
+      .map((f) => `${f.name} (${f.type})${f.examples?.length ? ` e.g. ${f.examples.slice(0, 2).join(', ')}` : ''}`)
+      .join('\n')
+
+    const system = `You are a helpful data analyst assistant. You are chatting about ONE selected dataset.
+You MUST ground your answers in the provided dataset profile and sample rows.
+If you need an exact value that requires full-data computation, say what you can infer from the sample and explain what would be needed for an exact answer.
+Be concise, structured, and actionable.
+You can suggest a good dashboard/report layout when asked.`
+
+    const user = [
+      `DatasetId: ${datasetId || '(not provided)'}`,
+      `RowCount: ${rowCountFinal}`,
+      `Numeric columns (${numeric.length}): ${numeric.join(', ') || 'none'}`,
+      `Date columns (${dates.length}): ${dates.join(', ') || 'none'}`,
+      `Categorical columns (${categorical.length}): ${categorical.join(', ') || 'none'}`,
+      '',
+      'Schema:',
+      schemaDesc || '(no schema details)',
+      '',
+      'Sample rows (PII columns removed):',
+      JSON.stringify(safeRows, null, 2),
+      '',
+      `User message: ${message.trim()}`
+    ].join('\n')
+
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: user }
+      ],
+      max_tokens: 700,
+      temperature: 0.2
+    })
+
+    const reply = completion.choices?.[0]?.message?.content?.trim() || ''
+    if (!reply) return res.status(502).json({ error: 'AI returned no content' })
+    res.json({ reply })
+  } catch (err) {
+    console.error('POST /api/ai/dataset-chat', err)
+    const status = err.status ?? err.response?.status ?? 500
+    res.status(status >= 400 ? status : 500).json({
+      error: err.message || 'AI dataset chat failed'
+    })
   }
 })
 

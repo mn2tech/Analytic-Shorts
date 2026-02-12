@@ -1,4 +1,7 @@
-// Test script to check USASpending API format
+// Manual test script to check USASpending API format.
+// Run with: node test-usaspending-api.js
+//
+// Note: This is NOT a unit test. It is excluded from `node --test` runs.
 const axios = require('axios')
 
 async function testUSASpendingAPI() {

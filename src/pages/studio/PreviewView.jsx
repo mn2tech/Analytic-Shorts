@@ -2,6 +2,7 @@
  * PreviewView – Full-width preview canvas + StyleDock.
  */
 
+import { useState } from 'react'
 import PreviewPanel from './components/PreviewPanel'
 import StyleDock from './components/StyleDock'
 
@@ -22,6 +23,7 @@ export default function PreviewView({
   onLoadSampleData,
   onUploadClick
 }) {
+  const [selectedWidget, setSelectedWidget] = useState(null)
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden" style={{ minHeight: 480 }}>
       <div className="flex items-center border-b border-gray-200 bg-gray-50 px-4 py-2 shrink-0">
@@ -42,6 +44,8 @@ export default function PreviewView({
             uploadedSchema={uploadedSchema}
             filterValues={filterValues}
             setFilterValues={setFilterValues}
+            selectedWidget={selectedWidget}
+            onSelectWidget={setSelectedWidget}
             loading={loading}
             title="Preview"
             showTitleBar={false}
@@ -49,7 +53,12 @@ export default function PreviewView({
             onUploadClick={onUploadClick}
           />
         </div>
-        <StyleDock spec={spec} onSpecChange={setSpec} />
+        <StyleDock
+          spec={spec}
+          onSpecChange={setSpec}
+          selectedWidget={selectedWidget}
+          onClearSelection={() => setSelectedWidget(null)}
+        />
       </div>
     </div>
   )
