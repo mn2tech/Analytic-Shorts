@@ -83,7 +83,7 @@ function UpgradePrompt({
 
         {/* Title */}
         <h3 className="text-2xl font-bold text-gray-900 text-center mb-2">
-          Plan Limit Reached
+          {limitType === 'dashboards' ? 'Dashboard Limit Reached' : 'Plan Limit Reached'}
         </h3>
 
         {/* Error message */}

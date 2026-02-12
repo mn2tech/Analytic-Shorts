@@ -13,6 +13,10 @@ import DataMetadataEditor from '../components/DataMetadataEditor'
 import TimeSeriesReport from '../components/TimeSeriesReport'
 import DateRangeSlider from '../components/DateRangeSlider'
 import SubawardDrilldownModal from '../components/SubawardDrilldownModal'
+import UpgradePrompt from '../components/UpgradePrompt'
+import { useAuth } from '../contexts/AuthContext'
+import { getSubscription } from '../services/subscriptionService'
+import { PLANS } from '../config/pricing'
 import { saveAs } from 'file-saver'
 import { generateShareId, saveSharedDashboard, getShareableUrl, copyToClipboard } from '../utils/shareUtils'
 import { clearAnalyticsDataAndReload } from '../utils/analyticsStorage'
@@ -24,6 +28,7 @@ import * as XLSX from 'xlsx'
 function Dashboard() {
   const navigate = useNavigate()
   const location = useLocation()
+  const { user } = useAuth()
   const [data, setData] = useState(null)
   const [filteredData, setFilteredData] = useState(null)
   const [columns, setColumns] = useState([])
@@ -51,11 +56,32 @@ function Dashboard() {
   const [subawardModalOpen, setSubawardModalOpen] = useState(false)
   const [subawardRecipient, setSubawardRecipient] = useState('')
   const [noDataReason, setNoDataReason] = useState(null) // 'no-storage' | 'invalid-data' when dashboard has nothing to show
+  const [upgradePrompt, setUpgradePrompt] = useState(null)
+  const [currentPlan, setCurrentPlan] = useState('free')
   const hasInitialized = useRef(false)
   const isUpdatingMetadata = useRef(false)
   const lastAutoTitleMetric = useRef('')
   const MAX_CATEGORY_TABS = 12
   const MAX_METRIC_TABS = 10
+
+  useEffect(() => {
+    let mounted = true
+    if (!user) {
+      setCurrentPlan('free')
+      return () => { mounted = false }
+    }
+    getSubscription()
+      .then((sub) => {
+        if (!mounted) return
+        setCurrentPlan(sub?.plan || 'free')
+      })
+      .catch(() => {
+        // default to free; keep UI working even if subscription endpoint fails
+        if (!mounted) return
+        setCurrentPlan('free')
+      })
+    return () => { mounted = false }
+  }, [user])
 
   const formatFieldLabel = useCallback((field) => {
     const raw = String(field || '').trim()
@@ -919,6 +945,22 @@ function Dashboard() {
     } catch (error) {
       console.error('Error saving dashboard:', error)
       const errorMessage = error.response?.data?.error || error.message || 'Failed to save dashboard. Please try again.'
+      const isLimit =
+        error?.response?.status === 403 ||
+        /dashboard limit reached/i.test(String(errorMessage || '')) ||
+        /limit reached/i.test(String(errorMessage || ''))
+      if (isLimit) {
+        const planId = currentPlan || 'free'
+        const planLimit = PLANS?.[planId]?.limits?.dashboards
+        setUpgradePrompt({
+          error: 'Dashboard limit reached',
+          message: 'You’ve reached your dashboard limit. Please upgrade to create more dashboards.',
+          currentPlan: planId,
+          limit: typeof planLimit === 'number' ? planLimit : null,
+          limitType: 'dashboards'
+        })
+        return
+      }
       alert(`Failed to save dashboard: ${errorMessage}`)
     } finally {
       setSaving(false)
@@ -1752,6 +1794,17 @@ function Dashboard() {
       {/* Analytics Watermark Pattern */}
       <div className="analytics-watermark"></div>
       <div className="analytics-watermark-icons"></div>
+
+      {upgradePrompt && (
+        <UpgradePrompt
+          error={upgradePrompt.error}
+          message={upgradePrompt.message}
+          currentPlan={upgradePrompt.currentPlan}
+          limit={upgradePrompt.limit}
+          limitType={upgradePrompt.limitType}
+          onClose={() => setUpgradePrompt(null)}
+        />
+      )}
       
       {/* Date Range Slider and Network View Button - Top of Dashboard */}
       <div className="bg-white border-b border-gray-200 shadow-sm">
