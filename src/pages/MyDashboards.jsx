@@ -64,6 +64,8 @@ function MyDashboards() {
       } else {
         // Regular dashboards: share the same payload shape as Dashboard.jsx
         payload = {
+          name: dashboard.name,
+          dashboardTitle: dashboard.name,
           data: dashboard.data,
           columns: dashboard.columns,
           numericColumns: dashboard.numeric_columns,

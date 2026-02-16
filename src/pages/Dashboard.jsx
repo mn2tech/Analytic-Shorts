@@ -2873,6 +2873,8 @@ function Dashboard() {
                 if (!shareId) {
                   const newShareId = generateShareId()
                   const dashboardData = {
+                    name: dashboardTitle,
+                    dashboardTitle: dashboardTitle,
                     data: data,
                     columns: columns,
                     numericColumns: numericColumns,

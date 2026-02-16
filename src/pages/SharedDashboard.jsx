@@ -80,6 +80,7 @@ function SharedDashboard() {
   const [dashboardView, setDashboardView] = useState('advanced') // Default to advanced
   const [activeTab, setActiveTab] = useState('Overview')
   const [dashboardTitle, setDashboardTitle] = useState('Analytics Dashboard')
+  const [isTitleCustomized, setIsTitleCustomized] = useState(false)
   const [studioDashboardData, setStudioDashboardData] = useState(null)
   const [dashboardSpecData, setDashboardSpecData] = useState(null)
   const [dashboardSpecViewSpec, setDashboardSpecViewSpec] = useState(null)
@@ -125,12 +126,13 @@ function SharedDashboard() {
   // Match /dashboard behavior: auto-adjust title to the selected metric.
   useEffect(() => {
     if (!selectedNumeric) return
+    if (isTitleCustomized) return
     const pretty = formatFieldLabel(selectedNumeric)
     if (!pretty) return
     if (lastAutoTitleMetric.current === selectedNumeric) return
     lastAutoTitleMetric.current = selectedNumeric
     setDashboardTitle(pretty)
-  }, [selectedNumeric, formatFieldLabel])
+  }, [selectedNumeric, formatFieldLabel, isTitleCustomized])
 
   // Initialize spec quick-switch defaults when the shared spec loads.
   useEffect(() => {
@@ -359,6 +361,14 @@ function SharedDashboard() {
       setSelectedCategorical(sharedData.selectedCategorical || '')
       setSelectedDate(sharedData.selectedDate || '')
       setOpportunityKeyword(sharedData.opportunityKeyword || '')
+
+      const sharedCustomTitle = String(sharedData.dashboardTitle || sharedData.name || '').trim()
+      if (sharedCustomTitle) {
+        setDashboardTitle(sharedCustomTitle)
+        setIsTitleCustomized(true)
+      } else {
+        setIsTitleCustomized(false)
+      }
       
       // Restore dashboard view if saved
       if (sharedData.dashboardView) {
@@ -405,9 +415,9 @@ function SharedDashboard() {
     // Check for dataset name or source
     const datasetTitle = sharedData.datasetName || getDatasetTitleFromSource(sharedData.source)
     
-    if (datasetTitle) {
+    if (!sharedData.dashboardTitle && !sharedData.name && datasetTitle) {
       setDashboardTitle(datasetTitle)
-    } else {
+    } else if (!sharedData.dashboardTitle && !sharedData.name) {
       // Detect domain from column names (fallback)
       const detectDomain = (columns) => {
         const lowerColumns = columns.map(col => col.toLowerCase())
