@@ -99,30 +99,21 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
   
   const prepareLineChartData = useMemo(() => {
     if (!sampledDisplayData || sampledDisplayData.length === 0 || !selectedNumeric) return []
+    // A trend chart without a date axis tends to be noisy and misleading.
+    if (!selectedDate) return []
 
-    if (selectedDate && selectedNumeric) {
-      // Sample first, then process
-      const step = Math.max(1, Math.floor(sampledDisplayData.length / 30))
-      return sampledDisplayData
-        .filter((_, i) => i % step === 0)
-        .map((row) => ({
-          date: row[selectedDate] || '',
-          value: parseNumericValue(row[selectedNumeric]),
-          originalRow: row,
-        }))
-        .filter((item) => item.date)
-        .slice(0, 30)
-        .sort((a, b) => new Date(a.date) - new Date(b.date))
-    }
-
+    // Sample first, then process
+    const step = Math.max(1, Math.floor(sampledDisplayData.length / 30))
     return sampledDisplayData
-      .filter((_, i) => i % Math.max(1, Math.floor(sampledDisplayData.length / 30)) === 0)
-      .slice(0, 30)
-      .map((row, index) => ({
-        name: `Item ${index + 1}`,
+      .filter((_, i) => i % step === 0)
+      .map((row) => ({
+        date: row[selectedDate] || '',
         value: parseNumericValue(row[selectedNumeric]),
         originalRow: row,
       }))
+      .filter((item) => item.date)
+      .slice(0, 30)
+      .sort((a, b) => new Date(a.date) - new Date(b.date))
   }, [sampledDisplayData, selectedNumeric, selectedDate])
 
   const preparePieChartData = useMemo(() => {
@@ -214,6 +205,30 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
   const hasValidLineData = lineData && Array.isArray(lineData) && lineData.length > 0
   const hasValidPieData = pieData && Array.isArray(pieData) && pieData.length > 0
 
+  // Smart quality checks: hide charts that don't add clear signal.
+  const lineQuality = useMemo(() => {
+    if (!hasValidLineData) return { isMeaningful: false }
+    const uniqueDates = new Set(lineData.map((d) => String(d?.date || ''))).size
+    const uniqueValues = new Set(lineData.map((d) => Number(d?.value || 0).toFixed(6))).size
+    return { isMeaningful: uniqueDates >= 3 && uniqueValues >= 2 }
+  }, [hasValidLineData, lineData])
+
+  const pieQuality = useMemo(() => {
+    if (!hasValidPieData) return { isMeaningful: false }
+    const nonZero = pieData.filter((d) => Number(d?.value || 0) > 0)
+    const tooManySlices = nonZero.length > 10
+    const maxShare = totalValue > 0
+      ? Math.max(...nonZero.map((d) => Number(d.value || 0))) / totalValue
+      : 1
+    // Avoid cluttered pies and near-single-slice pies.
+    const isMeaningful = nonZero.length >= 2 && !tooManySlices && maxShare < 0.98
+    return { isMeaningful }
+  }, [hasValidPieData, pieData, totalValue])
+
+  const showLineChart = lineQuality.isMeaningful
+  const showPieChart = pieQuality.isMeaningful
+  const chartCount = (showLineChart ? 1 : 0) + (showPieChart ? 1 : 0)
+
   const handleChartClick = (chartType, chartData, chartTitle) => {
     // Convert chart data back to original row format for insights
     let dataForInsights = []
@@ -287,8 +302,13 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
 
   return (
     <>
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+    <div
+      className={`grid gap-6 mb-6 ${
+        chartCount <= 1 ? 'grid-cols-1 max-w-4xl mx-auto' : 'grid-cols-1 lg:grid-cols-2'
+      }`}
+    >
       {/* Line Chart */}
+      {showLineChart && (
       <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200 hover:shadow-md transition-shadow relative group">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-semibold text-gray-900">
@@ -402,8 +422,10 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
           </div>
         )}
       </div>
+      )}
 
       {/* Pie/Donut Chart */}
+      {showPieChart && (
       <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200 hover:shadow-md transition-shadow relative group">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-semibold text-gray-900">
@@ -555,7 +577,14 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
           </div>
         )}
       </div>
+      )}
     </div>
+
+    {chartCount === 0 && (
+      <div className="mb-6 bg-white rounded-lg border border-gray-200 p-6 text-sm text-gray-600">
+        No clear chart signal with current selections. Data is still loaded; use a date column for trend and a low-cardinality category for breakdown.
+      </div>
+    )}
 
     {maximized && (
       <div

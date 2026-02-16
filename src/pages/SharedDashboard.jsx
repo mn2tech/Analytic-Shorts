@@ -85,12 +85,17 @@ function SharedDashboard() {
   const [dashboardSpecViewSpec, setDashboardSpecViewSpec] = useState(null)
   const [filterValues, setFilterValues] = useState({})
   const [fullScreen, setFullScreen] = useState(false)
+  const [opportunityKeyword, setOpportunityKeyword] = useState('')
   const lastAutoTitleMetric = useRef('')
   const MAX_METRIC_TABS = 10
   const MAX_CATEGORY_TABS = 12
   const [specQuickMetric, setSpecQuickMetric] = useState('')
   const [specQuickDimension, setSpecQuickDimension] = useState('')
   const specFields = useMemo(() => inferFieldsFromRows(dashboardSpecData?.data || []), [dashboardSpecData])
+  const predefinedOpportunityKeywords = useMemo(
+    () => ['IT', 'AI', 'Data Analytics', 'House Keeping', 'Cybersecurity', 'Facilities'],
+    []
+  )
 
   const formatFieldLabel = useCallback((field) => {
     const raw = String(field || '').trim()
@@ -353,6 +358,7 @@ function SharedDashboard() {
       setSelectedNumeric(sharedData.selectedNumeric || '')
       setSelectedCategorical(sharedData.selectedCategorical || '')
       setSelectedDate(sharedData.selectedDate || '')
+      setOpportunityKeyword(sharedData.opportunityKeyword || '')
       
       // Restore dashboard view if saved
       if (sharedData.dashboardView) {
@@ -386,6 +392,11 @@ function SharedDashboard() {
       // CDC Health Data
       if (sourceLower.includes('cdc') || sourceLower.includes('disease control') || sourceLower.includes('centers for disease')) {
         return 'CDC Health Data'
+      }
+
+      // SAM.gov
+      if (sourceLower.includes('sam.gov') || sourceLower.includes('samgov')) {
+        return 'SAM.gov Opportunities'
       }
       
       return null
@@ -430,6 +441,18 @@ function SharedDashboard() {
           (col.includes('metric') && (col.includes('death') || col.includes('birth') || col.includes('life expectancy')))
         )) {
           return 'CDC Health Data'
+        }
+
+        // SAM.gov indicators
+        if (lowerColumns.some(col =>
+          col.includes('noticeid') ||
+          col.includes('solicitationnumber') ||
+          col.includes('naicscode') ||
+          col.includes('classificationcode') ||
+          col.includes('setaside') ||
+          col.includes('uilink')
+        )) {
+          return 'SAM.gov Opportunities'
         }
         
         if (lowerColumns.some(col => 
@@ -480,6 +503,174 @@ function SharedDashboard() {
     
     loadDashboard()
   }, [shareId])
+
+  const isOpportunityDataset = useMemo(() => {
+    const colSet = new Set((columns || []).map((c) => String(c)))
+    return (
+      colSet.has('noticeId') &&
+      colSet.has('title') &&
+      colSet.has('uiLink')
+    )
+  }, [columns])
+
+  const allOpportunityRows = useMemo(() => {
+    if (!isOpportunityDataset) return []
+    const rows = Array.isArray(filteredData) ? filteredData : []
+    if (!rows.length) return []
+
+    const seen = new Set()
+    const out = []
+    for (const row of rows) {
+      if (!row) continue
+      const key = String(row.noticeId || row.uiLink || `${row.title || ''}-${row.solicitationNumber || ''}`)
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.push(row)
+    }
+    return out
+  }, [filteredData, isOpportunityDataset])
+
+  const opportunityRows = useMemo(() => {
+    const q = String(opportunityKeyword || '').trim().toLowerCase()
+    const sourceRows = Array.isArray(allOpportunityRows) ? allOpportunityRows : []
+    if (!q) return sourceRows.slice(0, 20).map((row) => ({ ...row, _matchReason: '' }))
+
+    const normalize = (s) =>
+      String(s || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim()
+
+    const haystackFields = [
+      'title',
+      'solicitationNumber',
+      'organization',
+      'setAside',
+      'type',
+      'baseType',
+      'noticeId',
+      'naicsCode',
+      'classificationCode',
+      'description',
+    ]
+
+    const terms = q.split(/\s+/).filter(Boolean)
+    const matches = sourceRows
+      .map((row) => {
+        const haystack = normalize(haystackFields.map((f) => row?.[f]).filter(Boolean).join(' '))
+        if (!haystack) return null
+        const matched = terms.find((t) => haystack.includes(normalize(t)))
+        if (!matched) return null
+        return { ...row, _matchReason: `Matched keyword: ${matched}` }
+      })
+      .filter(Boolean)
+
+    return matches.slice(0, 20)
+  }, [allOpportunityRows, opportunityKeyword])
+
+  const renderOpportunityListPanel = () => {
+    if (!isOpportunityDataset || allOpportunityRows.length === 0) return null
+
+    return (
+      <div className="mb-6 bg-white rounded-lg border border-gray-200 shadow-sm">
+        <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">Matching Opportunities</h3>
+            <p className="text-sm text-gray-600">
+              Showing {opportunityRows.length} of {allOpportunityRows.length} filtered opportunities
+            </p>
+          </div>
+          {chartFilter ? (
+            <span className="text-xs px-2.5 py-1 rounded-full bg-blue-100 text-blue-800 font-medium">
+              {chartFilter.type === 'category' ? `${selectedCategorical}: ${chartFilter.value}` : 'Date filter applied'}
+            </span>
+          ) : (
+            <span className="text-xs px-2.5 py-1 rounded-full bg-gray-100 text-gray-700 font-medium">
+              All filtered opportunities
+            </span>
+          )}
+        </div>
+        <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/60">
+          <label className="block text-xs font-medium text-gray-600 mb-1">
+            Keyword Search
+          </label>
+          <input
+            type="text"
+            value={opportunityKeyword}
+            onChange={(e) => setOpportunityKeyword(e.target.value)}
+            placeholder="Search title, solicitation, organization..."
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
+          <div className="mt-2 flex flex-wrap gap-2">
+            {predefinedOpportunityKeywords.map((kw) => {
+              const active = opportunityKeyword.toLowerCase() === kw.toLowerCase()
+              return (
+                <button
+                  key={kw}
+                  type="button"
+                  onClick={() => setOpportunityKeyword(active ? '' : kw)}
+                  className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${
+                    active
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  {kw}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+        <div className="divide-y divide-gray-100 max-h-[420px] overflow-y-auto">
+          {opportunityRows.length === 0 ? (
+            <div className="px-5 py-8 text-sm text-gray-600">
+              No opportunities match this keyword in the current filtered set.
+            </div>
+          ) : opportunityRows.map((row, idx) => (
+            <div key={String(row.noticeId || row.uiLink || idx)} className="px-5 py-4">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-base font-semibold text-gray-900 break-words">
+                    {row.title || 'Untitled Opportunity'}
+                  </p>
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-600">
+                    {row.solicitationNumber && (
+                      <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-700">
+                        Solicitation: {row.solicitationNumber}
+                      </span>
+                    )}
+                    {row.type && <span>Type: {row.type}</span>}
+                    {row.state && <span>State: {row.state}</span>}
+                    {opportunityKeyword && row._matchReason && (
+                      <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100">
+                        {row._matchReason}
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-2 text-sm text-gray-600 space-y-1">
+                    {row.organization && <p className="break-words">Organization: {row.organization}</p>}
+                    <p>
+                      Posted: {row.postedDate || 'N/A'}{row.responseDeadLine ? ` • Due: ${row.responseDeadLine}` : ''}
+                    </p>
+                  </div>
+                </div>
+                {row.uiLink && (
+                  <a
+                    href={row.uiLink}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="shrink-0 inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+                  >
+                    Open
+                  </a>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
 
   const applyChartFilter = (baseData) => {
     if (!baseData) return baseData
@@ -744,6 +935,7 @@ function SharedDashboard() {
         {/* View Metric Tabs */}
         <MetricTabsBar />
         <CategoryTabsBar />
+        {renderOpportunityListPanel()}
 
         {/* Active Filter Indicator */}
         {chartFilter && (

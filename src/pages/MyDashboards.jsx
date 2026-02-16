@@ -72,6 +72,7 @@ function MyDashboards() {
           selectedNumeric: dashboard.selected_numeric,
           selectedCategorical: dashboard.selected_categorical,
           selectedDate: dashboard.selected_date,
+          opportunityKeyword: dashboard.opportunity_keyword || '',
           dashboardView: dashboard.dashboard_view || 'advanced'
         }
       }
@@ -128,6 +129,8 @@ function MyDashboards() {
 
     // Prepare data in the format expected by Dashboard component
     const dashboardData = {
+      dashboardId: dashboard.id,
+      name: dashboard.name,
       data: dashboard.data,
       columns: dashboard.columns,
       numericColumns: dashboard.numeric_columns,

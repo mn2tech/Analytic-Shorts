@@ -204,6 +204,48 @@ function DataMetadataEditor({
 
   const totalPages = Math.ceil((data?.length || 0) / rowsPerPage)
 
+  const isProbablyUrl = (v) => {
+    if (v === null || v === undefined) return false
+    const s = String(v).trim()
+    return /^https?:\/\/\S+$/i.test(s)
+  }
+
+  const renderCell = (col, value) => {
+    if (value === null || value === undefined) return ''
+    const str = String(value)
+
+    // SAM.gov + general URL fields: show as clickable link
+    if (col === 'uiLink' && isProbablyUrl(str)) {
+      return (
+        <a
+          href={str}
+          target="_blank"
+          rel="noreferrer"
+          className="text-blue-700 hover:underline"
+          title={str}
+        >
+          Open opportunity
+        </a>
+      )
+    }
+
+    if (isProbablyUrl(str)) {
+      return (
+        <a
+          href={str}
+          target="_blank"
+          rel="noreferrer"
+          className="text-blue-700 hover:underline"
+          title={str}
+        >
+          {str}
+        </a>
+      )
+    }
+
+    return str
+  }
+
   // Safety check: if no data or columns, show message
   if (!data || !columns || columns.length === 0) {
     return (
@@ -409,7 +451,7 @@ function DataMetadataEditor({
                             'text-left'
                           }`}
                         >
-                          {row[col] !== null && row[col] !== undefined ? String(row[col]) : ''}
+                          {renderCell(col, row[col])}
                         </td>
                       ))}
                     </tr>

@@ -5,10 +5,11 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { Outlet, NavLink, Link, useLocation } from 'react-router-dom'
+import { Outlet, NavLink, Link, useLocation, useNavigate } from 'react-router-dom'
 import Navbar from '../components/Navbar'
 import Footer from '../components/Footer'
 import { useAuth } from '../contexts/AuthContext'
+import apiClient from '../config/api'
 
 const STORAGE_KEY_FULLSCREEN = 'aiVisualBuilder_fullScreen'
 const STORAGE_KEY_SIDEBAR_COLLAPSED = 'sidebarCollapsed'
@@ -58,6 +59,11 @@ function isAdminByProfile(user, userProfile) {
   if (!user) return false
   const role = userProfile?.role
   return role === 'admin' || role === 'demo'
+}
+
+function isDefaultAdminEmail(user) {
+  const email = String(user?.email || '').toLowerCase()
+  return email === 'admin@nm2tech-sas.com' || email === 'demo@nm2tech-sas.com'
 }
 
 // Tooltip for collapsed sidebar: rendered in a portal so it's never clipped by sidebar overflow. No deps.
@@ -121,6 +127,7 @@ function SidebarTooltip({ show, label, children }) {
 
 function AppLayout() {
   const location = useLocation()
+  const navigate = useNavigate()
   const { user, userProfile } = useAuth()
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     try {
@@ -132,7 +139,10 @@ function AppLayout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [dataStatus, setDataStatus] = useState({ loaded: false })
   const [sectionOpen, setSectionOpen] = useState(loadSectionOpen)
-  const showAdminLink = isAdminByProfile(user, userProfile)
+  const [quickActionLoading, setQuickActionLoading] = useState(null) // 'samgov' | null
+  const [hasAdminAccess, setHasAdminAccess] = useState(false)
+  const [samgovQuickActionVisible, setSamgovQuickActionVisible] = useState(true)
+  const showAdminLink = isAdminByProfile(user, userProfile) || isDefaultAdminEmail(user) || hasAdminAccess
 
   const toggleSection = useCallback((key) => {
     setSectionOpen((prev) => {
@@ -163,6 +173,62 @@ function AppLayout() {
     window.addEventListener('storage', check)
     return () => window.removeEventListener('storage', check)
   }, [location.pathname, location.key])
+
+  // Keep Admin sidebar link aligned with backend email-based admin checks.
+  useEffect(() => {
+    let cancelled = false
+
+    const checkAdminAccess = async () => {
+      if (!user) {
+        setHasAdminAccess(false)
+        return
+      }
+
+      // Fast-path: role-based admin from profile (legacy behavior)
+      if (isAdminByProfile(user, userProfile)) {
+        setHasAdminAccess(true)
+      }
+
+      try {
+        await apiClient.get('/api/analytics/admin-check', { timeout: 10000 })
+        if (!cancelled) setHasAdminAccess(true)
+      } catch (_) {
+        if (!cancelled && !isAdminByProfile(user, userProfile)) {
+          setHasAdminAccess(false)
+        }
+      }
+    }
+
+    checkAdminAccess()
+    return () => {
+      cancelled = true
+    }
+  }, [user, userProfile])
+
+  // Respect admin-controlled API report visibility for sidebar quick actions.
+  useEffect(() => {
+    let cancelled = false
+
+    const loadApiReportVisibility = async () => {
+      try {
+        const res = await apiClient.get('/api/example/api-reports', { timeout: 10000 })
+        const reports = Array.isArray(res?.data?.reports) ? res.data.reports : []
+        const hasSamgovLive = reports.some((report) => report?.id === 'samgov-live')
+        if (!cancelled) {
+          // For regular users, hidden reports are omitted by backend, so absence means hidden.
+          setSamgovQuickActionVisible(hasSamgovLive)
+        }
+      } catch {
+        // Fail-open keeps existing UX if the visibility endpoint is temporarily unavailable.
+        if (!cancelled) setSamgovQuickActionVisible(true)
+      }
+    }
+
+    loadApiReportVisibility()
+    return () => {
+      cancelled = true
+    }
+  }, [user?.id, user?.email])
 
   const toggleSidebar = useCallback(() => {
     setSidebarOpen((prev) => {
@@ -213,6 +279,41 @@ function AppLayout() {
     }`
 
   const hideFooter = location.pathname.startsWith('/studio')
+
+  const loadSamgovOpportunities = useCallback(async () => {
+    if (quickActionLoading) return
+    setQuickActionLoading('samgov')
+    try {
+      const endpoint = '/api/example/samgov/live?ptype=o&limit=200'
+      const response = await apiClient.get(endpoint, { timeout: 30000 })
+      const payload = response?.data
+
+      if (!payload || !Array.isArray(payload.data)) {
+        throw new Error('Invalid data format received from server.')
+      }
+
+      // Use same storage strategy as Home.jsx to avoid sessionStorage quota issues.
+      const estimatedSize = JSON.stringify(payload).length
+      const sizeInMB = estimatedSize / (1024 * 1024)
+
+      if (sizeInMB > 3) {
+        navigate('/dashboard', { state: { analyticsData: payload } })
+      } else {
+        sessionStorage.setItem('analyticsData', JSON.stringify(payload))
+        navigate('/dashboard')
+      }
+    } catch (error) {
+      console.error('Failed to load SAM.gov opportunities:', error)
+      const msg =
+        error?.response?.data?.error ||
+        error?.response?.data?.message ||
+        error?.message ||
+        'Failed to load SAM.gov opportunities.'
+      alert(`Failed to load SAM.gov opportunities: ${msg}`)
+    } finally {
+      setQuickActionLoading(null)
+    }
+  }, [navigate, quickActionLoading])
 
   return (
     <div className="flex min-h-screen bg-gray-50">
@@ -336,6 +437,25 @@ function AppLayout() {
                     <span className={sidebarOpen ? '' : 'lg:hidden'}>Open Studio</span>
                   </NavLink>
                 </SidebarTooltip>
+                {samgovQuickActionVisible && (
+                  <SidebarTooltip show={!sidebarOpen} label="SAM.gov Opportunities">
+                    <button
+                      type="button"
+                      className={navLinkClass({ isActive: false })}
+                      onClick={() => {
+                        setMobileMenuOpen(false)
+                        loadSamgovOpportunities()
+                      }}
+                      disabled={quickActionLoading === 'samgov'}
+                      aria-disabled={quickActionLoading === 'samgov'}
+                    >
+                      <span>{quickActionLoading === 'samgov' ? '⏳' : '🏛️'}</span>
+                      <span className={sidebarOpen ? '' : 'lg:hidden'}>
+                        {quickActionLoading === 'samgov' ? 'Loading SAM.gov…' : 'SAM.gov Opportunities'}
+                      </span>
+                    </button>
+                  </SidebarTooltip>
+                )}
               </div>
             )}
           </div>

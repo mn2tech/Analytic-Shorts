@@ -1,31 +1,36 @@
 import { useState } from 'react'
+import { useEffect } from 'react'
 import apiClient from '../config/api'
 
 function ExampleDatasetButton({ onDatasetLoad, onError }) {
   const [loadingDataset, setLoadingDataset] = useState(null)
+  const [exampleDatasets, setExampleDatasets] = useState([])
 
-  const exampleDatasets = [
-    {
-      name: 'USA Spending (Live)',
-      description: 'Real-time federal government awards, contracts, and grants from USASpending.gov API',
-      endpoint: '/api/example/usaspending/live',
-    },
-    {
-      name: 'Unemployment Rate (BLS)',
-      description: 'U.S. unemployment rate data from Bureau of Labor Statistics API',
-      endpoint: '/api/example/unemployment',
-    },
-    {
-      name: 'CDC Health Data',
-      description: 'Health metrics: Death Rate, Birth Rate, and Life Expectancy from CDC (filter by Metric column)',
-      endpoint: '/api/example/cdc-health?metric=all',
-    },
-    {
-      name: 'Government Budget',
-      description: 'Federal budget data by category from U.S. Treasury Fiscal Data API (filter by Budget Category)',
-      endpoint: '/api/example/government-budget?category=all',
-    },
-  ]
+  useEffect(() => {
+    let mounted = true
+
+    const fetchReports = async () => {
+      try {
+        const res = await apiClient.get('/api/example/api-reports')
+        const reports = Array.isArray(res?.data?.reports) ? res.data.reports : []
+        if (!mounted) return
+        setExampleDatasets(reports.map((r) => ({
+          name: r.name,
+          description: r.description,
+          endpoint: r.endpoint
+        })))
+      } catch (error) {
+        console.error('Failed to load API report list:', error)
+        if (!mounted) return
+        setExampleDatasets([])
+      }
+    }
+
+    fetchReports()
+    return () => {
+      mounted = false
+    }
+  }, [])
 
   const loadExample = async (endpoint, datasetName) => {
     setLoadingDataset(datasetName)
@@ -105,6 +110,9 @@ function ExampleDatasetButton({ onDatasetLoad, onError }) {
   return (
     <div className="space-y-3">
       <p className="text-sm font-medium text-gray-700 mb-2">Public Data APIs:</p>
+      {exampleDatasets.length === 0 && (
+        <p className="text-xs text-gray-500">No public API reports are currently available.</p>
+      )}
       {exampleDatasets.map((dataset) => {
         const isLoading = loadingDataset === dataset.name
         return (

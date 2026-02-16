@@ -13,6 +13,12 @@ const supabase = supabaseUrl && supabaseServiceKey
     })
   : null
 
+function getAdminEmails() {
+  return process.env.ADMIN_EMAILS
+    ? process.env.ADMIN_EMAILS.split(',').map((e) => e.trim().toLowerCase()).filter(Boolean)
+    : ['admin@nm2tech-sas.com', 'demo@nm2tech-sas.com']
+}
+
 // Middleware to get user from JWT token
 const getUserFromToken = async (req, res, next) => {
   try {
@@ -43,9 +49,7 @@ const getUserFromToken = async (req, res, next) => {
 
 // Check if user is admin
 const isAdmin = (req, res, next) => {
-  const ADMIN_EMAILS = process.env.ADMIN_EMAILS 
-    ? process.env.ADMIN_EMAILS.split(',').map(e => e.trim().toLowerCase())
-    : []
+  const ADMIN_EMAILS = getAdminEmails()
   
   if (!req.user || !ADMIN_EMAILS.includes(req.user.email?.toLowerCase())) {
     return res.status(403).json({ error: 'Admin access required' })
@@ -53,6 +57,17 @@ const isAdmin = (req, res, next) => {
   
   next()
 }
+
+// Lightweight admin status endpoint for UI visibility checks
+router.get('/admin-check', getUserFromToken, (req, res) => {
+  const adminEmails = getAdminEmails()
+  const email = req.user?.email?.toLowerCase()
+  const isAdminUser = !!email && adminEmails.includes(email)
+  if (!isAdminUser) {
+    return res.status(403).json({ error: 'Admin access required' })
+  }
+  return res.json({ isAdmin: true })
+})
 
 // Get visitor statistics
 router.get('/visitors', getUserFromToken, isAdmin, async (req, res) => {
@@ -74,6 +89,23 @@ router.get('/visitors', getUserFromToken, isAdmin, async (req, res) => {
       .limit(1000)
     
     if (error) {
+      // Some environments may not have the optional access-log table yet.
+      // Return an empty analytics payload so admin page can still load.
+      const isMissingTable = error.code === 'PGRST205' || /shorts_access_logs/i.test(String(error.message || ''))
+      if (isMissingTable) {
+        console.warn('shorts_access_logs table missing; returning empty visitor stats')
+        return res.json({
+          total_visits: 0,
+          unique_visitors: 0,
+          unique_logged_in: 0,
+          top_paths: [],
+          top_users: [],
+          visits_by_day: [],
+          average_response_time: 0,
+          recent_visits: [],
+          warning: 'Visitor logs table is not configured yet.'
+        })
+      }
       console.error('Error fetching access logs:', error)
       return res.status(500).json({ error: 'Failed to fetch access logs' })
     }

@@ -50,6 +50,48 @@ export default function StudioDataTableWidget({ widget, queryData, error, isLoad
   const jsonSlice = rows.slice(0, maxJsonRows)
   const hasMoreJson = rows.length > maxJsonRows
 
+  const isProbablyUrl = (v) => {
+    if (v === null || v === undefined) return false
+    const s = String(v).trim()
+    return /^https?:\/\/\S+$/i.test(s)
+  }
+
+  const renderCell = (col, value) => {
+    if (value === null || value === undefined) return ''
+    const str = String(value)
+
+    // SAM.gov + general URL fields: show as clickable link
+    if (col === 'uiLink' && isProbablyUrl(str)) {
+      return (
+        <a
+          href={str}
+          target="_blank"
+          rel="noreferrer"
+          className="text-blue-700 hover:underline"
+          title={str}
+        >
+          Open opportunity
+        </a>
+      )
+    }
+
+    if (isProbablyUrl(str)) {
+      return (
+        <a
+          href={str}
+          target="_blank"
+          rel="noreferrer"
+          className="text-blue-700 hover:underline"
+          title={str}
+        >
+          {str}
+        </a>
+      )
+    }
+
+    return str
+  }
+
   return (
     <div className="h-full flex flex-col bg-white rounded-lg shadow min-h-[200px]">
       <h3 className="text-sm font-semibold text-gray-700 p-4 pb-2 border-b border-gray-200">{widget.title}</h3>
@@ -107,7 +149,7 @@ export default function StudioDataTableWidget({ widget, queryData, error, isLoad
                   <tr key={i} className="hover:bg-gray-50">
                     {columns.map((col) => (
                       <td key={col} className="px-3 py-2 text-gray-900 max-w-xs truncate" title={String(row[col] ?? '')}>
-                        {String(row[col] ?? '')}
+                        {renderCell(col, row[col])}
                       </td>
                     ))}
                   </tr>

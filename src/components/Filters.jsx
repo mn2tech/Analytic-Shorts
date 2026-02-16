@@ -16,6 +16,11 @@ function Filters({
     dateRange: { start: '', end: '' },
     category: '',
     numericRange: { min: 0, max: 100 },
+    opportunity: {
+      setAside: '',
+      department: '',
+      primeContractor: '',
+    },
   })
   
   // Debounce timer ref
@@ -37,6 +42,49 @@ function Filters({
     
     return Array.from(categorySet).sort()
   }, [selectedCategorical, data])
+
+  const detectOpportunityFields = useCallback((rows) => {
+    if (!Array.isArray(rows) || rows.length === 0) return null
+    const sample = rows[0] || {}
+    const keys = Object.keys(sample)
+    const findKey = (candidates) => {
+      const lowerMap = new Map(keys.map((k) => [k.toLowerCase(), k]))
+      for (const c of candidates) {
+        const hit = lowerMap.get(String(c).toLowerCase())
+        if (hit) return hit
+      }
+      return null
+    }
+    return {
+      setAside: findKey(['setAside', 'set_aside', 'Set Aside']),
+      department: findKey(['organization', 'department', 'Awarding Agency', 'awarding_agency']),
+      primeContractor: findKey(['Prime contractor', 'Prime Contractor', 'prime_contractor', 'Recipient Name', 'recipient_name']),
+    }
+  }, [])
+
+  const opportunityFields = useMemo(() => detectOpportunityFields(data), [data, detectOpportunityFields])
+
+  const getUniqueValuesForField = useCallback((field) => {
+    if (!field || !Array.isArray(data) || data.length === 0) return []
+    const set = new Set()
+    // Bound value extraction for very large datasets.
+    const maxScan = Math.min(data.length, 50000)
+    for (let i = 0; i < maxScan; i++) {
+      const v = data[i]?.[field]
+      if (v === null || v === undefined || String(v).trim() === '') continue
+      set.add(String(v).trim())
+      if (set.size >= 300) break
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b)).slice(0, 200)
+  }, [data])
+
+  const opportunityOptions = useMemo(() => {
+    return {
+      setAside: getUniqueValuesForField(opportunityFields?.setAside),
+      department: getUniqueValuesForField(opportunityFields?.department),
+      primeContractor: getUniqueValuesForField(opportunityFields?.primeContractor),
+    }
+  }, [opportunityFields, getUniqueValuesForField])
 
   // Memoize numeric range calculation - optimize for large datasets
   const currentNumericRange = useMemo(() => {
@@ -92,6 +140,19 @@ function Filters({
       filtered = filtered.filter((row) => row[selectedCategorical] === category)
     }
 
+    // Opportunity-specific filters (if fields exist on dataset)
+    if (opportunityFields?.setAside && filters.opportunity?.setAside) {
+      const value = filters.opportunity.setAside
+      filtered = filtered.filter((row) => String(row?.[opportunityFields.setAside] || '') === value)
+    }
+    if (opportunityFields?.department && filters.opportunity?.department) {
+      const value = filters.opportunity.department
+      filtered = filtered.filter((row) => String(row?.[opportunityFields.department] || '') === value)
+    }
+    if (opportunityFields?.primeContractor && filters.opportunity?.primeContractor) {
+      const value = filters.opportunity.primeContractor
+      filtered = filtered.filter((row) => String(row?.[opportunityFields.primeContractor] || '') === value)
+    }
     // Numeric range filter
     if (selectedNumeric) {
       const min = filters.numericRange.min
@@ -113,7 +174,7 @@ function Filters({
     }
 
     return filtered
-  }, [data, filters, selectedNumeric, selectedCategorical, selectedDate])
+  }, [data, filters, selectedNumeric, selectedCategorical, selectedDate, opportunityFields])
 
   // Debounced filter application with more aggressive debouncing for large datasets
   useEffect(() => {
@@ -270,6 +331,94 @@ function Filters({
         </div>
       )}
 
+      {/* Opportunity Filters */}
+      {(opportunityFields?.setAside || opportunityFields?.department || opportunityFields?.primeContractor) && (
+        <div className="space-y-3">
+          <label className="block text-sm font-semibold text-gray-700">Opportunity Filters</label>
+
+          {opportunityFields?.setAside && (
+            <div>
+              <div className="flex items-center gap-1 mb-1">
+                <label className="block text-xs font-medium text-gray-600">
+                  Set Aside
+                </label>
+                <span
+                  className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-gray-100 text-gray-600 text-[10px] cursor-help"
+                  title="Unknown means SAM.gov did not provide a set-aside value. It may be full and open competition or simply unspecified in the notice."
+                  aria-label="Set Aside help"
+                >
+                  i
+                </span>
+              </div>
+              <select
+                value={filters.opportunity?.setAside || ''}
+                onChange={(e) =>
+                  handleFilterChange({
+                    ...filters,
+                    opportunity: { ...filters.opportunity, setAside: e.target.value },
+                  })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="">All Set Asides</option>
+                {opportunityOptions.setAside.map((v) => (
+                  <option key={v} value={v}>{v}</option>
+                ))}
+              </select>
+              <p className="mt-1 text-[11px] text-gray-500">
+                Unknown = no set-aside value provided by SAM.gov (may be full and open or unspecified).
+              </p>
+            </div>
+          )}
+
+          {opportunityFields?.department && (
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Department / Organization
+              </label>
+              <select
+                value={filters.opportunity?.department || ''}
+                onChange={(e) =>
+                  handleFilterChange({
+                    ...filters,
+                    opportunity: { ...filters.opportunity, department: e.target.value },
+                  })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="">All Departments</option>
+                {opportunityOptions.department.map((v) => (
+                  <option key={v} value={v}>{v}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {opportunityFields?.primeContractor && (
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Prime Contractor
+              </label>
+              <select
+                value={filters.opportunity?.primeContractor || ''}
+                onChange={(e) =>
+                  handleFilterChange({
+                    ...filters,
+                    opportunity: { ...filters.opportunity, primeContractor: e.target.value },
+                  })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="">All Prime Contractors</option>
+                {opportunityOptions.primeContractor.map((v) => (
+                  <option key={v} value={v}>{v}</option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Numeric Range Filter */}
       {selectedNumeric && (
         <div>
@@ -307,6 +456,11 @@ function Filters({
             dateRange: { start: '', end: '' },
             category: '',
             numericRange: currentNumericRange,
+            opportunity: {
+              setAside: '',
+              department: '',
+              primeContractor: '',
+            },
           }
           setFilters(resetFilters)
           // Immediately apply reset (no debounce needed)

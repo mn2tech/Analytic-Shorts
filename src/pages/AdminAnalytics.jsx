@@ -1,14 +1,14 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import apiClient from '../config/api'
-import { useAuth } from '../contexts/AuthContext'
 
 function AdminAnalytics() {
   const navigate = useNavigate()
-  const { user } = useAuth()
   const [loading, setLoading] = useState(true)
   const [visitorStats, setVisitorStats] = useState(null)
   const [usageStats, setUsageStats] = useState(null)
+  const [apiReports, setApiReports] = useState([])
+  const [updatingReportId, setUpdatingReportId] = useState(null)
   const [error, setError] = useState(null)
   const [days, setDays] = useState(7)
 
@@ -21,14 +21,30 @@ function AdminAnalytics() {
       setLoading(true)
       setError(null)
 
-      // apiClient automatically adds auth token via interceptor
-      const [visitorsRes, usageRes] = await Promise.all([
+      // apiClient automatically adds auth token via interceptor.
+      // Use allSettled so one optional panel failure doesn't block the entire page.
+      const [visitorsResult, usageResult, reportsResult] = await Promise.allSettled([
         apiClient.get(`/api/analytics/visitors?days=${days}`),
-        apiClient.get('/api/analytics/usage')
+        apiClient.get('/api/analytics/usage'),
+        apiClient.get('/api/example/api-reports')
       ])
 
-      setVisitorStats(visitorsRes.data)
-      setUsageStats(usageRes.data)
+      if (visitorsResult.status === 'rejected' || usageResult.status === 'rejected') {
+        const analyticsError = visitorsResult.status === 'rejected'
+          ? visitorsResult.reason
+          : usageResult.reason
+        throw analyticsError
+      }
+
+      setVisitorStats(visitorsResult.value.data)
+      setUsageStats(usageResult.value.data)
+
+      if (reportsResult.status === 'fulfilled') {
+        setApiReports(Array.isArray(reportsResult.value?.data?.reports) ? reportsResult.value.data.reports : [])
+      } else {
+        console.warn('API report visibility panel unavailable:', reportsResult.reason)
+        setApiReports([])
+      }
     } catch (err) {
       console.error('Error fetching analytics:', err)
       if (err.response?.status === 403) {
@@ -38,6 +54,24 @@ function AdminAnalytics() {
       }
     } finally {
       setLoading(false)
+    }
+  }
+
+  const toggleReportVisibility = async (report) => {
+    const nextHidden = !report.isHidden
+    setUpdatingReportId(report.id)
+    try {
+      await apiClient.put(`/api/example/api-reports/${report.id}/visibility`, {
+        hidden: nextHidden
+      })
+      setApiReports((prev) =>
+        prev.map((item) => (item.id === report.id ? { ...item, isHidden: nextHidden } : item))
+      )
+    } catch (err) {
+      console.error('Failed to update report visibility:', err)
+      alert(err?.response?.data?.error || 'Failed to update report visibility')
+    } finally {
+      setUpdatingReportId(null)
     }
   }
 
@@ -168,6 +202,48 @@ function AdminAnalytics() {
             </div>
           </div>
         )}
+
+        <div className="bg-white rounded-lg shadow p-6 mb-6">
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">API Report Visibility</h2>
+          <p className="text-sm text-gray-600 mb-4">
+            Hide API reports from regular users while keeping admin access.
+          </p>
+          <div className="space-y-3">
+            {apiReports.map((report) => (
+              <div key={report.id} className="border border-gray-200 rounded-lg p-4 flex items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="font-semibold text-gray-900">{report.name}</p>
+                    <span className={`text-xs px-2 py-1 rounded ${report.isHidden ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                      {report.isHidden ? 'Hidden' : 'Visible'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-600 mt-1">{report.description}</p>
+                  <p className="text-xs text-gray-500 mt-1 font-mono">{report.endpoint}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => toggleReportVisibility(report)}
+                  disabled={updatingReportId === report.id}
+                  className={`px-3 py-2 rounded-lg text-sm font-medium ${
+                    report.isHidden
+                      ? 'bg-green-600 text-white hover:bg-green-700'
+                      : 'bg-red-600 text-white hover:bg-red-700'
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+                >
+                  {updatingReportId === report.id
+                    ? 'Saving...'
+                    : report.isHidden
+                    ? 'Show to users'
+                    : 'Hide from users'}
+                </button>
+              </div>
+            ))}
+            {apiReports.length === 0 && (
+              <p className="text-sm text-gray-500">No API reports found.</p>
+            )}
+          </div>
+        </div>
 
         {/* Recent Visits */}
         {visitorStats?.recent_visits && visitorStats.recent_visits.length > 0 && (

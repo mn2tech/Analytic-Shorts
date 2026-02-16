@@ -3,9 +3,256 @@ const axios = require('axios')
 const fs = require('fs')
 const path = require('path')
 const Papa = require('papaparse')
+const { createClient } = require('@supabase/supabase-js')
 const { detectColumnTypes, processData } = require('../controllers/dataProcessor')
 
 const router = express.Router()
+
+const supabaseUrl = process.env.SUPABASE_URL
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+const supabase = supabaseUrl && supabaseServiceKey
+  ? createClient(supabaseUrl, supabaseServiceKey, {
+      auth: { persistSession: false }
+    })
+  : null
+
+const API_REPORT_VISIBILITY_TABLE = 'shorts_api_report_visibility'
+
+const API_REPORTS = [
+  {
+    id: 'usaspending-live',
+    name: 'USA Spending (Live)',
+    description: 'Real-time federal government awards, contracts, and grants from USASpending.gov API',
+    endpoint: '/api/example/usaspending/live'
+  },
+  {
+    id: 'unemployment-bls',
+    name: 'Unemployment Rate (BLS)',
+    description: 'U.S. unemployment rate data from Bureau of Labor Statistics API',
+    endpoint: '/api/example/unemployment'
+  },
+  {
+    id: 'cdc-health',
+    name: 'CDC Health Data',
+    description: 'Health metrics: Death Rate, Birth Rate, and Life Expectancy from CDC (filter by Metric column)',
+    endpoint: '/api/example/cdc-health?metric=all'
+  },
+  {
+    id: 'government-budget',
+    name: 'Government Budget',
+    description: 'Federal budget data by category from U.S. Treasury Fiscal Data API (filter by Budget Category)',
+    endpoint: '/api/example/government-budget?category=all'
+  },
+  {
+    id: 'samgov-live',
+    name: 'SAM.gov Opportunities (Live)',
+    description: 'Real-time federal contract opportunities from SAM.gov (posted within the last 30 days by default)',
+    endpoint: '/api/example/samgov/live?ptype=o&limit=200'
+  },
+  {
+    id: 'samgov-agency-report',
+    name: 'SAM.gov Agency Opportunities Report',
+    description: 'Agency-level rollup of SAM.gov opportunities (count, total/avg award amount, set-asides)',
+    endpoint: '/api/example/samgov/agency-report?ptype=o&limit=500'
+  },
+  {
+    id: 'samgov-databank',
+    name: 'SAM.gov Entity Data Bank (Live)',
+    description: 'Live SAM.gov entity registration records (UEI, status, NAICS, location)',
+    endpoint: '/api/example/samgov/databank?size=10'
+  },
+]
+
+const HIDEABLE_ENDPOINTS = {
+  '/usaspending/live': 'usaspending-live',
+  '/unemployment': 'unemployment-bls',
+  '/cdc-health': 'cdc-health',
+  '/government-budget': 'government-budget',
+  '/samgov/live': 'samgov-live',
+  '/samgov/agency-report': 'samgov-agency-report',
+  '/samgov/databank': 'samgov-databank',
+}
+
+const inMemoryHiddenReportIds = new Set()
+
+function getAdminEmails() {
+  return process.env.ADMIN_EMAILS
+    ? process.env.ADMIN_EMAILS.split(',').map((e) => e.trim().toLowerCase()).filter(Boolean)
+    : ['admin@nm2tech-sas.com', 'demo@nm2tech-sas.com']
+}
+
+function isAdminUser(user) {
+  const email = user?.email?.toLowerCase()
+  if (!email) return false
+  return getAdminEmails().includes(email)
+}
+
+async function getUserFromAuthorizationHeader(req) {
+  const authHeader = req.headers.authorization
+  if (!authHeader || !authHeader.startsWith('Bearer ') || !supabase) {
+    return null
+  }
+
+  const token = authHeader.slice('Bearer '.length).trim()
+  if (!token) return null
+
+  try {
+    const { data: { user }, error } = await supabase.auth.getUser(token)
+    if (error || !user) return null
+    return user
+  } catch {
+    return null
+  }
+}
+
+async function getHiddenReportIds() {
+  try {
+    if (!supabase) {
+      return new Set(inMemoryHiddenReportIds)
+    }
+
+    const { data, error } = await supabase
+      .from(API_REPORT_VISIBILITY_TABLE)
+      .select('report_id, is_hidden')
+      .eq('is_hidden', true)
+
+    if (error) {
+      const isMissingTable = error.code === 'PGRST205' || /does not exist/i.test(String(error.message || ''))
+      if (!isMissingTable) {
+        console.error('Failed to fetch API report visibility. Falling back to in-memory settings:', error.message)
+      }
+      return new Set(inMemoryHiddenReportIds)
+    }
+
+    return new Set((data || []).map((row) => row.report_id).filter(Boolean))
+  } catch (error) {
+    console.error('Failed to fetch API report visibility (exception). Falling back to in-memory settings:', error.message)
+    return new Set(inMemoryHiddenReportIds)
+  }
+}
+
+async function setReportVisibility(reportId, isHidden, updatedByEmail) {
+  if (isHidden) {
+    inMemoryHiddenReportIds.add(reportId)
+  } else {
+    inMemoryHiddenReportIds.delete(reportId)
+  }
+
+  if (!supabase) return
+
+  try {
+    const { error } = await supabase
+      .from(API_REPORT_VISIBILITY_TABLE)
+      .upsert(
+        {
+          report_id: reportId,
+          is_hidden: !!isHidden,
+          updated_by: updatedByEmail || null,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'report_id' }
+      )
+
+    if (error) {
+      const isMissingTable = error.code === 'PGRST205' || /does not exist/i.test(String(error.message || ''))
+      if (!isMissingTable) {
+        console.error(`Failed to persist visibility for "${reportId}". Continuing with in-memory settings:`, error.message)
+      }
+    }
+  } catch (error) {
+    console.error(`Failed to persist visibility for "${reportId}" (exception). Continuing with in-memory settings:`, error.message)
+  }
+}
+
+function getOptionalUserFromToken(req, _res, next) {
+  getUserFromAuthorizationHeader(req)
+    .then((user) => {
+      req.user = user
+      next()
+    })
+    .catch(() => {
+      req.user = null
+      next()
+    })
+}
+
+function requireAdmin(req, res, next) {
+  getUserFromAuthorizationHeader(req)
+    .then((user) => {
+      req.user = user
+      if (!isAdminUser(user)) {
+        return res.status(403).json({ error: 'Admin access required' })
+      }
+      return next()
+    })
+    .catch(() => res.status(401).json({ error: 'Authentication failed' }))
+}
+
+router.get('/api-reports', getOptionalUserFromToken, async (req, res) => {
+  try {
+    const hiddenReportIds = await getHiddenReportIds()
+    const admin = isAdminUser(req.user)
+
+    const reports = API_REPORTS
+      .map((report) => {
+        const isHidden = hiddenReportIds.has(report.id)
+        return { ...report, isHidden }
+      })
+      .filter((report) => admin || !report.isHidden)
+
+    return res.json({
+      reports,
+      isAdmin: admin
+    })
+  } catch (error) {
+    console.error('Failed to load API reports:', error)
+    return res.status(500).json({ error: 'Failed to load API reports' })
+  }
+})
+
+router.put('/api-reports/:reportId/visibility', requireAdmin, async (req, res) => {
+  try {
+    const reportId = String(req.params.reportId || '').trim().toLowerCase()
+    const hide = !!req.body?.hidden
+    const reportExists = API_REPORTS.some((r) => r.id === reportId)
+
+    if (!reportExists) {
+      return res.status(404).json({ error: 'API report not found' })
+    }
+
+    await setReportVisibility(reportId, hide, req.user?.email || null)
+
+    return res.json({
+      success: true,
+      reportId,
+      hidden: hide
+    })
+  } catch (error) {
+    console.error('Failed to update API report visibility:', error)
+    return res.status(500).json({ error: 'Failed to update API report visibility' })
+  }
+})
+
+router.use(async (req, res, next) => {
+  try {
+    const reportId = HIDEABLE_ENDPOINTS[req.path]
+    if (!reportId) return next()
+
+    const hiddenReportIds = await getHiddenReportIds()
+    if (!hiddenReportIds.has(reportId)) return next()
+
+    const user = await getUserFromAuthorizationHeader(req)
+    if (isAdminUser(user)) return next()
+
+    return res.status(403).json({
+      error: 'This API report is hidden by admin',
+      reportId
+    })
+  } catch (error) {
+    console.error('Visibility guard failed, allowing request:', error)
+    return next()
+  }
+})
 
 // Helper function to process data while preserving numeric values
 function processDataPreservingNumbers(data, numericColumns) {
@@ -916,6 +1163,7 @@ router.get('/usaspending/live', async (req, res) => {
 // Dataset id used by Studio: "samgov/live" (endpoint: /api/example/samgov/live)
 const SAMGOV_CACHE_TTL_MS = 5 * 60 * 1000
 const samgovCache = new Map() // key -> { ts, payload }
+const samgovEntityCache = new Map() // key -> { ts, payload }
 
 function formatMmDdYyyy(d) {
   const mm = String(d.getMonth() + 1).padStart(2, '0')
@@ -1003,12 +1251,25 @@ router.get('/samgov/live', async (req, res) => {
         setAside: o.setAside || o.typeOfSetAsideDescription || '',
         state: popState,
         uiLink: o.uiLink || '',
-        award_amount: Number.isFinite(award_amount) ? award_amount : null
+        award_amount: Number.isFinite(award_amount) ? award_amount : null,
+        opportunity_count: 1
       }
     })
 
     const columns = Object.keys(transformedData[0])
-    const { numericColumns, categoricalColumns, dateColumns } = detectColumnTypes(transformedData, columns)
+    const { numericColumns: detectedNumericColumns, categoricalColumns: detectedCategoricalColumns, dateColumns } = detectColumnTypes(transformedData, columns)
+
+    // SAM.gov identifiers can look numeric but must stay categorical (never sum NAICS/solicitation/set-aside/classification).
+    const forceCategorical = new Set(['naicsCode', 'solicitationNumber', 'classificationCode', 'setAside', 'noticeId'])
+    const numericColumns = detectedNumericColumns.filter((c) => !forceCategorical.has(c))
+    if (columns.includes('opportunity_count') && !numericColumns.includes('opportunity_count')) {
+      numericColumns.push('opportunity_count')
+    }
+    if (columns.includes('award_amount') && !numericColumns.includes('award_amount')) {
+      numericColumns.push('award_amount')
+    }
+    const categoricalColumns = Array.from(new Set([...detectedCategoricalColumns, ...Array.from(forceCategorical)]))
+
     const processedData = processDataPreservingNumbers(transformedData, numericColumns)
 
     const payload = {
@@ -1041,6 +1302,397 @@ router.get('/samgov/live', async (req, res) => {
       error: 'Failed to fetch SAM.gov opportunities',
       message: error.message,
       docs: 'https://open.gsa.gov/api/get-opportunities-public-api/'
+    })
+  }
+})
+
+// Route to fetch SAM.gov opportunities and return an agency-level report
+// Endpoint: /api/example/samgov/agency-report
+router.get('/samgov/agency-report', async (req, res) => {
+  try {
+    const apiKey = (process.env.SAM_GOV_API_KEY || req.query.api_key || '').toString().trim()
+    if (!apiKey) {
+      return res.status(503).json({
+        error: 'SAM.gov API key not configured',
+        message: 'Set SAM_GOV_API_KEY in backend environment (.env) to use this dataset.',
+        docs: 'https://open.gsa.gov/api/get-opportunities-public-api/'
+      })
+    }
+
+    const limit = Math.min(Math.max(parseInt(req.query.limit) || 500, 1), 1000)
+    const offset = Math.max(parseInt(req.query.offset) || 0, 0)
+    const ptype = (req.query.ptype || 'o').toString().trim() || undefined
+    const title = (req.query.title || req.query.q || '').toString().trim() || undefined
+    const state = (req.query.state || '').toString().trim() || undefined
+    const ncode = (req.query.ncode || '').toString().trim() || undefined
+
+    const postedFromRaw = (req.query.postedFrom || req.query.posted_from || '').toString().trim()
+    const postedToRaw = (req.query.postedTo || req.query.posted_to || '').toString().trim()
+    const now = new Date()
+    const postedTo = postedToRaw || formatMmDdYyyy(now)
+    const from = new Date(now)
+    from.setDate(from.getDate() - 30)
+    const postedFrom = postedFromRaw || formatMmDdYyyy(from)
+
+    const apiUrl = 'https://api.sam.gov/opportunities/v2/search'
+    const params = {
+      api_key: apiKey,
+      limit,
+      offset,
+      postedFrom,
+      postedTo,
+      ...(ptype ? { ptype } : {}),
+      ...(title ? { title } : {}),
+      ...(state ? { state } : {}),
+      ...(ncode ? { ncode } : {})
+    }
+
+    const response = await axios.get(apiUrl, { params, timeout: 15000 })
+    const raw = response.data
+    const items = Array.isArray(raw?.opportunitiesData) ? raw.opportunitiesData : (Array.isArray(raw) ? raw : [])
+
+    if (!items.length) {
+      return res.status(404).json({
+        error: 'No opportunities found',
+        message: 'Try adjusting postedFrom/postedTo, title, state, ncode, or ptype.',
+        hint: 'Example: /api/example/samgov/agency-report?postedFrom=01/01/2026&postedTo=02/09/2026&ptype=o&limit=500'
+      })
+    }
+
+    const grouped = new Map()
+    for (const o of items) {
+      const agency = (o?.fullParentPathName || o?.organizationName || 'Unknown Agency').toString().trim() || 'Unknown Agency'
+      const awardAmountRaw = o?.award?.amount
+      const awardAmount = awardAmountRaw == null || awardAmountRaw === '' ? null : Number(String(awardAmountRaw).replace(/[$,\s]/g, ''))
+
+      if (!grouped.has(agency)) {
+        grouped.set(agency, {
+          agency,
+          opportunity_count: 0,
+          known_award_count: 0,
+          total_award_amount: 0,
+          states: new Set(),
+          setAsideTypes: new Set(),
+        })
+      }
+
+      const rec = grouped.get(agency)
+      rec.opportunity_count += 1
+      if (Number.isFinite(awardAmount) && awardAmount > 0) {
+        rec.total_award_amount += awardAmount
+        rec.known_award_count += 1
+      }
+
+      const popState = o?.placeOfPerformance?.state?.code || o?.placeOfPerformance?.state || o?.officeAddress?.state || ''
+      if (popState) rec.states.add(String(popState))
+      const sa = o?.setAside || o?.typeOfSetAsideDescription || ''
+      if (sa) rec.setAsideTypes.add(String(sa))
+    }
+
+    const reportRows = Array.from(grouped.values())
+      .map((r) => ({
+        agency: r.agency,
+        opportunity_count: r.opportunity_count,
+        total_award_amount: Number(r.total_award_amount.toFixed(2)),
+        avg_award_amount: r.known_award_count > 0 ? Number((r.total_award_amount / r.known_award_count).toFixed(2)) : 0,
+        known_award_count: r.known_award_count,
+        states_covered: Array.from(r.states).sort().join(', '),
+        set_aside_types: Array.from(r.setAsideTypes).sort().join(' | ')
+      }))
+      .sort((a, b) => (b.opportunity_count - a.opportunity_count) || (b.total_award_amount - a.total_award_amount))
+
+    const columns = Object.keys(reportRows[0] || {})
+    const { numericColumns, categoricalColumns, dateColumns } = detectColumnTypes(reportRows, columns)
+    const processedData = processDataPreservingNumbers(reportRows, numericColumns)
+
+    return res.json({
+      data: processedData,
+      columns,
+      numericColumns,
+      categoricalColumns,
+      dateColumns,
+      rowCount: processedData.length,
+      source: 'SAM.gov Opportunities API (Agency Report)',
+      filters: { postedFrom, postedTo, limit, offset, ptype, title, state, ncode }
+    })
+  } catch (error) {
+    console.error('Error fetching SAM.gov agency report:', error.message)
+    const status = error.response?.status
+    const data = error.response?.data
+    if (status) {
+      return res.status(502).json({
+        error: 'SAM.gov API error',
+        status,
+        message: data?.message || data?.error || error.message,
+        docs: 'https://open.gsa.gov/api/get-opportunities-public-api/'
+      })
+    }
+    return res.status(500).json({
+      error: 'Failed to fetch SAM.gov agency report',
+      message: error.message,
+      docs: 'https://open.gsa.gov/api/get-opportunities-public-api/'
+    })
+  }
+})
+
+// Route to fetch opportunity rows for a specific agency from SAM.gov
+// Endpoint: /api/example/samgov/agency-opportunities?agency=<agency name>
+router.get('/samgov/agency-opportunities', async (req, res) => {
+  try {
+    const apiKey = (process.env.SAM_GOV_API_KEY || req.query.api_key || '').toString().trim()
+    if (!apiKey) {
+      return res.status(503).json({
+        error: 'SAM.gov API key not configured',
+        message: 'Set SAM_GOV_API_KEY in backend environment (.env) to use this dataset.',
+        docs: 'https://open.gsa.gov/api/get-opportunities-public-api/'
+      })
+    }
+
+    const agency = (req.query.agency || '').toString().trim()
+    if (!agency) {
+      return res.status(400).json({
+        error: 'Missing agency parameter',
+        message: 'Provide agency name via ?agency=...'
+      })
+    }
+
+    const limit = Math.min(Math.max(parseInt(req.query.limit) || 500, 1), 1000)
+    const offset = Math.max(parseInt(req.query.offset) || 0, 0)
+    const ptype = (req.query.ptype || 'o').toString().trim() || undefined
+    const postedFromRaw = (req.query.postedFrom || req.query.posted_from || '').toString().trim()
+    const postedToRaw = (req.query.postedTo || req.query.posted_to || '').toString().trim()
+
+    const now = new Date()
+    const postedTo = postedToRaw || formatMmDdYyyy(now)
+    const from = new Date(now)
+    from.setDate(from.getDate() - 30)
+    const postedFrom = postedFromRaw || formatMmDdYyyy(from)
+
+    const apiUrl = 'https://api.sam.gov/opportunities/v2/search'
+    const params = {
+      api_key: apiKey,
+      limit,
+      offset,
+      postedFrom,
+      postedTo,
+      ...(ptype ? { ptype } : {}),
+    }
+
+    const response = await axios.get(apiUrl, { params, timeout: 15000 })
+    const raw = response.data
+    const items = Array.isArray(raw?.opportunitiesData) ? raw.opportunitiesData : (Array.isArray(raw) ? raw : [])
+    const agencyLower = agency.toLowerCase()
+    const filteredItems = items.filter((o) => {
+      const org = (o?.fullParentPathName || o?.organizationName || '').toString().toLowerCase()
+      return org.includes(agencyLower)
+    })
+
+    if (!filteredItems.length) {
+      return res.status(404).json({
+        error: 'No opportunities found for agency',
+        message: `No opportunities matched agency: ${agency}`,
+        hint: 'Try a broader agency term or a wider date range.'
+      })
+    }
+
+    const transformedData = filteredItems.map((o) => {
+      const popState = o?.placeOfPerformance?.state?.code || o?.placeOfPerformance?.state || o?.officeAddress?.state || ''
+      const awardAmountRaw = o?.award?.amount
+      const award_amount = awardAmountRaw == null || awardAmountRaw === '' ? null : Number(String(awardAmountRaw).replace(/[$,\s]/g, ''))
+      return {
+        noticeId: o.noticeId || '',
+        title: o.title || '',
+        solicitationNumber: o.solicitationNumber || '',
+        postedDate: o.postedDate || '',
+        responseDeadLine: o.responseDeadLine || '',
+        type: o.type || '',
+        baseType: o.baseType || '',
+        active: o.active || '',
+        organization: o.fullParentPathName || o.organizationName || '',
+        naicsCode: o.naicsCode || '',
+        classificationCode: o.classificationCode || '',
+        setAside: o.setAside || o.typeOfSetAsideDescription || '',
+        state: popState,
+        uiLink: o.uiLink || '',
+        award_amount: Number.isFinite(award_amount) ? award_amount : null,
+        opportunity_count: 1
+      }
+    })
+
+    const columns = Object.keys(transformedData[0] || {})
+    const { numericColumns: detectedNumericColumns, categoricalColumns: detectedCategoricalColumns, dateColumns } = detectColumnTypes(transformedData, columns)
+    const forceCategorical = new Set(['naicsCode', 'solicitationNumber', 'classificationCode', 'setAside', 'noticeId'])
+    const numericColumns = detectedNumericColumns.filter((c) => !forceCategorical.has(c))
+    if (columns.includes('opportunity_count') && !numericColumns.includes('opportunity_count')) {
+      numericColumns.push('opportunity_count')
+    }
+    if (columns.includes('award_amount') && !numericColumns.includes('award_amount')) {
+      numericColumns.push('award_amount')
+    }
+    const categoricalColumns = Array.from(new Set([...detectedCategoricalColumns, ...Array.from(forceCategorical)]))
+    const processedData = processDataPreservingNumbers(transformedData, numericColumns)
+
+    return res.json({
+      data: processedData,
+      columns,
+      numericColumns,
+      categoricalColumns,
+      dateColumns,
+      rowCount: processedData.length,
+      source: 'SAM.gov Opportunities API (Agency Drill-down)',
+      filters: { agency, postedFrom, postedTo, limit, offset, ptype }
+    })
+  } catch (error) {
+    console.error('Error fetching SAM.gov agency opportunities:', error.message)
+    const status = error.response?.status
+    const data = error.response?.data
+    if (status) {
+      return res.status(502).json({
+        error: 'SAM.gov API error',
+        status,
+        message: data?.message || data?.error || error.message,
+        docs: 'https://open.gsa.gov/api/get-opportunities-public-api/'
+      })
+    }
+    return res.status(500).json({
+      error: 'Failed to fetch SAM.gov agency opportunities',
+      message: error.message,
+      docs: 'https://open.gsa.gov/api/get-opportunities-public-api/'
+    })
+  }
+})
+
+// Route to fetch SAM.gov Entity "data bank" (Entity Information API)
+// Docs: https://open.gsa.gov/api/entity-api/
+// Endpoint: /api/example/samgov/databank
+router.get('/samgov/databank', async (req, res) => {
+  try {
+    const apiKey = (process.env.SAM_GOV_API_KEY || req.query.api_key || '').toString().trim()
+    if (!apiKey) {
+      return res.status(503).json({
+        error: 'SAM.gov API key not configured',
+        message: 'Set SAM_GOV_API_KEY in backend environment (.env) to use this dataset.',
+        docs: 'https://open.gsa.gov/api/entity-api/'
+      })
+    }
+
+    const page = Math.max(parseInt(req.query.page) || 1, 1)
+    // SAM Entity API is strict on page size; keep within supported window.
+    const size = Math.min(Math.max(parseInt(req.query.size) || 10, 1), 10)
+    const q = (req.query.q || req.query.keyword || req.query.name || '').toString().trim() || undefined
+    const ueiSAM = (req.query.uei || req.query.ueiSAM || '').toString().trim() || undefined
+    const legalBusinessName = (req.query.legalBusinessName || '').toString().trim() || undefined
+    const naicsCode = (req.query.naicsCode || req.query.naics || '').toString().trim() || undefined
+    const registrationStatus = (req.query.registrationStatus || '').toString().trim() || undefined
+
+    const cacheKey = JSON.stringify({ page, size, q, ueiSAM, legalBusinessName, naicsCode, registrationStatus })
+    const cached = samgovEntityCache.get(cacheKey)
+    if (cached && Date.now() - cached.ts < SAMGOV_CACHE_TTL_MS) {
+      res.setHeader('X-Cache', 'HIT')
+      return res.json(cached.payload)
+    }
+    res.setHeader('X-Cache', 'MISS')
+
+    const apiUrl = 'https://api.sam.gov/entity-information/v4/entities'
+    const params = {
+      api_key: apiKey,
+      page,
+      size,
+      ...(q ? { q } : {}),
+      ...(ueiSAM ? { ueiSAM } : {}),
+      ...(legalBusinessName ? { legalBusinessName } : {}),
+      ...(naicsCode ? { naicsCode } : {}),
+      ...(registrationStatus ? { registrationStatus } : {}),
+    }
+
+    const response = await axios.get(apiUrl, { params, timeout: 20000 })
+    const raw = response.data
+    const items = Array.isArray(raw?.entityData)
+      ? raw.entityData
+      : Array.isArray(raw?.entities)
+        ? raw.entities
+        : Array.isArray(raw?.results)
+          ? raw.results
+          : Array.isArray(raw?.data)
+            ? raw.data
+            : Array.isArray(raw)
+              ? raw
+              : []
+
+    if (!items.length) {
+      return res.status(404).json({
+        error: 'No entities found',
+        message: 'Try adjusting q/name/ueiSAM/naicsCode/registrationStatus filters.',
+        hint: 'Example: /api/example/samgov/databank?q=information%20technology&size=10',
+        docs: 'https://open.gsa.gov/api/entity-api/'
+      })
+    }
+
+    const transformedData = items.map((e) => {
+      const core = e?.entityRegistration || e?.coreData || e || {}
+      const addr = core?.physicalAddress || e?.physicalAddress || {}
+      const naicsList = e?.naicsList || core?.naicsList || e?.naicsCodes || []
+      const businessTypes = e?.businessTypes || core?.businessTypes || []
+
+      const uei = core?.ueiSAM || e?.ueiSAM || e?.uei || ''
+      const entityName = core?.legalBusinessName || e?.legalBusinessName || e?.entityName || ''
+      const naicsPrimary = e?.naicsCode || core?.naicsCode || (Array.isArray(naicsList) && naicsList[0]?.naicsCode) || ''
+
+      return {
+        ueiSAM: uei,
+        legalBusinessName: entityName,
+        registrationStatus: core?.registrationStatus || e?.registrationStatus || '',
+        registrationDate: core?.registrationDate || e?.registrationDate || '',
+        expirationDate: core?.expirationDate || e?.expirationDate || '',
+        cageCode: core?.cageCode || e?.cageCode || '',
+        naicsCode: naicsPrimary,
+        state: addr?.stateOrProvinceCode || addr?.state || e?.state || '',
+        country: addr?.countryCode || addr?.country || e?.country || '',
+        businessTypes: Array.isArray(businessTypes)
+          ? businessTypes.map((b) => b?.businessTypeDesc || b?.businessTypeCode || b).filter(Boolean).join('; ')
+          : String(businessTypes || ''),
+        samEntityLink: uei ? `https://sam.gov/entity/${uei}` : ''
+      }
+    })
+
+    const columns = Object.keys(transformedData[0] || {})
+    const { numericColumns, categoricalColumns, dateColumns } = detectColumnTypes(transformedData, columns)
+    // Treat classification-like fields as categorical even if numeric-like.
+    const forceCategorical = new Set(['ueiSAM', 'cageCode', 'naicsCode'])
+    const safeNumericColumns = numericColumns.filter((c) => !forceCategorical.has(c))
+    const safeCategoricalColumns = Array.from(new Set([...categoricalColumns, ...Array.from(forceCategorical)]))
+    const processedData = processDataPreservingNumbers(transformedData, safeNumericColumns)
+
+    const payload = {
+      data: processedData,
+      columns,
+      numericColumns: safeNumericColumns,
+      categoricalColumns: safeCategoricalColumns,
+      dateColumns,
+      rowCount: processedData.length,
+      source: 'SAM.gov Entity Information API (Data Bank)',
+      filters: { page, size, q, ueiSAM, legalBusinessName, naicsCode, registrationStatus }
+    }
+
+    samgovEntityCache.set(cacheKey, { ts: Date.now(), payload })
+    return res.json(payload)
+  } catch (error) {
+    console.error('Error fetching SAM.gov entity data bank:', error.message)
+    const status = error.response?.status
+    const data = error.response?.data
+    if (status) {
+      return res.status(502).json({
+        error: 'SAM.gov API error',
+        status,
+        message: data?.message || data?.error || error.message,
+        hint: status === 400 ? 'Entity API may reject page size > 10. Try size=10.' : undefined,
+        docs: 'https://open.gsa.gov/api/entity-api/'
+      })
+    }
+    return res.status(500).json({
+      error: 'Failed to fetch SAM.gov data bank',
+      message: error.message,
+      docs: 'https://open.gsa.gov/api/entity-api/'
     })
   }
 })

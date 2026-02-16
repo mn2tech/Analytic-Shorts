@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback, useDeferredValue } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { parseNumericValue } from '../utils/numberUtils'
 import Loader from '../components/Loader'
@@ -21,6 +21,7 @@ import { saveAs } from 'file-saver'
 import { generateShareId, saveSharedDashboard, getShareableUrl, copyToClipboard } from '../utils/shareUtils'
 import { clearAnalyticsDataAndReload } from '../utils/analyticsStorage'
 import { saveDashboard, updateDashboard } from '../services/dashboardService'
+import apiClient from '../config/api'
 import jsPDF from 'jspdf'
 import html2canvas from 'html2canvas'
 import * as XLSX from 'xlsx'
@@ -44,17 +45,39 @@ function Dashboard() {
   const [shareLinkCopied, setShareLinkCopied] = useState(false)
   const [dashboardView, setDashboardView] = useState('simple') // 'simple', 'data', or 'timeseries'
   const [dashboardTitle, setDashboardTitle] = useState('Analytics Dashboard')
+  const [isEditingTitle, setIsEditingTitle] = useState(false)
+  const [titleDraft, setTitleDraft] = useState('')
+  const [isTitleCustomized, setIsTitleCustomized] = useState(false)
   // Store the sidebar-filtered data separately
   const [sidebarFilteredData, setSidebarFilteredData] = useState(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [savedDashboardId, setSavedDashboardId] = useState(null)
   const [saving, setSaving] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
+  const [saveFeedbackMessage, setSaveFeedbackMessage] = useState('')
+  const [lastPersistedTitle, setLastPersistedTitle] = useState('')
   const [showFilters, setShowFilters] = useState(false)
   const [dashboardLayouts, setDashboardLayouts] = useState(null) // Store widget layouts for sharing
   const [dashboardWidgetVisibility, setDashboardWidgetVisibility] = useState(null) // Store widget visibility for sharing
   const [subawardModalOpen, setSubawardModalOpen] = useState(false)
   const [subawardRecipient, setSubawardRecipient] = useState('')
+  const [entityFilters, setEntityFilters] = useState({
+    uei: '',
+    businessName: '',
+    naicsCode: '',
+    registrationStatus: '',
+    country: '',
+    state: '',
+  })
+  const [agencyDrilldown, setAgencyDrilldown] = useState({
+    agency: '',
+    rows: [],
+    loading: false,
+    error: '',
+  })
+  const [agencySearch, setAgencySearch] = useState('')
+  const [opportunityKeyword, setOpportunityKeyword] = useState('')
+  const deferredOpportunityKeyword = useDeferredValue(opportunityKeyword)
   const [noDataReason, setNoDataReason] = useState(null) // 'no-storage' | 'invalid-data' when dashboard has nothing to show
   const [upgradePrompt, setUpgradePrompt] = useState(null)
   const [currentPlan, setCurrentPlan] = useState('free')
@@ -114,13 +137,84 @@ function Dashboard() {
   // Example: selecting "food_revenue" -> "Food Revenue"
   useEffect(() => {
     if (!selectedNumeric) return
+    if (isTitleCustomized) return
     const pretty = formatFieldLabel(selectedNumeric)
     if (!pretty) return
     // Avoid redundant state updates
     if (lastAutoTitleMetric.current === selectedNumeric) return
     lastAutoTitleMetric.current = selectedNumeric
     setDashboardTitle(pretty)
-  }, [selectedNumeric, formatFieldLabel])
+  }, [selectedNumeric, formatFieldLabel, isTitleCustomized])
+
+  const startEditingTitle = useCallback(() => {
+    setTitleDraft(dashboardTitle || '')
+    setIsEditingTitle(true)
+  }, [dashboardTitle])
+
+  const cancelEditingTitle = useCallback(() => {
+    setIsEditingTitle(false)
+    setTitleDraft('')
+  }, [])
+
+  const saveEditedTitle = useCallback(() => {
+    const next = String(titleDraft || '').trim()
+    if (!next) {
+      cancelEditingTitle()
+      return
+    }
+    setDashboardTitle(next)
+    setIsTitleCustomized(true)
+    setIsEditingTitle(false)
+  }, [titleDraft, cancelEditingTitle])
+
+  const renderDashboardTitleEditor = useCallback(() => {
+    if (isEditingTitle) {
+      return (
+        <div className="flex items-center gap-2 mb-1">
+          <input
+            value={titleDraft}
+            onChange={(e) => setTitleDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') saveEditedTitle()
+              if (e.key === 'Escape') cancelEditingTitle()
+            }}
+            autoFocus
+            className="text-2xl font-bold text-gray-900 bg-white border border-gray-300 rounded px-2 py-1 min-w-[260px]"
+            aria-label="Dashboard name"
+          />
+          <button
+            type="button"
+            onClick={saveEditedTitle}
+            className="px-2 py-1 text-xs rounded bg-blue-600 text-white hover:bg-blue-700"
+          >
+            Save
+          </button>
+          <button
+            type="button"
+            onClick={cancelEditingTitle}
+            className="px-2 py-1 text-xs rounded border border-gray-300 text-gray-700 hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+        </div>
+      )
+    }
+    return (
+      <div className="flex items-center gap-2 mb-1">
+        <h1 className="text-2xl font-bold text-gray-900">
+          {dashboardTitle}
+        </h1>
+        <button
+          type="button"
+          onClick={startEditingTitle}
+          className="px-2 py-1 text-xs rounded border border-gray-300 text-gray-700 hover:bg-gray-50"
+          title="Rename dashboard"
+        >
+          Rename
+        </button>
+      </div>
+    )
+  }, [isEditingTitle, titleDraft, dashboardTitle, saveEditedTitle, cancelEditingTitle, startEditingTitle])
 
   // Build "category tabs" from the selected categorical column values.
   const categoryTabs = useMemo(() => {
@@ -202,9 +296,34 @@ function Dashboard() {
     )
   }
 
+  // Hide non-informative metrics from UI selectors (e.g., SAM.gov award_amount when all rows are 0/empty).
+  const effectiveNumericColumns = useMemo(() => {
+    const cols = Array.isArray(numericColumns) ? numericColumns : []
+    if (!cols.includes('award_amount')) return cols
+    const rows = Array.isArray(data) ? data : []
+    if (!rows.length) return cols
+
+    let hasNonZeroAwardAmount = false
+    for (const row of rows) {
+      const v = parseNumericValue(row?.award_amount)
+      if (Number.isFinite(v) && v !== 0) {
+        hasNonZeroAwardAmount = true
+        break
+      }
+    }
+
+    return hasNonZeroAwardAmount ? cols : cols.filter((c) => c !== 'award_amount')
+  }, [numericColumns, data])
+
+  useEffect(() => {
+    if (selectedNumeric && !effectiveNumericColumns.includes(selectedNumeric)) {
+      setSelectedNumeric(effectiveNumericColumns[0] || '')
+    }
+  }, [selectedNumeric, effectiveNumericColumns])
+
   // Metric tabs: quick switch between numeric measures inside the report
   const metricTabs = useMemo(() => {
-    const cols = Array.isArray(numericColumns) ? numericColumns : []
+    const cols = Array.isArray(effectiveNumericColumns) ? effectiveNumericColumns : []
     if (cols.length < 2) return null
 
     const score = (col) => {
@@ -239,7 +358,7 @@ function Dashboard() {
       total: cols.length,
       truncated: cols.length > MAX_METRIC_TABS
     }
-  }, [numericColumns, selectedNumeric])
+  }, [effectiveNumericColumns, selectedNumeric])
 
   const MetricTabsBar = () => {
     if (!metricTabs?.values?.length) return null
@@ -410,6 +529,15 @@ function Dashboard() {
       setCategoricalColumns(parsedData.categoricalColumns || [])
       setDateColumns(parsedData.dateColumns || [])
 
+      const sourceDashboardId = parsedData?.dashboardId || parsedData?.id || null
+      if (sourceDashboardId) {
+        setSavedDashboardId(sourceDashboardId)
+        setLastPersistedTitle(String(parsedData?.name || '').trim())
+      } else {
+        setSavedDashboardId(null)
+        setLastPersistedTitle('')
+      }
+
       // Restore dashboard view if saved (for shared dashboards)
       if (parsedData.dashboardView) {
         setDashboardView(parsedData.dashboardView)
@@ -417,12 +545,27 @@ function Dashboard() {
 
       // Generate dashboard title based on data context
       const allColumns = parsedData.columns || []
+      setIsTitleCustomized(false)
+      setIsEditingTitle(false)
+      const savedName = String(parsedData?.name || '').trim()
+      if (savedName) {
+        setDashboardTitle(savedName)
+        setIsTitleCustomized(true)
+        if (sourceDashboardId) {
+          setLastPersistedTitle(savedName)
+        }
+      }
       
       // First, check for specific dataset sources (API datasets)
       const getDatasetTitleFromSource = (source) => {
         if (!source) return null
         
         const sourceLower = source.toLowerCase()
+
+        // SAM.gov Entity Data Bank
+        if (sourceLower.includes('entity information') || sourceLower.includes('data bank')) {
+          return 'SAM.gov Entity Data Bank'
+        }
         
         // Government Budget
         if (sourceLower.includes('treasury') || sourceLower.includes('fiscal data')) {
@@ -443,6 +586,11 @@ function Dashboard() {
         if (sourceLower.includes('cdc') || sourceLower.includes('disease control') || sourceLower.includes('centers for disease')) {
           return 'CDC Health Data'
         }
+
+        // SAM.gov
+        if (sourceLower.includes('sam.gov') || sourceLower.includes('samgov')) {
+          return 'SAM.gov Opportunities'
+        }
         
         return null
       }
@@ -450,12 +598,21 @@ function Dashboard() {
       // Check for dataset name or source
       const datasetTitle = parsedData.datasetName || getDatasetTitleFromSource(parsedData.source)
       
-      if (datasetTitle) {
+      if (!savedName && datasetTitle) {
         setDashboardTitle(datasetTitle)
-      } else {
+      } else if (!savedName) {
         // Detect domain from column names (fallback)
         const detectDomain = (columns) => {
           const lowerColumns = columns.map(col => col.toLowerCase())
+
+          // SAM.gov Entity Data Bank indicators
+          if (lowerColumns.some(col =>
+            col.includes('ueisam') ||
+            col.includes('legalbusinessname') ||
+            col.includes('registrationstatus')
+          )) {
+            return 'SAM.gov Entity Data Bank'
+          }
           
           // Government Budget indicators
           if (lowerColumns.some(col => 
@@ -486,6 +643,18 @@ function Dashboard() {
             (col.includes('metric') && (col.includes('death') || col.includes('birth') || col.includes('life expectancy')))
           )) {
             return 'CDC Health Data'
+          }
+
+          // SAM.gov indicators
+          if (lowerColumns.some(col =>
+            col.includes('noticeid') ||
+            col.includes('solicitationnumber') ||
+            col.includes('naicscode') ||
+            col.includes('classificationcode') ||
+            col.includes('setaside') ||
+            col.includes('uilink')
+          )) {
+            return 'SAM.gov Opportunities'
           }
           
           // Medical/Healthcare indicators
@@ -549,7 +718,11 @@ function Dashboard() {
           if (!s) return -Infinity
           // Strongly avoid ID-like fields
           if (s.includes('id') || s.includes('uuid') || s.includes('code') || s.includes('zip') || s.includes('phone')) return -50
+          // Avoid SAM.gov/public-procurement identifier fields
+          if (s.includes('naics') || s.includes('solicitation') || s.includes('classification') || s.includes('setaside') || s.includes('set_aside')) return -50
           let v = 0
+          // Prefer counts as safe default metric when money field is sparse
+          if (s.includes('count') || s.includes('opportunity_count') || s.includes('opportunities')) v += 95
           // Money/volume flows
           if (s.includes('revenue') || s.includes('sales') || s.includes('amount') || s.includes('total')) v += 100
           if (s.includes('cost') || s.includes('expense') || s.includes('spend')) v += 90
@@ -623,6 +796,28 @@ function Dashboard() {
       }
       if (parsedData.dateColumns && parsedData.dateColumns.length > 0) {
         setSelectedDate(parsedData.dateColumns[0])
+      }
+
+      // Entity datasets are best explored via table + filters by default.
+      const isEntityLikeDataset =
+        (parsedData.source && /entity information|data bank/i.test(String(parsedData.source))) ||
+        ((parsedData.columns || []).some((c) => ['ueiSAM', 'legalBusinessName', 'registrationStatus'].includes(c)))
+      if (isEntityLikeDataset) {
+        // Force a sensible default for entity datasets (table-first) to avoid empty chart mode.
+        setDashboardView('data')
+        const entityCatPref = ['registrationStatus', 'country', 'state', 'naicsCode', 'legalBusinessName', 'ueiSAM']
+        const entityDatePref = ['registrationDate', 'expirationDate']
+        const selectedEntityCategorical =
+          entityCatPref.find((f) => (parsedData.categoricalColumns || []).includes(f)) ||
+          (parsedData.categoricalColumns || [])[0] ||
+          ''
+        const selectedEntityDate =
+          entityDatePref.find((f) => (parsedData.dateColumns || []).includes(f)) ||
+          (parsedData.dateColumns || [])[0] ||
+          ''
+        setSelectedNumeric('')
+        setSelectedCategorical(selectedEntityCategorical)
+        setSelectedDate(selectedEntityDate)
       }
 
       // Ensure loading is set to false after initialization
@@ -745,6 +940,662 @@ function Dashboard() {
     setChartFilter(null)
   }
 
+  const isOpportunityDataset = useMemo(() => {
+    const colSet = new Set((columns || []).map((c) => String(c)))
+    return (
+      colSet.has('noticeId') &&
+      colSet.has('title') &&
+      colSet.has('uiLink')
+    )
+  }, [columns])
+
+  const isEntityDataset = useMemo(() => {
+    const colSet = new Set((columns || []).map((c) => String(c)))
+    return (
+      colSet.has('ueiSAM') &&
+      colSet.has('legalBusinessName') &&
+      colSet.has('registrationStatus')
+    )
+  }, [columns])
+
+  // Build options from the pre-entity-filtered rows so users can explore all facets.
+  const entityFilterOptions = useMemo(() => {
+    const rows = Array.isArray(filteredData) ? filteredData : []
+    const uniq = (field) => {
+      const set = new Set()
+      for (const r of rows) {
+        const v = String(r?.[field] || '').trim()
+        if (v) set.add(v)
+        if (set.size > 300) break
+      }
+      return Array.from(set).sort((a, b) => a.localeCompare(b))
+    }
+    return {
+      naicsCode: uniq('naicsCode').slice(0, 200),
+      registrationStatus: uniq('registrationStatus'),
+      country: uniq('country'),
+      state: uniq('state'),
+    }
+  }, [filteredData])
+
+  const dashboardFilteredData = useMemo(() => {
+    const rows = Array.isArray(filteredData) ? filteredData : []
+    if (!isEntityDataset || !rows.length) return rows
+
+    const qUei = String(entityFilters.uei || '').trim().toLowerCase()
+    const qName = String(entityFilters.businessName || '').trim().toLowerCase()
+    const qNaics = String(entityFilters.naicsCode || '').trim().toLowerCase()
+    const qStatus = String(entityFilters.registrationStatus || '').trim().toLowerCase()
+    const qCountry = String(entityFilters.country || '').trim().toLowerCase()
+    const qState = String(entityFilters.state || '').trim().toLowerCase()
+
+    return rows.filter((r) => {
+      if (qUei && !String(r?.ueiSAM || '').toLowerCase().includes(qUei)) return false
+      if (qName && !String(r?.legalBusinessName || '').toLowerCase().includes(qName)) return false
+      if (qNaics && String(r?.naicsCode || '').toLowerCase() !== qNaics) return false
+      if (qStatus && String(r?.registrationStatus || '').toLowerCase() !== qStatus) return false
+      if (qCountry && String(r?.country || '').toLowerCase() !== qCountry) return false
+      if (qState && String(r?.state || '').toLowerCase() !== qState) return false
+      return true
+    })
+  }, [filteredData, isEntityDataset, entityFilters])
+
+  useEffect(() => {
+    if (!isEntityDataset) return
+    setEntityFilters({
+      uei: '',
+      businessName: '',
+      naicsCode: '',
+      registrationStatus: '',
+      country: '',
+      state: '',
+    })
+  }, [isEntityDataset, columns])
+
+  const allOpportunityRows = useMemo(() => {
+    if (!isOpportunityDataset) return []
+    const rows = Array.isArray(dashboardFilteredData) ? dashboardFilteredData : []
+    if (!rows.length) return []
+
+    // Deduplicate by stable keys to avoid repeated rows after reprocessing.
+    const seen = new Set()
+    const out = []
+    for (const row of rows) {
+      if (!row) continue
+      const key = String(row.noticeId || row.uiLink || `${row.title || ''}-${row.solicitationNumber || ''}`)
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.push(row)
+    }
+    return out
+  }, [dashboardFilteredData, isOpportunityDataset])
+
+  const predefinedOpportunityKeywords = useMemo(
+    () => ['IT', 'AI', 'Data Analytics', 'House Keeping', 'Cybersecurity', 'Facilities'],
+    []
+  )
+
+  const opportunityRows = useMemo(() => {
+    const q = String(deferredOpportunityKeyword || '').trim().toLowerCase()
+    const sourceRows = Array.isArray(allOpportunityRows) ? allOpportunityRows : []
+
+    const normalize = (s) =>
+      String(s || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim()
+
+    const matchTerm = (term, haystack, tokenSet) => {
+      const t = normalize(term)
+      if (!t) return false
+      if (t.length <= 3 && !t.includes(' ')) return tokenSet.has(t)
+      return haystack.includes(t)
+    }
+
+    // Align domain chips with how SAM opportunities are commonly classified:
+    // NAICS (industry) + PSC/classificationCode (product/service) + textual scope.
+    const domainProfiles = {
+      it: {
+        phrases: [
+          'information technology',
+          'it services',
+          'it support',
+          'software development',
+          'application development',
+          'systems integration',
+          'network operations',
+          'cloud migration',
+        ],
+        naicsPrefixes: ['518', '519', '541511', '541512', '541513', '541519'],
+        pscPrefixes: ['D3', '7A'],
+      },
+      ai: {
+        phrases: [
+          'artificial intelligence',
+          'machine learning',
+          'generative ai',
+          'large language model',
+          'llm',
+          'nlp',
+          'natural language processing',
+          'computer vision',
+          'neural network',
+        ],
+        // AI does not have one universal NAICS/PSC bucket; require explicit AI language.
+        requirePhrase: true,
+      },
+      'data analytics': {
+        phrases: [
+          'data analytics',
+          'analytics',
+          'business intelligence',
+          'bi dashboard',
+          'dashboarding',
+          'data visualization',
+          'reporting',
+          'etl',
+          'data engineering',
+          'data science',
+          'predictive analytics',
+          'decision support',
+        ],
+        // Prefer explicit analytics language to avoid over-broad IT matches.
+        requirePhrase: true,
+      },
+      cybersecurity: {
+        phrases: [
+          'cybersecurity',
+          'cyber security',
+          'zero trust',
+          'incident response',
+          'threat hunting',
+          'vulnerability assessment',
+          'penetration testing',
+          'security operations center',
+          'soc',
+        ],
+        naicsPrefixes: ['541512', '541519'],
+        pscPrefixes: ['D310', 'D311', 'D312'],
+      },
+    }
+
+    const synonymMap = {
+      'house keeping': ['house keeping', 'housekeeping', 'janitorial', 'custodial', 'cleaning services'],
+      facilities: ['facilities', 'facility', 'building maintenance', 'operations support'],
+      software: ['software', 'application', 'platform', 'development', 'engineering'],
+    }
+
+    const expandedTerms = (() => {
+      if (!q) return []
+      const fromMap = synonymMap[q] || []
+      const base = q.split(/\s+/).filter(Boolean)
+      return Array.from(new Set([...base, ...fromMap.map(normalize).filter(Boolean)]))
+    })()
+
+    const filtered = !q
+      ? sourceRows.map((row) => ({ ...row, _matchReason: '' }))
+      : sourceRows.map((row) => {
+          const haystackRaw = [
+            row?.title,
+            row?.solicitationNumber,
+            row?.organization,
+            row?.setAside,
+            row?.type,
+            row?.baseType,
+            row?.noticeId,
+            row?.naicsCode,
+            row?.classificationCode,
+            row?.description,
+          ]
+            .filter((v) => v !== null && v !== undefined)
+            .map((v) => String(v))
+            .join(' ')
+
+          const haystack = normalize(haystackRaw)
+          if (!haystack) return false
+
+          const tokenSet = new Set(haystack.split(/\s+/).filter(Boolean))
+          const qNorm = normalize(q)
+          const profile = domainProfiles[qNorm]
+          if (profile) {
+            const naics = String(row?.naicsCode || '').replace(/\D+/g, '')
+            const psc = String(row?.classificationCode || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
+            const matchedPhrase = (profile.phrases || []).find((term) => matchTerm(term, haystack, tokenSet))
+            if (profile.requirePhrase) {
+              if (!matchedPhrase) return null
+              return { ...row, _matchReason: `Matched phrase: ${matchedPhrase}` }
+            }
+            const naicsHitPrefix = (profile.naicsPrefixes || []).find((prefix) => naics.startsWith(prefix))
+            const pscHitPrefix = (profile.pscPrefixes || []).find((prefix) => psc.startsWith(prefix))
+            const reason =
+              (matchedPhrase && `Matched phrase: ${matchedPhrase}`) ||
+              (naicsHitPrefix && `Matched NAICS: ${naics}`) ||
+              (pscHitPrefix && `Matched classification: ${psc}`) ||
+              ''
+            if (!reason) return null
+            return { ...row, _matchReason: reason }
+          }
+
+          // Generic matching for non-domain keywords.
+          const genericMatch = expandedTerms.find((term) => matchTerm(term, haystack, tokenSet))
+          if (!genericMatch) return null
+          return { ...row, _matchReason: `Matched keyword: ${genericMatch}` }
+        }).filter(Boolean)
+    return filtered.slice(0, 20)
+  }, [allOpportunityRows, deferredOpportunityKeyword])
+
+  const renderOpportunityListPanel = () => {
+    if (!isOpportunityDataset || allOpportunityRows.length === 0) return null
+
+    return (
+      <div className="mb-6 bg-white rounded-lg border border-gray-200 shadow-sm">
+        <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">Matching Opportunities</h3>
+            <p className="text-sm text-gray-600">
+              Showing {opportunityRows.length} of {allOpportunityRows.length} filtered opportunities
+            </p>
+          </div>
+          {chartFilter ? (
+            <span className="text-xs px-2.5 py-1 rounded-full bg-blue-100 text-blue-800 font-medium">
+              {chartFilter.type === 'category' ? `${selectedCategorical}: ${chartFilter.value}` : 'Date filter applied'}
+            </span>
+          ) : (
+            <span className="text-xs px-2.5 py-1 rounded-full bg-gray-100 text-gray-700 font-medium">
+              All filtered opportunities
+            </span>
+          )}
+        </div>
+        <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/60">
+          <label className="block text-xs font-medium text-gray-600 mb-1">
+            Keyword Search
+          </label>
+          <input
+            type="text"
+            value={opportunityKeyword}
+            onChange={(e) => setOpportunityKeyword(e.target.value)}
+            placeholder="Search title, solicitation, organization..."
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
+          <div className="mt-2 flex flex-wrap gap-2">
+            {predefinedOpportunityKeywords.map((kw) => {
+              const active = opportunityKeyword.toLowerCase() === kw.toLowerCase()
+              return (
+                <button
+                  key={kw}
+                  type="button"
+                  onClick={() => setOpportunityKeyword(active ? '' : kw)}
+                  className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${
+                    active
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  {kw}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+        <div className="divide-y divide-gray-100 max-h-[420px] overflow-y-auto">
+          {opportunityRows.length === 0 ? (
+            <div className="px-5 py-8 text-sm text-gray-600">
+              No opportunities match this keyword in the current filtered set.
+            </div>
+          ) : opportunityRows.map((row, idx) => (
+            <div key={String(row.noticeId || row.uiLink || idx)} className="px-5 py-4">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-base font-semibold text-gray-900 break-words">
+                    {row.title || 'Untitled Opportunity'}
+                  </p>
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-600">
+                    {row.solicitationNumber && (
+                      <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-700">
+                        Solicitation: {row.solicitationNumber}
+                      </span>
+                    )}
+                    {row.type && <span>Type: {row.type}</span>}
+                    {row.state && <span>State: {row.state}</span>}
+                    {opportunityKeyword && row._matchReason && (
+                      <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100">
+                        {row._matchReason}
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-2 text-sm text-gray-600 space-y-1">
+                    {row.organization && <p className="break-words">Organization: {row.organization}</p>}
+                    <p>
+                      Posted: {row.postedDate || 'N/A'}{row.responseDeadLine ? ` • Due: ${row.responseDeadLine}` : ''}
+                    </p>
+                  </div>
+                </div>
+                {row.uiLink && (
+                  <a
+                    href={row.uiLink}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="shrink-0 inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+                  >
+                    Open
+                  </a>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  const renderEntityFiltersPanel = () => {
+    if (!isEntityDataset) return null
+    return (
+      <div className="mb-4 bg-white rounded-lg border border-gray-200 shadow-sm p-4">
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <h3 className="text-sm font-semibold text-gray-900">Entity Filters</h3>
+          <button
+            type="button"
+            onClick={() =>
+              setEntityFilters({
+                uei: '',
+                businessName: '',
+                naicsCode: '',
+                registrationStatus: '',
+                country: '',
+                state: '',
+              })
+            }
+            className="text-xs px-2.5 py-1 rounded border border-gray-300 text-gray-700 hover:bg-gray-50"
+          >
+            Reset
+          </button>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          <input
+            type="text"
+            value={entityFilters.uei}
+            onChange={(e) => setEntityFilters((p) => ({ ...p, uei: e.target.value }))}
+            placeholder="UEI contains..."
+            className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+          />
+          <input
+            type="text"
+            value={entityFilters.businessName}
+            onChange={(e) => setEntityFilters((p) => ({ ...p, businessName: e.target.value }))}
+            placeholder="Business name contains..."
+            className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+          />
+          <select
+            value={entityFilters.registrationStatus}
+            onChange={(e) => setEntityFilters((p) => ({ ...p, registrationStatus: e.target.value }))}
+            className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+          >
+            <option value="">All statuses</option>
+            {entityFilterOptions.registrationStatus.map((v) => (
+              <option key={v} value={v}>{v}</option>
+            ))}
+          </select>
+          <select
+            value={entityFilters.naicsCode}
+            onChange={(e) => setEntityFilters((p) => ({ ...p, naicsCode: e.target.value }))}
+            className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+          >
+            <option value="">All NAICS</option>
+            {entityFilterOptions.naicsCode.map((v) => (
+              <option key={v} value={v}>{v}</option>
+            ))}
+          </select>
+          <select
+            value={entityFilters.country}
+            onChange={(e) => setEntityFilters((p) => ({ ...p, country: e.target.value }))}
+            className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+          >
+            <option value="">All countries</option>
+            {entityFilterOptions.country.map((v) => (
+              <option key={v} value={v}>{v}</option>
+            ))}
+          </select>
+          <select
+            value={entityFilters.state}
+            onChange={(e) => setEntityFilters((p) => ({ ...p, state: e.target.value }))}
+            className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+          >
+            <option value="">All states</option>
+            {entityFilterOptions.state.map((v) => (
+              <option key={v} value={v}>{v}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+    )
+  }
+
+  const isAgencyOpportunitiesReport = useMemo(() => {
+    const colSet = new Set((columns || []).map((c) => String(c)))
+    const byColumns = colSet.has('agency') && colSet.has('opportunity_count')
+    const bySource = /agency report/i.test(String((location.state?.analyticsData?.source || '') || ''))
+    return byColumns || bySource
+  }, [columns, location.state?.analyticsData?.source])
+
+  const topAgencyRows = useMemo(() => {
+    if (!isAgencyOpportunitiesReport) return []
+    const rows = Array.isArray(dashboardFilteredData) ? dashboardFilteredData : []
+    return rows
+      .slice()
+      .sort((a, b) => Number(b?.opportunity_count || 0) - Number(a?.opportunity_count || 0))
+      .slice(0, 10)
+  }, [isAgencyOpportunitiesReport, dashboardFilteredData])
+
+  const renderTopAgenciesPanel = () => {
+    if (!isAgencyOpportunitiesReport || topAgencyRows.length === 0) return null
+
+    const query = String(agencySearch || '').trim().toLowerCase()
+    const agencyAliasMap = {
+      ttb: ['ttb', 'alcohol and tobacco tax and trade bureau', 'tax and trade bureau', 'treasury'],
+      treasury: ['treasury', 'department of the treasury'],
+      uscis: ['uscis', 'u.s. citizenship and immigration services', 'citizenship and immigration services'],
+    }
+    const expandedTerms = new Set([query])
+    if (query && agencyAliasMap[query]) {
+      for (const term of agencyAliasMap[query]) expandedTerms.add(term)
+    } else if (query) {
+      for (const token of query.split(/\s+/).filter(Boolean)) {
+        if (agencyAliasMap[token]) {
+          for (const term of agencyAliasMap[token]) expandedTerms.add(term)
+        }
+      }
+    }
+
+    const allAgencyRowsSorted = (Array.isArray(dashboardFilteredData) ? dashboardFilteredData : [])
+      .slice()
+      .sort((a, b) => Number(b?.opportunity_count || 0) - Number(a?.opportunity_count || 0))
+
+    const acronymForAgency = (text) => String(text || '')
+      .split(/[^A-Za-z0-9]+/)
+      .filter(Boolean)
+      .map((w) => w[0])
+      .join('')
+      .toLowerCase()
+
+    const matchesAgencyQuery = (row) => {
+      if (!query) return true
+      const agencyText = String(row?.agency || '')
+      const agency = agencyText.toLowerCase()
+      const acronym = acronymForAgency(agencyText)
+      return Array.from(expandedTerms).some((term) => {
+        const t = String(term || '').toLowerCase()
+        if (!t) return false
+        return agency.includes(t) || acronym.includes(t)
+      })
+    }
+
+    const matchedRows = allAgencyRowsSorted.filter(matchesAgencyQuery)
+    const visibleRows = query ? matchedRows.slice(0, 50) : matchedRows.slice(0, 10)
+    const maxOpp = Math.max(...visibleRows.map((r) => Number(r?.opportunity_count || 0)), 1)
+    const totalOpp = visibleRows.reduce((sum, r) => sum + Number(r?.opportunity_count || 0), 0)
+    const totalAmt = visibleRows.reduce((sum, r) => sum + Number(r?.total_award_amount || 0), 0)
+
+    return (
+      <div className="mb-4 bg-white rounded-lg border border-gray-200 shadow-sm p-4">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-3">
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900">
+              {query ? 'Agency Search Results (Filtered)' : 'Top 10 Agencies (Filtered)'}
+            </h3>
+            <div className="text-xs text-gray-600">
+              Opportunities: <span className="font-semibold text-gray-900">{totalOpp.toLocaleString()}</span>
+              {' • '}
+              Total Award: <span className="font-semibold text-gray-900">${totalAmt.toLocaleString()}</span>
+              {query ? ` • Matches: ${matchedRows.length.toLocaleString()}` : ''}
+            </div>
+          </div>
+          <div className="w-full md:w-[320px]">
+            <input
+              type="text"
+              value={agencySearch}
+              onChange={(e) => setAgencySearch(e.target.value)}
+              placeholder="Search agency (e.g., TTB, Treasury, USCIS)"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </div>
+        </div>
+        <div className="space-y-2">
+          {visibleRows.map((row, idx) => {
+            const agency = String(row?.agency || 'Unknown Agency')
+            const opp = Number(row?.opportunity_count || 0)
+            const pct = Math.max(2, Math.round((opp / maxOpp) * 100))
+            const avg = Number(row?.avg_award_amount || 0)
+            return (
+              <div
+                key={`${agency}-${idx}`}
+                className="border border-gray-100 rounded-md p-2 cursor-pointer hover:bg-gray-50"
+                onClick={async () => {
+                  setAgencyDrilldown({ agency, rows: [], loading: true, error: '' })
+                  try {
+                    let rows = []
+                    try {
+                      // Preferred: dedicated backend drill-down route.
+                      const resp = await apiClient.get('/api/example/samgov/agency-opportunities', {
+                        params: { agency, ptype: 'o', limit: 500 },
+                        timeout: 30000,
+                      })
+                      rows = Array.isArray(resp?.data?.data) ? resp.data.data : []
+                    } catch (routeErr) {
+                      // Backward-compatible fallback when backend has not been restarted yet.
+                      const status = routeErr?.response?.status
+                      const routeNotFound = status === 404 || /route not found/i.test(String(routeErr?.response?.data?.error || ''))
+                      if (!routeNotFound) throw routeErr
+
+                      const fallbackResp = await apiClient.get('/api/example/samgov/live', {
+                        params: { ptype: 'o', limit: 500 },
+                        timeout: 30000,
+                      })
+                      const allRows = Array.isArray(fallbackResp?.data?.data) ? fallbackResp.data.data : []
+                      const agencyLower = String(agency).toLowerCase()
+                      rows = allRows.filter((r) => String(r?.organization || '').toLowerCase().includes(agencyLower))
+                    }
+
+                    setAgencyDrilldown({ agency, rows, loading: false, error: '' })
+                  } catch (err) {
+                    const msg = err?.response?.data?.error || err?.response?.data?.message || err?.message || 'Failed to load agency opportunities'
+                    setAgencyDrilldown({ agency, rows: [], loading: false, error: msg })
+                  }
+                }}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate" title={agency}>{agency}</p>
+                    <p className="text-xs text-gray-600">
+                      {opp.toLocaleString()} opportunities • Avg award ${avg.toLocaleString()}
+                    </p>
+                  </div>
+                  <span className="text-xs px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100">
+                    #{idx + 1}
+                  </span>
+                </div>
+                <div className="mt-2 h-2 w-full bg-gray-100 rounded">
+                  <div className="h-2 bg-blue-500 rounded" style={{ width: `${pct}%` }} />
+                </div>
+              </div>
+            )
+          })}
+          {visibleRows.length === 0 && (
+            <div className="px-3 py-4 text-sm text-gray-600 border border-dashed border-gray-300 rounded-md">
+              No agencies match "{agencySearch}".
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  const renderAgencyDrilldownPanel = () => {
+    if (!isAgencyOpportunitiesReport) return null
+    if (!agencyDrilldown.agency && !agencyDrilldown.loading && !agencyDrilldown.error) return null
+
+    const rows = Array.isArray(agencyDrilldown.rows) ? agencyDrilldown.rows : []
+    return (
+      <div className="mb-4 bg-white rounded-lg border border-gray-200 shadow-sm">
+        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900">
+              Agency Opportunities: {agencyDrilldown.agency || 'Selected agency'}
+            </h3>
+            <p className="text-xs text-gray-600">
+              {agencyDrilldown.loading ? 'Loading opportunities...' : `${rows.length} opportunities`}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setAgencyDrilldown({ agency: '', rows: [], loading: false, error: '' })}
+            className="text-xs px-2 py-1 rounded border border-gray-300 text-gray-700 hover:bg-gray-50"
+          >
+            Clear
+          </button>
+        </div>
+        {agencyDrilldown.error ? (
+          <div className="px-4 py-4 text-sm text-red-700">{agencyDrilldown.error}</div>
+        ) : agencyDrilldown.loading ? (
+          <div className="px-4 py-4 text-sm text-gray-600">Fetching opportunities...</div>
+        ) : rows.length === 0 ? (
+          <div className="px-4 py-4 text-sm text-gray-600">No opportunities returned for this agency.</div>
+        ) : (
+          <div className="divide-y divide-gray-100 max-h-[360px] overflow-y-auto">
+            {rows.slice(0, 50).map((r, i) => (
+              <div key={String(r.noticeId || r.uiLink || i)} className="px-4 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-900 break-words">{r.title || 'Untitled opportunity'}</p>
+                    <p className="text-xs text-gray-600 mt-1">
+                      {r.solicitationNumber ? `Solicitation: ${r.solicitationNumber} • ` : ''}
+                      Posted: {r.postedDate || 'N/A'}
+                      {r.responseDeadLine ? ` • Due: ${r.responseDeadLine}` : ''}
+                    </p>
+                    <p className="text-xs text-gray-600 mt-1">
+                      {r.setAside ? `Set Aside: ${r.setAside} • ` : ''}
+                      {r.state ? `State: ${r.state}` : ''}
+                    </p>
+                  </div>
+                  {r.uiLink && (
+                    <a
+                      href={r.uiLink}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="shrink-0 inline-flex items-center px-2.5 py-1.5 text-xs font-medium rounded bg-blue-600 text-white hover:bg-blue-700"
+                    >
+                      Open
+                    </a>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   const handleColumnChange = (type, value) => {
     if (type === 'numeric') {
       setSelectedNumeric(value)
@@ -757,13 +1608,13 @@ function Dashboard() {
 
   // Memoize stats calculation to prevent recalculation on every render
   const calculateStats = useMemo(() => {
-    if (!filteredData || !selectedNumeric) return null
+    if (!dashboardFilteredData || !selectedNumeric) return null
 
     // Sample data if too large for performance
     const sampleSize = 5000
-    const sampledData = filteredData.length > sampleSize 
-      ? filteredData.filter((_, i) => i % Math.ceil(filteredData.length / sampleSize) === 0)
-      : filteredData
+    const sampledData = dashboardFilteredData.length > sampleSize 
+      ? dashboardFilteredData.filter((_, i) => i % Math.ceil(dashboardFilteredData.length / sampleSize) === 0)
+      : dashboardFilteredData
 
       const values = sampledData
         .map((row) => {
@@ -805,13 +1656,13 @@ function Dashboard() {
     }
 
     return { sum, avg, min, max, trend, column: selectedNumeric }
-  }, [filteredData, selectedNumeric])
+  }, [dashboardFilteredData, selectedNumeric])
 
   const downloadSummaryCSV = () => {
-    if (!filteredData || filteredData.length === 0) return
+    if (!dashboardFilteredData || dashboardFilteredData.length === 0) return
 
     const headers = columns.join(',')
-    const rows = filteredData.map((row) =>
+    const rows = dashboardFilteredData.map((row) =>
       columns.map((col) => {
         const value = row[col] || ''
         return `"${String(value).replace(/"/g, '""')}"`
@@ -824,11 +1675,11 @@ function Dashboard() {
   }
 
   const downloadSummaryExcel = () => {
-    if (!filteredData || filteredData.length === 0) return
+    if (!dashboardFilteredData || dashboardFilteredData.length === 0) return
 
     try {
       // Prepare data for Excel
-      const excelData = filteredData.map(row => {
+      const excelData = dashboardFilteredData.map(row => {
         const excelRow = {}
         columns.forEach(col => {
           excelRow[col] = row[col] || ''
@@ -915,10 +1766,23 @@ function Dashboard() {
 
     setSaving(true)
     setSaveSuccess(false)
+    setSaveFeedbackMessage('')
 
     try {
+      const wasUpdate = !!savedDashboardId
+      const previousPersistedTitle = String(lastPersistedTitle || '').trim()
+      const effectiveTitle = (() => {
+        const editedTitle = String(titleDraft || '').trim()
+        if (!isEditingTitle) return dashboardTitle
+        setIsEditingTitle(false)
+        if (!editedTitle) return dashboardTitle
+        setDashboardTitle(editedTitle)
+        setIsTitleCustomized(true)
+        return editedTitle
+      })()
+
       const dashboardData = {
-        name: dashboardTitle,
+        name: effectiveTitle,
         data: data,
         columns: columns,
         numericColumns: numericColumns,
@@ -940,8 +1804,18 @@ function Dashboard() {
         setSavedDashboardId(result.id)
       }
 
+      const renamedOnUpdate = wasUpdate && previousPersistedTitle && previousPersistedTitle !== effectiveTitle
+      setSaveFeedbackMessage(
+        renamedOnUpdate
+          ? 'Renamed and updated.'
+          : wasUpdate
+          ? 'Dashboard updated.'
+          : 'Dashboard saved.'
+      )
+      setLastPersistedTitle(effectiveTitle)
       setSaveSuccess(true)
       setTimeout(() => setSaveSuccess(false), 3000)
+      setTimeout(() => setSaveFeedbackMessage(''), 3000)
     } catch (error) {
       console.error('Error saving dashboard:', error)
       const errorMessage = error.response?.data?.error || error.message || 'Failed to save dashboard. Please try again.'
@@ -1350,9 +2224,13 @@ function Dashboard() {
     )
   }
   
-  // Check if we have data but no numeric columns (charts won't work)
-  // Handle both null/undefined and empty array cases
-  const hasNoNumericColumns = data && data.length > 0 && (!numericColumns || numericColumns.length === 0)
+  // Check if we have data but no numeric columns (charts won't work).
+  // Entity datasets are valid without numeric fields.
+  const hasNoNumericColumns =
+    data &&
+    data.length > 0 &&
+    (!numericColumns || numericColumns.length === 0) &&
+    !isEntityDataset
   
   if (hasNoNumericColumns) {
     console.log('Dashboard: No numeric columns detected', {
@@ -1510,11 +2388,9 @@ function Dashboard() {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
             <div className="flex items-center justify-between">
               <div>
-                <h1 className="text-2xl font-bold text-gray-900 mb-1">
-                  {dashboardTitle}
-                </h1>
+                {renderDashboardTitleEditor()}
                 <p className="text-sm text-gray-600">
-                  {filteredData?.length || 0} records • {columns.length} columns
+                  {dashboardFilteredData?.length || 0} records • {columns.length} columns
                 </p>
               </div>
               <div className="flex items-center gap-2 relative">
@@ -1561,7 +2437,7 @@ function Dashboard() {
                           </div>
                           <Filters
                             data={data}
-                            numericColumns={numericColumns}
+                            numericColumns={effectiveNumericColumns}
                             categoricalColumns={categoricalColumns}
                             dateColumns={dateColumns}
                             onFilterChange={handleFilterChange}
@@ -1668,21 +2544,25 @@ function Dashboard() {
           {/* Category Tabs: quick "separate dashboards" by category */}
           <MetricTabsBar />
           <CategoryTabsBar />
+          {renderTopAgenciesPanel()}
+          {renderAgencyDrilldownPanel()}
+
+          {renderEntityFiltersPanel()}
 
           {/* Charts Section */}
           {dashboardView === 'data' ? (
             <DataMetadataEditor
               data={data}
               columns={columns}
-              numericColumns={numericColumns}
+              numericColumns={effectiveNumericColumns}
               categoricalColumns={categoricalColumns}
               dateColumns={dateColumns}
               onMetadataUpdate={handleMetadataUpdate}
             />
           ) : dashboardView === 'timeseries' ? (
             <TimeSeriesReport
-              data={filteredData || data}
-              numericColumns={numericColumns}
+              data={dashboardFilteredData || data}
+              numericColumns={effectiveNumericColumns}
               dateColumns={dateColumns}
               selectedNumeric={selectedNumeric}
               selectedDate={selectedDate}
@@ -1691,7 +2571,7 @@ function Dashboard() {
             <>
               <DashboardCharts
                 data={data}
-                filteredData={filteredData}
+                filteredData={dashboardFilteredData}
                 selectedNumeric={selectedNumeric}
                 selectedCategorical={selectedCategorical}
                 selectedDate={selectedDate}
@@ -1701,22 +2581,24 @@ function Dashboard() {
               {/* Metric Cards - Only in simple view */}
               {dashboardView === 'simple' && (
                 <MetricCards
-                  data={filteredData}
-                  numericColumns={numericColumns}
+                  data={dashboardFilteredData}
+                  numericColumns={effectiveNumericColumns}
                   selectedNumeric={selectedNumeric}
                   stats={stats}
                 />
               )}
             </>
           )}
+
+          {renderOpportunityListPanel()}
         </div>
       </div>
     )
   }
 
-  // Final safety check: If we have data but no numeric columns, show error message
-  // This catches cases where the earlier check might have been missed
-  if (data && data.length > 0 && (!numericColumns || numericColumns.length === 0)) {
+  // Final safety check: If we have data but no numeric columns, show error message.
+  // Skip this for entity-style datasets where table/filter exploration is still valid.
+  if (data && data.length > 0 && (!numericColumns || numericColumns.length === 0) && !isEntityDataset) {
     console.warn('Dashboard: Data exists but no numeric columns detected', {
       dataLength: data.length,
       numericColumns,
@@ -1828,11 +2710,9 @@ function Dashboard() {
         {/* Header */}
         <div className="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center animate-fade-in">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 mb-1">
-              {dashboardTitle}
-            </h1>
+            {renderDashboardTitleEditor()}
             <p className="text-sm text-gray-600">
-              {filteredData?.length || 0} records • {columns.length} columns
+              {dashboardFilteredData?.length || 0} records • {columns.length} columns
             </p>
           </div>
           <div className="flex items-center gap-2 mt-2 sm:mt-0 relative">
@@ -1879,7 +2759,7 @@ function Dashboard() {
                       </div>
                       <Filters
                         data={data}
-                        numericColumns={numericColumns}
+                        numericColumns={effectiveNumericColumns}
                         categoricalColumns={categoricalColumns}
                         dateColumns={dateColumns}
                         onFilterChange={handleFilterChange}
@@ -1952,6 +2832,9 @@ function Dashboard() {
         {/* Category Tabs: quick "separate dashboards" by category */}
         <MetricTabsBar />
         <CategoryTabsBar />
+        {renderTopAgenciesPanel()}
+        {renderAgencyDrilldownPanel()}
+        {renderEntityFiltersPanel()}
 
         {/* Save & Share Buttons */}
         <div className="mb-4 flex items-center justify-between">
@@ -1998,6 +2881,7 @@ function Dashboard() {
                     selectedNumeric: selectedNumeric,
                     selectedCategorical: selectedCategorical,
                     selectedDate: selectedDate,
+                    opportunityKeyword: opportunityKeyword,
                     dashboardView: dashboardView, // Save the current view (advanced/simple)
                     layouts: dashboardLayouts, // Include widget layouts
                     widgetVisibility: dashboardWidgetVisibility, // Include widget visibility
@@ -2037,6 +2921,11 @@ function Dashboard() {
                 Share ID: {shareId.split('_')[1]}
               </span>
             )}
+            {saveFeedbackMessage && (
+              <span className="text-xs text-green-700 font-medium">
+                {saveFeedbackMessage}
+              </span>
+            )}
           </div>
         </div>
 
@@ -2065,15 +2954,15 @@ function Dashboard() {
           <DataMetadataEditor
             data={data}
             columns={columns}
-            numericColumns={numericColumns}
+            numericColumns={effectiveNumericColumns}
             categoricalColumns={categoricalColumns}
             dateColumns={dateColumns}
             onMetadataUpdate={handleMetadataUpdate}
           />
         ) : dashboardView === 'timeseries' ? (
           <TimeSeriesReport
-            data={filteredData || data}
-            numericColumns={numericColumns}
+            data={dashboardFilteredData || data}
+            numericColumns={effectiveNumericColumns}
             dateColumns={dateColumns}
             selectedNumeric={selectedNumeric}
             selectedDate={selectedDate}
@@ -2081,33 +2970,33 @@ function Dashboard() {
         ) : dashboardView === 'advanced' ? (
           <AdvancedDashboard
             data={data}
-            filteredData={filteredData}
+            filteredData={dashboardFilteredData}
             selectedNumeric={selectedNumeric}
             selectedCategorical={selectedCategorical}
             selectedDate={selectedDate}
             onChartFilter={handleChartFilter}
             chartFilter={chartFilter}
             categoricalColumns={categoricalColumns}
-            numericColumns={numericColumns}
+            numericColumns={effectiveNumericColumns}
             dateColumns={dateColumns}
           />
         ) : dashboardView === 'custom' ? (
           <AdvancedDashboardGrid
             data={data}
-            filteredData={filteredData}
+            filteredData={dashboardFilteredData}
             selectedNumeric={selectedNumeric}
             selectedCategorical={selectedCategorical}
             selectedDate={selectedDate}
             onChartFilter={handleChartFilter}
             chartFilter={chartFilter}
             categoricalColumns={categoricalColumns}
-            numericColumns={numericColumns}
+            numericColumns={effectiveNumericColumns}
             dateColumns={dateColumns}
           />
         ) : (
           <DashboardCharts
             data={data}
-            filteredData={filteredData}
+            filteredData={dashboardFilteredData}
             selectedNumeric={selectedNumeric}
             selectedCategorical={selectedCategorical}
             selectedDate={selectedDate}
@@ -2118,11 +3007,13 @@ function Dashboard() {
           />
         )}
 
+        {renderOpportunityListPanel()}
+
         {/* Metric Cards - Only in simple view */}
         {dashboardView === 'simple' && (
           <MetricCards
-            data={filteredData}
-            numericColumns={numericColumns}
+            data={dashboardFilteredData}
+            numericColumns={effectiveNumericColumns}
             selectedNumeric={selectedNumeric}
             stats={stats}
           />
@@ -2162,9 +3053,9 @@ function Dashboard() {
                 </button>
               </div>
               <AIInsights 
-                data={filteredData} 
+                data={dashboardFilteredData} 
                 columns={columns} 
-                totalRows={data?.length || 0}
+                totalRows={dashboardFilteredData?.length || 0}
                 stats={stats}
               />
             </div>

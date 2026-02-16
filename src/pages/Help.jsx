@@ -22,7 +22,7 @@ function Help() {
         },
         {
           q: 'How do I get started with public data?',
-          a: 'On the home page, scroll down to "Or Explore Public Data APIs" section. Click on any API dataset (USA Spending, Unemployment Rate, CDC Health Data, Government Budget) to instantly load a real-time dashboard and see how the platform works.'
+          a: 'On the home page, scroll down to "Or Explore Public Data APIs" section. Click on any API dataset (USA Spending, Unemployment Rate, CDC Health Data, Government Budget, SAM.gov Opportunities) to instantly load a real-time dashboard and see how the platform works.'
         }
       ]
     },
