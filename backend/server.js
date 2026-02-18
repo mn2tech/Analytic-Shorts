@@ -24,6 +24,7 @@ const aiDashboardSpecRoutes = require('./routes/aiDashboardSpec')
 const sharedRoutes = require('./routes/shared')
 const datalakeRoutes = require('./routes/datalake')
 const ownerSummaryRoutes = require('./routes/ownerSummary')
+const youtubeRoutes = require('./routes/youtube')
 const accessLogger = require('./middleware/accessLogger')
 
 const app = express()
@@ -123,6 +124,7 @@ if (typeof handleDashboardSpec === 'function') {
 app.use('/api/shared', sharedRoutes)
 app.use('/api/datalake', datalakeRoutes)
 app.use('/api/owner-summary', ownerSummaryRoutes)
+app.use('/api/youtube', youtubeRoutes)
 
 // Health check
 app.get('/api/health', (req, res) => {

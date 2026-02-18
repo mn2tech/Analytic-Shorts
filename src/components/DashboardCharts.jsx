@@ -3,6 +3,7 @@ import { LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tool
 import ChartInsights from './ChartInsights'
 import DateRangeSlider from './DateRangeSlider'
 import { parseNumericValue } from '../utils/numberUtils'
+import { usePortraitMode } from '../contexts/PortraitModeContext'
 
 const COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444', '#6366f1', '#14b8a6']
 
@@ -22,6 +23,7 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
   const [hoveredSegment, setHoveredSegment] = useState(null)
   const [chartInsights, setChartInsights] = useState(null)
   const [maximized, setMaximized] = useState(null) // { type: 'line' | 'pie', title: string } | null
+  const { enabled: portraitEnabled } = usePortraitMode()
 
   // Heuristic: pick "avg-like" vs "sum-like" aggregation for a metric when grouping.
   // This avoids misleading totals like summing snapshot/rate metrics (e.g. ADR, occupancy_rate, rooms_available).
@@ -300,18 +302,25 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
     }
   }, [maximized])
 
+  const baseChartHeight = portraitEnabled ? 260 : 300
+  const chartCardPadding = portraitEnabled ? 'p-4' : 'p-6'
+  const chartTitleClass = portraitEnabled ? 'text-base leading-snug' : 'text-lg'
+  const axisFontSize = portraitEnabled ? '10px' : '12px'
+  const pieInnerRadius = portraitEnabled ? 52 : 60
+  const pieOuterRadius = portraitEnabled ? 92 : 100
+
   return (
     <>
     <div
-      className={`grid gap-6 mb-6 ${
-        chartCount <= 1 ? 'grid-cols-1 max-w-4xl mx-auto' : 'grid-cols-1 lg:grid-cols-2'
+      className={`grid ${portraitEnabled ? 'gap-4' : 'gap-6'} mb-6 ${
+        chartCount <= 1 ? 'grid-cols-1 max-w-4xl mx-auto' : portraitEnabled ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-2'
       }`}
     >
       {/* Line Chart */}
       {showLineChart && (
-      <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200 hover:shadow-md transition-shadow relative group">
+      <div className={`bg-white rounded-lg shadow-sm ${chartCardPadding} border border-gray-200 hover:shadow-md transition-shadow relative group`}>
         <div className="flex justify-between items-center mb-4">
-          <h3 className="text-lg font-semibold text-gray-900">
+          <h3 className={`${chartTitleClass} font-semibold text-gray-900 pr-2 break-words`}>
             {selectedNumeric || 'Value'} {selectedDate ? 'Over Time' : ''}
           </h3>
           <div className="flex items-center gap-2">
@@ -352,16 +361,16 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
           </div>
         </div>
         {hasValidLineData ? (
-          <ResponsiveContainer width="100%" height={300}>
+          <ResponsiveContainer width="100%" height={baseChartHeight}>
             <LineChart data={lineData} key={`line-${lineData.length}-${selectedNumeric}`}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
               <XAxis 
                 dataKey={selectedDate ? "date" : "name"}
                 tickFormatter={selectedDate ? formatDate : undefined}
                 stroke="#6b7280"
-                style={{ fontSize: '12px' }}
+                style={{ fontSize: axisFontSize }}
               />
-              <YAxis stroke="#6b7280" style={{ fontSize: '12px' }} />
+              <YAxis stroke="#6b7280" style={{ fontSize: axisFontSize }} />
               <Tooltip 
                 contentStyle={{ 
                   backgroundColor: '#fff', 
@@ -426,9 +435,9 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
 
       {/* Pie/Donut Chart */}
       {showPieChart && (
-      <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200 hover:shadow-md transition-shadow relative group">
+      <div className={`bg-white rounded-lg shadow-sm ${chartCardPadding} border border-gray-200 hover:shadow-md transition-shadow relative group`}>
         <div className="flex justify-between items-center mb-4">
-          <h3 className="text-lg font-semibold text-gray-900">
+          <h3 className={`${chartTitleClass} font-semibold text-gray-900 pr-2 break-words`}>
             {pieTitle}
           </h3>
           {hasValidPieData && (
@@ -471,17 +480,21 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
           )}
         </div>
         {hasValidPieData ? (
-          <div className="flex items-center gap-6">
+          <div className={portraitEnabled ? 'flex flex-col gap-4' : 'flex items-center gap-6'}>
             {/* Chart on left */}
-            <div className="relative flex-1" style={{ maxWidth: '300px' }}>
-              <ResponsiveContainer width="100%" height={300}>
+            <div
+              className={`relative w-full ${
+                portraitEnabled ? 'max-w-[360px] mx-auto' : 'flex-1 max-w-[300px]'
+              }`}
+            >
+              <ResponsiveContainer width="100%" height={baseChartHeight}>
                 <PieChart key={`pie-${pieData.length}-${selectedCategorical}`}>
                   <Pie
                     data={pieData}
                     cx="50%"
                     cy="50%"
-                    innerRadius={60}
-                    outerRadius={100}
+                    innerRadius={pieInnerRadius}
+                    outerRadius={pieOuterRadius}
                     paddingAngle={2}
                     dataKey="value"
                     animationBegin={0}
@@ -533,7 +546,7 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
             </div>
             
             {/* Legend on right */}
-            <div className="flex-1 space-y-2">
+            <div className={`${portraitEnabled ? 'w-full max-h-[280px] overflow-auto pr-1' : 'flex-1'} space-y-2`}>
               {pieData.slice(0, 8).map((item, index) => {
                 const percentage = pieAgg === 'sum' && totalValue > 0
                   ? ((item.value / totalValue) * 100).toFixed(1)

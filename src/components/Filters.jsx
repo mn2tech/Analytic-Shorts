@@ -17,6 +17,7 @@ function Filters({
     category: '',
     numericRange: { min: 0, max: 100 },
     opportunity: {
+      keyword: '',
       setAside: '',
       department: '',
       primeContractor: '',
@@ -56,6 +57,7 @@ function Filters({
       return null
     }
     return {
+      title: findKey(['title', 'Title', 'opportunityTitle', 'noticeTitle']),
       setAside: findKey(['setAside', 'set_aside', 'Set Aside']),
       department: findKey(['organization', 'department', 'Awarding Agency', 'awarding_agency']),
       primeContractor: findKey(['Prime contractor', 'Prime Contractor', 'prime_contractor', 'Recipient Name', 'recipient_name']),
@@ -141,6 +143,12 @@ function Filters({
     }
 
     // Opportunity-specific filters (if fields exist on dataset)
+    if (opportunityFields?.title && filters.opportunity?.keyword) {
+      const keyword = String(filters.opportunity.keyword || '').trim().toLowerCase()
+      if (keyword) {
+        filtered = filtered.filter((row) => String(row?.[opportunityFields.title] || '').toLowerCase().includes(keyword))
+      }
+    }
     if (opportunityFields?.setAside && filters.opportunity?.setAside) {
       const value = filters.opportunity.setAside
       filtered = filtered.filter((row) => String(row?.[opportunityFields.setAside] || '') === value)
@@ -332,9 +340,29 @@ function Filters({
       )}
 
       {/* Opportunity Filters */}
-      {(opportunityFields?.setAside || opportunityFields?.department || opportunityFields?.primeContractor) && (
+      {(opportunityFields?.title || opportunityFields?.setAside || opportunityFields?.department || opportunityFields?.primeContractor) && (
         <div className="space-y-3">
           <label className="block text-sm font-semibold text-gray-700">Opportunity Filters</label>
+
+          {opportunityFields?.title && (
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Keyword (title contains)
+              </label>
+              <input
+                type="text"
+                value={filters.opportunity?.keyword || ''}
+                onChange={(e) =>
+                  handleFilterChange({
+                    ...filters,
+                    opportunity: { ...filters.opportunity, keyword: e.target.value },
+                  })
+                }
+                placeholder="e.g., Analytics"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+          )}
 
           {opportunityFields?.setAside && (
             <div>
@@ -457,6 +485,7 @@ function Filters({
             category: '',
             numericRange: currentNumericRange,
             opportunity: {
+              keyword: '',
               setAside: '',
               department: '',
               primeContractor: '',

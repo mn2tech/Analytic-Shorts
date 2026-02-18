@@ -1172,6 +1172,44 @@ function formatMmDdYyyy(d) {
   return `${mm}/${dd}/${yyyy}`
 }
 
+function parseFlexibleDateToMs(raw, { endOfDay = false } = {}) {
+  if (raw == null) return null
+  const s = String(raw).trim()
+  if (!s) return null
+
+  // Accept SAM.gov request-style dates (MM/dd/yyyy)
+  const mmdd = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s)
+  if (mmdd) {
+    const mm = Number(mmdd[1])
+    const dd = Number(mmdd[2])
+    const yyyy = Number(mmdd[3])
+    if (!Number.isFinite(mm) || !Number.isFinite(dd) || !Number.isFinite(yyyy)) return null
+    // Use UTC to avoid local TZ surprises.
+    const ms = Date.UTC(yyyy, mm - 1, dd, endOfDay ? 23 : 0, endOfDay ? 59 : 0, endOfDay ? 59 : 0, endOfDay ? 999 : 0)
+    return Number.isFinite(ms) ? ms : null
+  }
+
+  // Accept ISO-like strings (YYYY-MM-DD) and timestamps (Date.parse compatible)
+  const parsed = Date.parse(s)
+  return Number.isNaN(parsed) ? null : parsed
+}
+
+function getSamgovUpdatedDateValue(o) {
+  // The SAM.gov Get Opportunities Public API v2 currently does not expose an "Updated Date" field
+  // (it returns only the latest active version). Keep these fallbacks anyway in case SAM adds it
+  // or a different environment includes it.
+  return (
+    o?.modifiedDate ||
+    o?.modified_date ||
+    o?.lastModifiedDate ||
+    o?.last_modified_date ||
+    o?.updatedDate ||
+    o?.updated_date ||
+    o?.postedDate ||
+    ''
+  )
+}
+
 router.get('/samgov/live', async (req, res) => {
   try {
     const apiKey = (process.env.SAM_GOV_API_KEY || req.query.api_key || '').toString().trim()
@@ -1189,17 +1227,41 @@ router.get('/samgov/live', async (req, res) => {
     const title = (req.query.title || req.query.q || '').toString().trim() || undefined
     const state = (req.query.state || '').toString().trim() || undefined
     const ncode = (req.query.ncode || '').toString().trim() || undefined
+    const rdlfrom = (req.query.rdlfrom || req.query.responseFrom || req.query.response_from || '').toString().trim() || undefined
+    const rdlto = (req.query.rdlto || req.query.responseTo || req.query.response_to || '').toString().trim() || undefined
+    const updatedWithinDaysRaw = (req.query.updatedWithinDays || req.query.updated_within_days || req.query.updatedDays || '').toString().trim()
+    const updatedWithinDays = updatedWithinDaysRaw ? parseInt(updatedWithinDaysRaw, 10) : NaN
+    const updatedFromRaw = (req.query.updatedFrom || req.query.updated_from || '').toString().trim()
+    const updatedToRaw = (req.query.updatedTo || req.query.updated_to || '').toString().trim()
+    const wantsUpdatedFilter =
+      (Number.isFinite(updatedWithinDays) && updatedWithinDays > 0) || Boolean(updatedFromRaw) || Boolean(updatedToRaw)
 
-    // postedFrom/postedTo are mandatory; default to last 30 days (MM/dd/yyyy)
+    // postedFrom/postedTo are mandatory.
+    // Default behavior: last 30 days. If the caller is filtering by "updated", widen to 1 year so
+    // the local updated filter can work across older postings (SAM.gov enforces a 1-year window).
     const postedFromRaw = (req.query.postedFrom || req.query.posted_from || '').toString().trim()
     const postedToRaw = (req.query.postedTo || req.query.posted_to || '').toString().trim()
     const now = new Date()
     const postedTo = postedToRaw || formatMmDdYyyy(now)
     const from = new Date(now)
-    from.setDate(from.getDate() - 30)
+    // SAM.gov enforces a max 1-year window and can reject exact boundary cases.
+    // Use 364 days to stay safely within the allowed range.
+    from.setDate(from.getDate() - (wantsUpdatedFilter ? 364 : 30))
     const postedFrom = postedFromRaw || formatMmDdYyyy(from)
 
-    const cacheKey = JSON.stringify({ limit, offset, ptype, title, state, ncode, postedFrom, postedTo })
+    const cacheKey = JSON.stringify({
+      limit,
+      offset,
+      ptype,
+      title,
+      state,
+      ncode,
+      postedFrom,
+      postedTo,
+      updatedWithinDays: Number.isFinite(updatedWithinDays) ? updatedWithinDays : null,
+      updatedFrom: updatedFromRaw || null,
+      updatedTo: updatedToRaw || null,
+    })
     const cached = samgovCache.get(cacheKey)
     if (cached && Date.now() - cached.ts < SAMGOV_CACHE_TTL_MS) {
       res.setHeader('X-Cache', 'HIT')
@@ -1214,13 +1276,15 @@ router.get('/samgov/live', async (req, res) => {
       offset,
       postedFrom,
       postedTo,
+      rdlfrom,
+      rdlto,
       ...(ptype ? { ptype } : {}),
       ...(title ? { title } : {}),
       ...(state ? { state } : {}),
       ...(ncode ? { ncode } : {})
     }
 
-    const response = await axios.get(apiUrl, { params, timeout: 15000 })
+    const response = await axios.get(apiUrl, { params, timeout: 30000 })
     const raw = response.data
     const items = Array.isArray(raw?.opportunitiesData) ? raw.opportunitiesData : (Array.isArray(raw) ? raw : [])
 
@@ -1232,7 +1296,7 @@ router.get('/samgov/live', async (req, res) => {
       })
     }
 
-    const transformedData = items.map((o) => {
+    let transformedData = items.map((o) => {
       const popState = o?.placeOfPerformance?.state?.code || o?.placeOfPerformance?.state || o?.officeAddress?.state || ''
       const awardAmountRaw = o?.award?.amount
       const award_amount = awardAmountRaw == null || awardAmountRaw === '' ? null : Number(String(awardAmountRaw).replace(/[$,\s]/g, ''))
@@ -1241,6 +1305,7 @@ router.get('/samgov/live', async (req, res) => {
         title: o.title || '',
         solicitationNumber: o.solicitationNumber || '',
         postedDate: o.postedDate || '',
+        updatedDate: getSamgovUpdatedDateValue(o),
         responseDeadLine: o.responseDeadLine || '',
         type: o.type || '',
         baseType: o.baseType || '',
@@ -1255,6 +1320,34 @@ router.get('/samgov/live', async (req, res) => {
         opportunity_count: 1
       }
     })
+
+    if (wantsUpdatedFilter) {
+      const nowMs = Date.now()
+      const fromMs = Number.isFinite(updatedWithinDays) && updatedWithinDays > 0
+        ? nowMs - updatedWithinDays * 24 * 60 * 60 * 1000
+        : parseFlexibleDateToMs(updatedFromRaw, { endOfDay: false })
+      const toMs = Number.isFinite(updatedWithinDays) && updatedWithinDays > 0
+        ? nowMs
+        : parseFlexibleDateToMs(updatedToRaw, { endOfDay: true })
+
+      transformedData = transformedData.filter((row) => {
+        const uMs = parseFlexibleDateToMs(row?.updatedDate)
+        if (uMs == null) return false
+        if (fromMs != null && uMs < fromMs) return false
+        if (toMs != null && uMs > toMs) return false
+        return true
+      })
+    }
+
+    if (!transformedData.length) {
+      return res.status(404).json({
+        error: 'No opportunities found',
+        message: wantsUpdatedFilter
+          ? 'No opportunities matched the updated date filter. Try widening updatedWithinDays or adjusting updatedFrom/updatedTo.'
+          : 'No opportunities returned.',
+        hint: wantsUpdatedFilter ? 'Example: /api/example/samgov/live?updatedWithinDays=30&ptype=o&limit=200' : undefined
+      })
+    }
 
     const columns = Object.keys(transformedData[0])
     const { numericColumns: detectedNumericColumns, categoricalColumns: detectedCategoricalColumns, dateColumns } = detectColumnTypes(transformedData, columns)
@@ -1280,7 +1373,12 @@ router.get('/samgov/live', async (req, res) => {
       dateColumns,
       rowCount: processedData.length,
       source: 'SAM.gov Opportunities API (Real-time)',
-      filters: { postedFrom, postedTo, limit, offset, ptype, title, state, ncode }
+      filters: { postedFrom, postedTo, rdlfrom, rdlto, limit, offset, ptype, title, state, ncode, updatedWithinDays, updatedFrom: updatedFromRaw, updatedTo: updatedToRaw },
+      notes: wantsUpdatedFilter
+        ? [
+            'SAM.gov Get Opportunities Public API v2 does not expose an explicit "Updated Date" field; "updatedDate" is best-effort and may fall back to postedDate.',
+          ]
+        : undefined,
     }
 
     samgovCache.set(cacheKey, { ts: Date.now(), payload })
@@ -1321,10 +1419,12 @@ router.get('/samgov/agency-report', async (req, res) => {
 
     const limit = Math.min(Math.max(parseInt(req.query.limit) || 500, 1), 1000)
     const offset = Math.max(parseInt(req.query.offset) || 0, 0)
-    const ptype = (req.query.ptype || 'o').toString().trim() || undefined
+    const ptype = (req.query.ptype || '').toString().trim() || undefined
     const title = (req.query.title || req.query.q || '').toString().trim() || undefined
     const state = (req.query.state || '').toString().trim() || undefined
     const ncode = (req.query.ncode || '').toString().trim() || undefined
+    const rdlfrom = (req.query.rdlfrom || req.query.responseFrom || req.query.response_from || '').toString().trim() || undefined
+    const rdlto = (req.query.rdlto || req.query.responseTo || req.query.response_to || '').toString().trim() || undefined
 
     const postedFromRaw = (req.query.postedFrom || req.query.posted_from || '').toString().trim()
     const postedToRaw = (req.query.postedTo || req.query.posted_to || '').toString().trim()
@@ -1341,13 +1441,15 @@ router.get('/samgov/agency-report', async (req, res) => {
       offset,
       postedFrom,
       postedTo,
+      ...(rdlfrom ? { rdlfrom } : {}),
+      ...(rdlto ? { rdlto } : {}),
       ...(ptype ? { ptype } : {}),
       ...(title ? { title } : {}),
       ...(state ? { state } : {}),
       ...(ncode ? { ncode } : {})
     }
 
-    const response = await axios.get(apiUrl, { params, timeout: 15000 })
+    const response = await axios.get(apiUrl, { params, timeout: 30000 })
     const raw = response.data
     const items = Array.isArray(raw?.opportunitiesData) ? raw.opportunitiesData : (Array.isArray(raw) ? raw : [])
 
@@ -1413,7 +1515,7 @@ router.get('/samgov/agency-report', async (req, res) => {
       dateColumns,
       rowCount: processedData.length,
       source: 'SAM.gov Opportunities API (Agency Report)',
-      filters: { postedFrom, postedTo, limit, offset, ptype, title, state, ncode }
+      filters: { postedFrom, postedTo, rdlfrom, rdlto, limit, offset, ptype, title, state, ncode }
     })
   } catch (error) {
     console.error('Error fetching SAM.gov agency report:', error.message)
@@ -1458,14 +1560,23 @@ router.get('/samgov/agency-opportunities', async (req, res) => {
 
     const limit = Math.min(Math.max(parseInt(req.query.limit) || 500, 1), 1000)
     const offset = Math.max(parseInt(req.query.offset) || 0, 0)
-    const ptype = (req.query.ptype || 'o').toString().trim() || undefined
+    const ptype = (req.query.ptype || '').toString().trim() || undefined
+    const rdlfrom = (req.query.rdlfrom || req.query.responseFrom || req.query.response_from || '').toString().trim() || undefined
+    const rdlto = (req.query.rdlto || req.query.responseTo || req.query.response_to || '').toString().trim() || undefined
+    const updatedWithinDaysRaw = (req.query.updatedWithinDays || req.query.updated_within_days || req.query.updatedDays || '').toString().trim()
+    const updatedWithinDays = updatedWithinDaysRaw ? parseInt(updatedWithinDaysRaw, 10) : NaN
+    const updatedFromRaw = (req.query.updatedFrom || req.query.updated_from || '').toString().trim()
+    const updatedToRaw = (req.query.updatedTo || req.query.updated_to || '').toString().trim()
+    const wantsUpdatedFilter =
+      (Number.isFinite(updatedWithinDays) && updatedWithinDays > 0) || Boolean(updatedFromRaw) || Boolean(updatedToRaw)
     const postedFromRaw = (req.query.postedFrom || req.query.posted_from || '').toString().trim()
     const postedToRaw = (req.query.postedTo || req.query.posted_to || '').toString().trim()
 
     const now = new Date()
     const postedTo = postedToRaw || formatMmDdYyyy(now)
     const from = new Date(now)
-    from.setDate(from.getDate() - 30)
+    // Keep the request safely inside SAM.gov's 1-year max range.
+    from.setDate(from.getDate() - (wantsUpdatedFilter ? 364 : 30))
     const postedFrom = postedFromRaw || formatMmDdYyyy(from)
 
     const apiUrl = 'https://api.sam.gov/opportunities/v2/search'
@@ -1475,10 +1586,12 @@ router.get('/samgov/agency-opportunities', async (req, res) => {
       offset,
       postedFrom,
       postedTo,
+      ...(rdlfrom ? { rdlfrom } : {}),
+      ...(rdlto ? { rdlto } : {}),
       ...(ptype ? { ptype } : {}),
     }
 
-    const response = await axios.get(apiUrl, { params, timeout: 15000 })
+    const response = await axios.get(apiUrl, { params, timeout: 30000 })
     const raw = response.data
     const items = Array.isArray(raw?.opportunitiesData) ? raw.opportunitiesData : (Array.isArray(raw) ? raw : [])
     const agencyLower = agency.toLowerCase()
@@ -1495,7 +1608,7 @@ router.get('/samgov/agency-opportunities', async (req, res) => {
       })
     }
 
-    const transformedData = filteredItems.map((o) => {
+    let transformedData = filteredItems.map((o) => {
       const popState = o?.placeOfPerformance?.state?.code || o?.placeOfPerformance?.state || o?.officeAddress?.state || ''
       const awardAmountRaw = o?.award?.amount
       const award_amount = awardAmountRaw == null || awardAmountRaw === '' ? null : Number(String(awardAmountRaw).replace(/[$,\s]/g, ''))
@@ -1504,6 +1617,7 @@ router.get('/samgov/agency-opportunities', async (req, res) => {
         title: o.title || '',
         solicitationNumber: o.solicitationNumber || '',
         postedDate: o.postedDate || '',
+        updatedDate: getSamgovUpdatedDateValue(o),
         responseDeadLine: o.responseDeadLine || '',
         type: o.type || '',
         baseType: o.baseType || '',
@@ -1518,6 +1632,34 @@ router.get('/samgov/agency-opportunities', async (req, res) => {
         opportunity_count: 1
       }
     })
+
+    if (wantsUpdatedFilter) {
+      const nowMs = Date.now()
+      const fromMs = Number.isFinite(updatedWithinDays) && updatedWithinDays > 0
+        ? nowMs - updatedWithinDays * 24 * 60 * 60 * 1000
+        : parseFlexibleDateToMs(updatedFromRaw, { endOfDay: false })
+      const toMs = Number.isFinite(updatedWithinDays) && updatedWithinDays > 0
+        ? nowMs
+        : parseFlexibleDateToMs(updatedToRaw, { endOfDay: true })
+
+      transformedData = transformedData.filter((row) => {
+        const uMs = parseFlexibleDateToMs(row?.updatedDate)
+        if (uMs == null) return false
+        if (fromMs != null && uMs < fromMs) return false
+        if (toMs != null && uMs > toMs) return false
+        return true
+      })
+    }
+
+    if (!transformedData.length) {
+      return res.status(404).json({
+        error: 'No opportunities found for agency',
+        message: wantsUpdatedFilter
+          ? `No opportunities for agency matched the updated date filter: ${agency}`
+          : `No opportunities matched agency: ${agency}`,
+        hint: wantsUpdatedFilter ? 'Try widening updatedWithinDays or adjusting updatedFrom/updatedTo.' : 'Try a broader agency term or a wider date range.'
+      })
+    }
 
     const columns = Object.keys(transformedData[0] || {})
     const { numericColumns: detectedNumericColumns, categoricalColumns: detectedCategoricalColumns, dateColumns } = detectColumnTypes(transformedData, columns)
@@ -1540,7 +1682,12 @@ router.get('/samgov/agency-opportunities', async (req, res) => {
       dateColumns,
       rowCount: processedData.length,
       source: 'SAM.gov Opportunities API (Agency Drill-down)',
-      filters: { agency, postedFrom, postedTo, limit, offset, ptype }
+      filters: { agency, postedFrom, postedTo, rdlfrom, rdlto, limit, offset, ptype, updatedWithinDays, updatedFrom: updatedFromRaw, updatedTo: updatedToRaw },
+      notes: wantsUpdatedFilter
+        ? [
+            'SAM.gov Get Opportunities Public API v2 does not expose an explicit "Updated Date" field; "updatedDate" is best-effort and may fall back to postedDate.',
+          ]
+        : undefined,
     })
   } catch (error) {
     console.error('Error fetching SAM.gov agency opportunities:', error.message)

@@ -25,11 +25,18 @@ import apiClient from '../config/api'
 import jsPDF from 'jspdf'
 import html2canvas from 'html2canvas'
 import * as XLSX from 'xlsx'
+import { createDashboardShortVideo, downloadVideoBlob, getVideoFileExtension, getShortsExportCapabilities, saveVideoBlobAs } from '../utils/shortsVideoExport'
+import { usePortraitMode } from '../contexts/PortraitModeContext'
+import * as savedShortsStorage from '../utils/savedShortsStorage'
+import { getGoogleYouTubeUploadToken, uploadVideoToYouTube, isYouTubeUploadConfigured } from '../utils/youtubeUpload'
+import { API_BASE_URL } from '../config/api'
+import { startScreenRecording, isScreenRecordingSupported } from '../utils/screenRecorder'
 
 function Dashboard() {
   const navigate = useNavigate()
   const location = useLocation()
   const { user } = useAuth()
+  const { enabled: portraitEnabled } = usePortraitMode()
   const [data, setData] = useState(null)
   const [filteredData, setFilteredData] = useState(null)
   const [columns, setColumns] = useState([])
@@ -56,6 +63,30 @@ function Dashboard() {
   const [saveSuccess, setSaveSuccess] = useState(false)
   const [saveFeedbackMessage, setSaveFeedbackMessage] = useState('')
   const [lastPersistedTitle, setLastPersistedTitle] = useState('')
+  const [shortDurationSeconds, setShortDurationSeconds] = useState(15)
+  const [shortFormat, setShortFormat] = useState('webm')
+  const [shortCallToAction, setShortCallToAction] = useState('Follow for more analytics updates')
+  const [showShortGuide, setShowShortGuide] = useState(false)
+  const [shortGuidePreset, setShortGuidePreset] = useState('youtube') // youtube | reels | tiktok
+  const [lockShortGuideToExport, setLockShortGuideToExport] = useState(true)
+  const [shortGuideRect, setShortGuideRect] = useState(null) // { xRatio, yRatio, wRatio, hRatio } relative to shortRootRef
+  const [isDraggingGuide, setIsDraggingGuide] = useState(false)
+  const [isResizingGuide, setIsResizingGuide] = useState(false)
+  const [generatingShortVideo, setGeneratingShortVideo] = useState(false)
+  const [lastShortVideo, setLastShortVideo] = useState(null) // { blob, filename, title }
+  const [shortVideoError, setShortVideoError] = useState('')
+  const [shortVideoProgress, setShortVideoProgress] = useState({ active: false, phase: '', progress: 0 })
+  const [savedShortsList, setSavedShortsList] = useState([])
+  const [uploadingToYouTubeId, setUploadingToYouTubeId] = useState(null)
+  const [ytUploadError, setYtUploadError] = useState('')
+  const [recordingStorySteps, setRecordingStorySteps] = useState(false)
+  const [recordingCountdown, setRecordingCountdown] = useState(0)
+  const [storySteps, setStorySteps] = useState([]) // { selector, label, waitMs }
+  const [isRecordingScreen, setIsRecordingScreen] = useState(false)
+  const [screenRecordingElapsed, setScreenRecordingElapsed] = useState(0)
+  const [captureShorts916, setCaptureShorts916] = useState(true)
+  const screenRecordControllerRef = useRef(null)
+  const screenRecordingIntervalRef = useRef(null)
   const [showFilters, setShowFilters] = useState(false)
   const [dashboardLayouts, setDashboardLayouts] = useState(null) // Store widget layouts for sharing
   const [dashboardWidgetVisibility, setDashboardWidgetVisibility] = useState(null) // Store widget visibility for sharing
@@ -77,13 +108,25 @@ function Dashboard() {
   })
   const [agencySearch, setAgencySearch] = useState('')
   const [opportunityKeyword, setOpportunityKeyword] = useState('')
+  const [selectedOpportunityNoticeType, setSelectedOpportunityNoticeType] = useState('')
   const deferredOpportunityKeyword = useDeferredValue(opportunityKeyword)
+  const [apiKeywordOpportunityRows, setApiKeywordOpportunityRows] = useState([])
+  const [apiKeywordLoading, setApiKeywordLoading] = useState(false)
+  const [apiKeywordError, setApiKeywordError] = useState('')
   const [noDataReason, setNoDataReason] = useState(null) // 'no-storage' | 'invalid-data' when dashboard has nothing to show
   const [upgradePrompt, setUpgradePrompt] = useState(null)
   const [currentPlan, setCurrentPlan] = useState('free')
   const hasInitialized = useRef(false)
   const isUpdatingMetadata = useRef(false)
   const lastAutoTitleMetric = useRef('')
+  const shortRootRef = useRef(null)
+  const shortCaptureRef = useRef(null)
+  const storyRecorderPanelRef = useRef(null)
+  const lastStoryStepTsRef = useRef(0)
+  const guideDragRef = useRef({ startX: 0, startY: 0, baseRect: null })
+  const guideResizeRef = useRef({ startX: 0, startY: 0, baseRect: null })
+  const shortVideoCancelRef = useRef(false)
+  const shortVideoAbortRef = useRef(null)
   const MAX_CATEGORY_TABS = 12
   const MAX_METRIC_TABS = 10
 
@@ -105,6 +148,23 @@ function Dashboard() {
       })
     return () => { mounted = false }
   }, [user])
+
+  useEffect(() => {
+    let mounted = true
+    savedShortsStorage.listShorts().then((list) => {
+      if (mounted) setSavedShortsList(list)
+    }).catch(() => {})
+    return () => { mounted = false }
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (screenRecordingIntervalRef.current) {
+        clearInterval(screenRecordingIntervalRef.current)
+        screenRecordingIntervalRef.current = null
+      }
+    }
+  }, [])
 
   const formatFieldLabel = useCallback((field) => {
     const raw = String(field || '').trim()
@@ -795,7 +855,18 @@ function Dashboard() {
         setSelectedCategorical(columnToSelect)
       }
       if (parsedData.dateColumns && parsedData.dateColumns.length > 0) {
-        setSelectedDate(parsedData.dateColumns[0])
+        const isSamgovOpportunitiesDataset =
+          (parsedData.source && /sam\.gov opportunities/i.test(String(parsedData.source))) ||
+          ((parsedData.columns || []).some((c) => ['noticeId', 'responseDeadLine', 'postedDate'].includes(c)))
+        if (isSamgovOpportunitiesDataset) {
+          const samgovDatePref = ['updatedDate', 'responseDeadLine', 'postedDate']
+          const selectedSamgovDate =
+            samgovDatePref.find((f) => (parsedData.dateColumns || []).includes(f)) ||
+            parsedData.dateColumns[0]
+          setSelectedDate(selectedSamgovDate)
+        } else {
+          setSelectedDate(parsedData.dateColumns[0])
+        }
       }
 
       // Entity datasets are best explored via table + filters by default.
@@ -958,6 +1029,16 @@ function Dashboard() {
     )
   }, [columns])
 
+  const samgovDateQuickOptions = useMemo(() => {
+    if (!isOpportunityDataset) return []
+    const options = [
+      { key: 'updatedDate', label: 'Updated' },
+      { key: 'responseDeadLine', label: 'Response Deadline' },
+      { key: 'postedDate', label: 'Posted' },
+    ]
+    return options.filter((opt) => dateColumns.includes(opt.key))
+  }, [isOpportunityDataset, dateColumns])
+
   // Build options from the pre-entity-filtered rows so users can explore all facets.
   const entityFilterOptions = useMemo(() => {
     const rows = Array.isArray(filteredData) ? filteredData : []
@@ -1034,6 +1115,64 @@ function Dashboard() {
     () => ['IT', 'AI', 'Data Analytics', 'House Keeping', 'Cybersecurity', 'Facilities'],
     []
   )
+
+  useEffect(() => {
+    const q = String(deferredOpportunityKeyword || '').trim()
+    if (!isOpportunityDataset || q.length < 2) {
+      setApiKeywordOpportunityRows([])
+      setApiKeywordError('')
+      setApiKeywordLoading(false)
+      return
+    }
+
+    const formatMmDdYyyy = (d) => {
+      const mm = String(d.getMonth() + 1).padStart(2, '0')
+      const dd = String(d.getDate()).padStart(2, '0')
+      const yyyy = String(d.getFullYear())
+      return `${mm}/${dd}/${yyyy}`
+    }
+
+    const now = new Date()
+    const from = new Date(now)
+    // Keep within SAM.gov API 1-year date-window requirement.
+    from.setDate(from.getDate() - 364)
+
+    const controller = new AbortController()
+    setApiKeywordLoading(true)
+    setApiKeywordError('')
+
+    apiClient.get('/api/example/samgov/live', {
+      params: {
+        title: q,
+        postedFrom: formatMmDdYyyy(from),
+        postedTo: formatMmDdYyyy(now),
+        // Keep keyword fetch bounded so SAM responds faster under load.
+        limit: 300,
+      },
+      timeout: 30000,
+      signal: controller.signal,
+    })
+      .then((res) => {
+        const rows = Array.isArray(res?.data?.data) ? res.data.data : []
+        setApiKeywordOpportunityRows(rows)
+      })
+      .catch((err) => {
+        if (controller.signal.aborted) return
+        const status = err?.response?.status
+        if (status === 404) {
+          setApiKeywordOpportunityRows([])
+          setApiKeywordError('')
+          return
+        }
+        setApiKeywordOpportunityRows([])
+        setApiKeywordError(err?.response?.data?.message || err?.message || 'Keyword search API failed')
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setApiKeywordLoading(false)
+      })
+
+    return () => controller.abort()
+  }, [deferredOpportunityKeyword, isOpportunityDataset])
 
   const opportunityRows = useMemo(() => {
     const q = String(deferredOpportunityKeyword || '').trim().toLowerCase()
@@ -1181,11 +1320,56 @@ function Dashboard() {
           if (!genericMatch) return null
           return { ...row, _matchReason: `Matched keyword: ${genericMatch}` }
         }).filter(Boolean)
-    return filtered.slice(0, 20)
-  }, [allOpportunityRows, deferredOpportunityKeyword])
+
+    if (!q) return filtered.slice(0, 20)
+
+    const merged = []
+    const seen = new Set()
+    const pushUnique = (row) => {
+      if (!row) return
+      const key = String(row.noticeId || row.uiLink || `${row.title || ''}-${row.solicitationNumber || ''}`)
+      if (seen.has(key)) return
+      seen.add(key)
+      merged.push(row)
+    }
+
+    for (const r of filtered) pushUnique(r)
+    for (const r of apiKeywordOpportunityRows) {
+      pushUnique({ ...r, _matchReason: r?._matchReason || 'Matched via SAM API title search' })
+    }
+    return merged.slice(0, 20)
+  }, [allOpportunityRows, deferredOpportunityKeyword, apiKeywordOpportunityRows])
+
+  const getOpportunityNoticeType = useCallback((row) => {
+    const rawType = String(row?.baseType || row?.type || '').trim()
+    const t = rawType.toLowerCase()
+    if (t.includes('sources sought') || t.includes('source sought')) return 'Sources Sought'
+    if (t.includes('presolicitation') || t.includes('pre-solicitation')) return 'Presolicitation'
+    if (t.includes('solicitation')) return 'Solicitation'
+    return rawType || 'Unknown'
+  }, [])
+
+  const getOpportunityNoticeTypeClass = useCallback((label) => {
+    const l = String(label || '').toLowerCase()
+    if (l === 'solicitation') return 'bg-blue-100 text-blue-800 border border-blue-200'
+    if (l === 'presolicitation') return 'bg-purple-100 text-purple-800 border border-purple-200'
+    if (l === 'sources sought') return 'bg-amber-100 text-amber-800 border border-amber-200'
+    return 'bg-gray-100 text-gray-700 border border-gray-200'
+  }, [])
 
   const renderOpportunityListPanel = () => {
     if (!isOpportunityDataset || allOpportunityRows.length === 0) return null
+    const showKeywordTypeCounts = !!deferredOpportunityKeyword
+    const noticeTypeCounts = opportunityRows.reduce((acc, row) => {
+      const type = getOpportunityNoticeType(row)
+      if (type === 'Solicitation') acc.solicitation += 1
+      else if (type === 'Presolicitation') acc.presolicitation += 1
+      else if (type === 'Sources Sought') acc.sourcesSought += 1
+      return acc
+    }, { solicitation: 0, presolicitation: 0, sourcesSought: 0 })
+    const visibleOpportunityRows = selectedOpportunityNoticeType
+      ? opportunityRows.filter((row) => getOpportunityNoticeType(row) === selectedOpportunityNoticeType)
+      : opportunityRows
 
     return (
       <div className="mb-6 bg-white rounded-lg border border-gray-200 shadow-sm">
@@ -1193,8 +1377,56 @@ function Dashboard() {
           <div>
             <h3 className="text-lg font-semibold text-gray-900">Matching Opportunities</h3>
             <p className="text-sm text-gray-600">
-              Showing {opportunityRows.length} of {allOpportunityRows.length} filtered opportunities
+              Showing {visibleOpportunityRows.length} of {allOpportunityRows.length} filtered opportunities
+              {deferredOpportunityKeyword ? ` • API keyword matches: ${apiKeywordOpportunityRows.length}` : ''}
+              {selectedOpportunityNoticeType ? ` • Type: ${selectedOpportunityNoticeType}` : ''}
             </p>
+            {showKeywordTypeCounts && (
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setSelectedOpportunityNoticeType((prev) => prev === 'Solicitation' ? '' : 'Solicitation')}
+                  className={`px-2 py-0.5 rounded-full border ${
+                    selectedOpportunityNoticeType === 'Solicitation'
+                      ? 'bg-blue-600 text-white border-blue-700'
+                      : 'bg-blue-100 text-blue-800 border-blue-200'
+                  }`}
+                >
+                  Solicitation: {noticeTypeCounts.solicitation}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedOpportunityNoticeType((prev) => prev === 'Presolicitation' ? '' : 'Presolicitation')}
+                  className={`px-2 py-0.5 rounded-full border ${
+                    selectedOpportunityNoticeType === 'Presolicitation'
+                      ? 'bg-purple-600 text-white border-purple-700'
+                      : 'bg-purple-100 text-purple-800 border-purple-200'
+                  }`}
+                >
+                  Presolicitation: {noticeTypeCounts.presolicitation}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedOpportunityNoticeType((prev) => prev === 'Sources Sought' ? '' : 'Sources Sought')}
+                  className={`px-2 py-0.5 rounded-full border ${
+                    selectedOpportunityNoticeType === 'Sources Sought'
+                      ? 'bg-amber-600 text-white border-amber-700'
+                      : 'bg-amber-100 text-amber-800 border-amber-200'
+                  }`}
+                >
+                  Sources Sought: {noticeTypeCounts.sourcesSought}
+                </button>
+                {selectedOpportunityNoticeType && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedOpportunityNoticeType('')}
+                    className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 border border-gray-300"
+                  >
+                    Clear type filter
+                  </button>
+                )}
+              </div>
+            )}
           </div>
           {chartFilter ? (
             <span className="text-xs px-2.5 py-1 rounded-full bg-blue-100 text-blue-800 font-medium">
@@ -1237,12 +1469,22 @@ function Dashboard() {
             })}
           </div>
         </div>
+        {apiKeywordLoading && deferredOpportunityKeyword ? (
+          <div className="px-5 py-2 text-xs text-blue-700 bg-blue-50 border-b border-blue-100">
+            Searching SAM API for keyword "{deferredOpportunityKeyword}"...
+          </div>
+        ) : null}
+        {apiKeywordError && deferredOpportunityKeyword ? (
+          <div className="px-5 py-2 text-xs text-amber-700 bg-amber-50 border-b border-amber-100">
+            API keyword search warning: {apiKeywordError}
+          </div>
+        ) : null}
         <div className="divide-y divide-gray-100 max-h-[420px] overflow-y-auto">
-          {opportunityRows.length === 0 ? (
+          {visibleOpportunityRows.length === 0 ? (
             <div className="px-5 py-8 text-sm text-gray-600">
-              No opportunities match this keyword in the current filtered set.
+              No opportunities match this keyword/type in the current filtered set.
             </div>
-          ) : opportunityRows.map((row, idx) => (
+          ) : visibleOpportunityRows.map((row, idx) => (
             <div key={String(row.noticeId || row.uiLink || idx)} className="px-5 py-4">
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
@@ -1250,12 +1492,14 @@ function Dashboard() {
                     {row.title || 'Untitled Opportunity'}
                   </p>
                   <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-600">
+                    <span className={`px-2 py-0.5 rounded-full font-medium ${getOpportunityNoticeTypeClass(getOpportunityNoticeType(row))}`}>
+                      {getOpportunityNoticeType(row)}
+                    </span>
                     {row.solicitationNumber && (
                       <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-700">
                         Solicitation: {row.solicitationNumber}
                       </span>
                     )}
-                    {row.type && <span>Type: {row.type}</span>}
                     {row.state && <span>State: {row.state}</span>}
                     {opportunityKeyword && row._matchReason && (
                       <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100">
@@ -1477,7 +1721,8 @@ function Dashboard() {
                     try {
                       // Preferred: dedicated backend drill-down route.
                       const resp = await apiClient.get('/api/example/samgov/agency-opportunities', {
-                        params: { agency, ptype: 'o', limit: 500 },
+                        // Do not force solicitation-only; include all notice types for better coverage.
+                        params: { agency, limit: 500 },
                         timeout: 30000,
                       })
                       rows = Array.isArray(resp?.data?.data) ? resp.data.data : []
@@ -1488,7 +1733,7 @@ function Dashboard() {
                       if (!routeNotFound) throw routeErr
 
                       const fallbackResp = await apiClient.get('/api/example/samgov/live', {
-                        params: { ptype: 'o', limit: 500 },
+                        params: { limit: 500 },
                         timeout: 30000,
                       })
                       const allRows = Array.isArray(fallbackResp?.data?.data) ? fallbackResp.data.data : []
@@ -1567,6 +1812,11 @@ function Dashboard() {
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-gray-900 break-words">{r.title || 'Untitled opportunity'}</p>
+                    <p className="text-xs mt-1">
+                      <span className={`px-2 py-0.5 rounded-full font-medium ${getOpportunityNoticeTypeClass(getOpportunityNoticeType(r))}`}>
+                        {getOpportunityNoticeType(r)}
+                      </span>
+                    </p>
                     <p className="text-xs text-gray-600 mt-1">
                       {r.solicitationNumber ? `Solicitation: ${r.solicitationNumber} • ` : ''}
                       Posted: {r.postedDate || 'N/A'}
@@ -1838,6 +2088,579 @@ function Dashboard() {
       alert(`Failed to save dashboard: ${errorMessage}`)
     } finally {
       setSaving(false)
+    }
+  }
+
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+  const getDefaultShortGuideRect = useCallback(() => {
+    const root = shortRootRef.current
+    if (!root) return null
+    const w = root.clientWidth
+    const h = root.clientHeight
+    if (!w || !h) return null
+    const target = 9 / 16
+    const rootRatio = w / h
+    let wRatio
+    let hRatio
+    if (rootRatio >= target) {
+      // root is wider than 9:16: fit by height
+      hRatio = 1
+      wRatio = (target * h) / w
+    } else {
+      // root is narrower/taller: fit by width
+      wRatio = 1
+      hRatio = (w / target) / h
+    }
+    // Provide a little margin by default
+    const shrink = 0.92
+    wRatio = Math.max(0.2, Math.min(1, wRatio * shrink))
+    hRatio = Math.max(0.2, Math.min(1, hRatio * shrink))
+    return {
+      xRatio: (1 - wRatio) / 2,
+      yRatio: (1 - hRatio) / 2,
+      wRatio,
+      hRatio,
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!showShortGuide) return
+    if (shortGuideRect) return
+    const rect = getDefaultShortGuideRect()
+    if (rect) setShortGuideRect(rect)
+  }, [showShortGuide, shortGuideRect, getDefaultShortGuideRect])
+
+  useEffect(() => {
+    const root = shortRootRef.current
+    if (!root || !showShortGuide) return undefined
+    const ro = new ResizeObserver(() => {
+      setShortGuideRect((prev) => prev || getDefaultShortGuideRect())
+    })
+    ro.observe(root)
+    return () => ro.disconnect()
+  }, [showShortGuide, getDefaultShortGuideRect])
+
+  const safeZoneInsets = useMemo(() => {
+    // Approximate UI overlay safe zones (top/bottom) per platform.
+    // Values are ratios relative to the 9:16 frame (not the page).
+    if (shortGuidePreset === 'tiktok') return { top: 0.12, bottom: 0.26, side: 0.08 }
+    if (shortGuidePreset === 'reels') return { top: 0.14, bottom: 0.22, side: 0.08 }
+    return { top: 0.10, bottom: 0.18, side: 0.08 } // youtube
+  }, [shortGuidePreset])
+
+  const beginGuideDrag = useCallback((event) => {
+    if (!showShortGuide) return
+    const root = shortRootRef.current
+    if (!root || !shortGuideRect) return
+    const e = event
+    e.preventDefault()
+    e.stopPropagation()
+
+    setIsDraggingGuide(true)
+    guideDragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      baseRect: shortGuideRect,
+    }
+  }, [showShortGuide, shortGuideRect])
+
+  useEffect(() => {
+    if (!isDraggingGuide) return undefined
+    const root = shortRootRef.current
+    if (!root) return undefined
+
+    const onMove = (e) => {
+      const base = guideDragRef.current.baseRect
+      if (!base) return
+      const dx = e.clientX - guideDragRef.current.startX
+      const dy = e.clientY - guideDragRef.current.startY
+      const w = root.clientWidth || 1
+      const h = root.clientHeight || 1
+      const nx = base.xRatio + dx / w
+      const ny = base.yRatio + dy / h
+      const maxX = 1 - base.wRatio
+      const maxY = 1 - base.hRatio
+      setShortGuideRect({
+        ...base,
+        xRatio: Math.max(0, Math.min(maxX, nx)),
+        yRatio: Math.max(0, Math.min(maxY, ny)),
+      })
+    }
+
+    const onUp = () => setIsDraggingGuide(false)
+
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    return () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+  }, [isDraggingGuide])
+
+  const beginGuideResize = useCallback((event) => {
+    if (!showShortGuide) return
+    const root = shortRootRef.current
+    if (!root || !shortGuideRect) return
+    const e = event
+    e.preventDefault()
+    e.stopPropagation()
+
+    setIsResizingGuide(true)
+    guideResizeRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      baseRect: shortGuideRect,
+    }
+  }, [showShortGuide, shortGuideRect])
+
+  useEffect(() => {
+    if (!isResizingGuide) return undefined
+    const root = shortRootRef.current
+    if (!root) return undefined
+
+    const target = 9 / 16
+    const minWpx = Math.max(180, Math.round((root.clientWidth || 0) * 0.22))
+
+    const onMove = (e) => {
+      const base = guideResizeRef.current.baseRect
+      if (!base) return
+      const dx = e.clientX - guideResizeRef.current.startX
+      const dy = e.clientY - guideResizeRef.current.startY
+
+      const w = root.clientWidth || 1
+      const h = root.clientHeight || 1
+
+      const baseWpx = base.wRatio * w
+      const baseHpx = base.hRatio * h
+
+      const useDx = Math.abs(dx) >= Math.abs(dy)
+      let nextWpx
+      if (useDx) {
+        nextWpx = baseWpx + dx
+      } else {
+        const nextH = baseHpx + dy
+        nextWpx = nextH * target
+      }
+
+      // constrain to available space from current top-left
+      const maxWpxFromX = (1 - base.xRatio) * w
+      const maxHpxFromY = (1 - base.yRatio) * h
+      const maxWpx = Math.min(maxWpxFromX, maxHpxFromY * target)
+
+      const clampedWpx = Math.max(minWpx, Math.min(maxWpx, nextWpx))
+      const clampedHpx = clampedWpx / target
+
+      const wRatio = clampedWpx / w
+      const hRatio = clampedHpx / h
+
+      setShortGuideRect((prev) => ({
+        ...(prev || base),
+        xRatio: base.xRatio,
+        yRatio: base.yRatio,
+        wRatio,
+        hRatio,
+      }))
+    }
+
+    const onUp = () => setIsResizingGuide(false)
+
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    return () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+  }, [isResizingGuide])
+
+  const buildElementSelector = useCallback((element) => {
+    if (!element || !(element instanceof Element)) return null
+    const esc = (value) => {
+      const text = String(value || '')
+      if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
+        return CSS.escape(text)
+      }
+      return text.replace(/["\\]/g, '\\$&')
+    }
+
+    if (element.id) return `#${esc(element.id)}`
+
+    const testId = element.getAttribute('data-testid')
+    if (testId) return `[data-testid="${esc(testId)}"]`
+
+    const aria = element.getAttribute('aria-label')
+    if (aria) return `[aria-label="${esc(aria)}"]`
+
+    const path = []
+    let current = element
+    let depth = 0
+
+    while (current && current.nodeType === 1 && current.tagName.toLowerCase() !== 'html' && depth < 5) {
+      const tag = current.tagName.toLowerCase()
+      const parent = current.parentElement
+      if (!parent) break
+      const siblings = Array.from(parent.children).filter((c) => c.tagName === current.tagName)
+      const index = siblings.indexOf(current)
+      const part = siblings.length > 1 ? `${tag}:nth-of-type(${index + 1})` : tag
+      path.unshift(part)
+      current = parent
+      depth += 1
+    }
+
+    if (!path.length) return null
+    return path.join(' > ')
+  }, [])
+
+  const getElementLabel = useCallback((element) => {
+    if (!element || !(element instanceof Element)) return 'Click'
+    const candidates = [
+      element.getAttribute('aria-label'),
+      element.getAttribute('title'),
+      element.textContent,
+      element.getAttribute('data-testid'),
+    ]
+    const raw = candidates.find((v) => String(v || '').trim())
+    const label = String(raw || element.tagName || 'Click').replace(/\s+/g, ' ').trim()
+    return label.slice(0, 72)
+  }, [])
+
+  useEffect(() => {
+    if (!recordingStorySteps) return undefined
+
+    lastStoryStepTsRef.current = performance.now()
+
+    const onClickCapture = (event) => {
+      const target = event.target
+      if (!(target instanceof Element)) return
+      const recordingScope = shortRootRef.current || shortCaptureRef.current
+      if (!recordingScope?.contains(target)) return
+      if (storyRecorderPanelRef.current?.contains(target)) return
+
+      let selector = null
+      try {
+        selector = buildElementSelector(target)
+      } catch (error) {
+        console.warn('Story step selector capture failed:', error)
+        selector = null
+      }
+      if (!selector) return
+
+      const now = performance.now()
+      const waitMs = Math.max(200, Math.min(5000, Math.round(now - lastStoryStepTsRef.current)))
+      lastStoryStepTsRef.current = now
+
+      setStorySteps((prev) => [
+        ...prev,
+        {
+          selector,
+          label: getElementLabel(target),
+          waitMs: prev.length === 0 ? 450 : waitMs,
+        },
+      ])
+    }
+
+    document.addEventListener('click', onClickCapture, true)
+    return () => {
+      document.removeEventListener('click', onClickCapture, true)
+    }
+  }, [recordingStorySteps, buildElementSelector, getElementLabel])
+
+  useEffect(() => {
+    if (recordingCountdown <= 0) return undefined
+    const timer = setTimeout(() => {
+      if (recordingCountdown === 1) {
+        setRecordingCountdown(0)
+        setRecordingStorySteps(true)
+      } else {
+        setRecordingCountdown((v) => Math.max(0, v - 1))
+      }
+    }, 900)
+
+    return () => clearTimeout(timer)
+  }, [recordingCountdown])
+
+  const buildStoryFrames = async (captureEl, onProgress) => {
+    if (!captureEl || !storySteps.length) return []
+    const frames = []
+    const baseCanvas = await html2canvas(captureEl, {
+      backgroundColor: '#0f172a',
+      scale: 2,
+      useCORS: true,
+      logging: false,
+    })
+    frames.push({ canvas: baseCanvas, cursor: null })
+
+    for (let i = 0; i < storySteps.length; i++) {
+      if (shortVideoCancelRef.current) {
+        throw new Error('Short video generation cancelled.')
+      }
+      const step = storySteps[i]
+      if (typeof onProgress === 'function') onProgress(i + 1, storySteps.length)
+      await sleep(step.waitMs)
+      const el = document.querySelector(step.selector)
+      let cursor = null
+
+      if (el && el instanceof HTMLElement) {
+        const rect = el.getBoundingClientRect()
+        const parentRect = captureEl.getBoundingClientRect()
+        const xRatio = parentRect.width > 0 ? (rect.left + rect.width / 2 - parentRect.left) / parentRect.width : 0.5
+        const yRatio = parentRect.height > 0 ? (rect.top + rect.height / 2 - parentRect.top) / parentRect.height : 0.5
+        cursor = {
+          xRatio: Math.max(0, Math.min(1, xRatio)),
+          yRatio: Math.max(0, Math.min(1, yRatio)),
+          label: step.label,
+        }
+        el.click()
+        await sleep(650)
+      } else {
+        await sleep(300)
+      }
+
+      const canvas = await html2canvas(captureEl, {
+        backgroundColor: '#0f172a',
+        scale: 2,
+        useCORS: true,
+        logging: false,
+      })
+      frames.push({ canvas, cursor })
+    }
+
+    return frames
+  }
+
+  const handleCreateShortVideo = async () => {
+    // Capture only the report (charts/content area), not the whole screen or toolbar.
+    const captureElement = shortCaptureRef.current || shortRootRef.current
+    if (!captureElement) {
+      alert('Could not find dashboard content to capture.')
+      return
+    }
+
+    try {
+      setGeneratingShortVideo(true)
+      setShortVideoError('')
+      shortVideoCancelRef.current = false
+      const controller = new AbortController()
+      shortVideoAbortRef.current = controller
+
+      const caps = getShortsExportCapabilities()
+      if (!caps.supported) {
+        throw new Error('Your browser does not support video export. Try Chrome or Edge.')
+      }
+      if (shortFormat === 'mp4' && !caps.formats.includes('mp4')) {
+        // Auto-fallback to webm instead of failing silently.
+        setShortFormat('webm')
+      }
+
+      const title = String(dashboardTitle || 'Analytics Dashboard')
+      const subtitle = `${dashboardFilteredData?.length || 0} records • ${columns.length} columns`
+      const highlight = selectedNumeric ? `Primary metric: ${formatFieldLabel(selectedNumeric)}` : ''
+
+      let frames = []
+      if (storySteps.length) {
+        setShortVideoProgress({ active: true, phase: 'Capturing clicks', progress: 0 })
+        frames = await buildStoryFrames(captureElement, (cur, total) =>
+          setShortVideoProgress({ active: true, phase: 'Capturing clicks', progress: total ? cur / total : 0 })
+        )
+      }
+
+      setShortVideoProgress({ active: true, phase: 'Preparing', progress: 0 })
+      const blob = await createDashboardShortVideo({
+        title,
+        subtitle,
+        highlight,
+        callToAction: shortCallToAction,
+        format: shortFormat,
+        durationSeconds: shortDurationSeconds,
+        captureElement: captureElement,
+        storyFrames: frames,
+        cropRect: captureElement === shortRootRef.current && lockShortGuideToExport && shortGuideRect ? shortGuideRect : null,
+        onProgress: (phase, progress) => setShortVideoProgress((p) => (p.active ? { ...p, phase, progress } : p)),
+        signal: controller.signal,
+      })
+      const safeName = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+      const ext = getVideoFileExtension(blob)
+      const filename = `${safeName || 'analytics-short'}.${ext}`
+      setLastShortVideo({ blob, filename, title })
+      try {
+        await savedShortsStorage.saveShort(blob, filename, title)
+        const list = await savedShortsStorage.listShorts()
+        setSavedShortsList(list)
+      } catch (_) {}
+      downloadVideoBlob(blob, filename)
+    } catch (error) {
+      console.error('Error creating short video:', error)
+      const msg = error?.message || 'Failed to create short video. Please try again.'
+      const isCancelled = msg === 'Recording was cancelled.'
+      setShortVideoError(isCancelled ? '' : msg)
+      if (!isCancelled) alert(msg)
+    } finally {
+      setGeneratingShortVideo(false)
+      setShortVideoProgress({ active: false, phase: '', progress: 0 })
+      shortVideoAbortRef.current = null
+    }
+  }
+
+  const handleShareShortToYouTube = async () => {
+    if (!lastShortVideo?.blob) {
+      alert('Generate a short video first.')
+      return
+    }
+
+    const shareTitle = `${lastShortVideo.title || 'Analytics Dashboard'} #shorts`
+    const shareText = `${lastShortVideo.title || 'Analytics Dashboard'} generated with NM2TECH Analytics Shorts`
+    const ext = getVideoFileExtension(lastShortVideo.blob)
+    const file = new File([lastShortVideo.blob], lastShortVideo.filename || `analytics-short.${ext}`, { type: lastShortVideo.blob.type || 'video/webm' })
+
+    try {
+      if (
+        typeof navigator !== 'undefined' &&
+        typeof navigator.share === 'function' &&
+        typeof navigator.canShare === 'function' &&
+        navigator.canShare({ files: [file] })
+      ) {
+        await navigator.share({
+          files: [file],
+          title: shareTitle,
+          text: shareText,
+        })
+        return
+      }
+    } catch (error) {
+      console.warn('Native share was cancelled or failed:', error)
+    }
+
+    const fallbackText = `${shareTitle}\n${shareText}`
+    try {
+      await copyToClipboard(fallbackText)
+    } catch {
+      // no-op fallback
+    }
+    window.open('https://studio.youtube.com', '_blank', 'noopener,noreferrer')
+    alert('Opened YouTube Studio. Upload the downloaded short video file and paste the copied title/description.')
+  }
+
+  const handleSaveShortInApp = async () => {
+    if (!lastShortVideo?.blob) {
+      alert('Create a short video first.')
+      return
+    }
+    try {
+      await savedShortsStorage.saveShort(lastShortVideo.blob, lastShortVideo.filename, lastShortVideo.title)
+      const list = await savedShortsStorage.listShorts()
+      setSavedShortsList(list)
+    } catch (e) {
+      console.error(e)
+      alert(e?.message || 'Failed to save in app.')
+    }
+  }
+
+  const handleUploadToYouTube = async (source) => {
+    const blob = source?.blob || lastShortVideo?.blob
+    const title = source?.title ?? lastShortVideo?.title ?? 'Analytics Short'
+    if (!blob) {
+      alert('No video to upload. Create or select a short first.')
+      return
+    }
+    setYtUploadError('')
+    const id = source?.id ?? 'current'
+    setUploadingToYouTubeId(id)
+    try {
+      const token = await getGoogleYouTubeUploadToken()
+      const description = `${title} — created with NM2TECH Analytics Shorts`
+      const result = await uploadVideoToYouTube(blob, `${title} #shorts`, description, 'public', token, API_BASE_URL)
+      setUploadingToYouTubeId(null)
+      if (result?.link) {
+        window.open(result.link, '_blank')
+        alert(`Uploaded! Video: ${result.title}`)
+      }
+    } catch (err) {
+      setUploadingToYouTubeId(null)
+      const msg = err?.message || 'Upload failed.'
+      setYtUploadError(msg)
+      if (msg.includes('not configured')) {
+        alert(
+          'Direct YouTube upload is not configured.\n\n' +
+          '1. Go to Google Cloud Console → APIs & Services → Credentials\n' +
+          '2. Create an OAuth 2.0 Client ID (Web application)\n' +
+          '3. Add your app URL to Authorized origins (e.g. http://localhost:5173)\n' +
+          '4. In your project root, add to .env.local:\n   VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com\n' +
+          '5. Restart the dev server.\n\n' +
+          'Opening YouTube Studio so you can upload the file manually.'
+        )
+        window.open('https://studio.youtube.com', '_blank')
+      } else {
+        alert(msg)
+      }
+    }
+  }
+
+  const handleShareToLinkedIn = () => {
+    if (!lastShortVideo?.blob) return
+    downloadVideoBlob(lastShortVideo.blob, lastShortVideo.filename || 'capture.mp4')
+    window.open('https://www.linkedin.com/feed/', '_blank', 'noopener,noreferrer')
+  }
+
+  const handleDeleteSavedShort = async (id) => {
+    try {
+      await savedShortsStorage.deleteShort(id)
+      setSavedShortsList((prev) => prev.filter((s) => s.id !== id))
+    } catch (e) {
+      console.error(e)
+      alert('Failed to delete.')
+    }
+  }
+
+  const handleStartScreenRecord = async () => {
+    try {
+      const controller = await startScreenRecording({
+        aspectRatio: captureShorts916 ? '9:16' : undefined,
+      })
+      screenRecordControllerRef.current = controller
+      setIsRecordingScreen(true)
+      setScreenRecordingElapsed(0)
+      screenRecordingIntervalRef.current = setInterval(() => {
+        setScreenRecordingElapsed((s) => s + 1)
+      }, 1000)
+    } catch (err) {
+      if ((err?.message || '').includes('Permission') || (err?.name === 'NotAllowedError')) return
+      console.error(err)
+      alert(err?.message || 'Could not start screen recording.')
+    }
+  }
+
+  const handleStopScreenRecord = async () => {
+    const controller = screenRecordControllerRef.current
+    if (!controller) {
+      setIsRecordingScreen(false)
+      return
+    }
+    if (screenRecordingIntervalRef.current) {
+      clearInterval(screenRecordingIntervalRef.current)
+      screenRecordingIntervalRef.current = null
+    }
+    screenRecordControllerRef.current = null
+    setIsRecordingScreen(false)
+    try {
+      const blob = await controller.stop()
+      if (!blob || blob.size === 0) {
+        alert('Recording was too short or failed.')
+        return
+      }
+      const title = String(dashboardTitle || 'Analytics Dashboard')
+      const safeName = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+      const ext = getVideoFileExtension(blob)
+      const filename = `${safeName || 'screen-recording'}-live.${ext}`
+      setLastShortVideo({ blob, filename, title })
+      try {
+        await savedShortsStorage.saveShort(blob, filename, title)
+        const list = await savedShortsStorage.listShorts()
+        setSavedShortsList(list)
+      } catch (_) {}
+      downloadVideoBlob(blob, filename)
+    } catch (e) {
+      console.error(e)
+      alert(e?.message || 'Failed to save recording.')
     }
   }
 
@@ -2677,6 +3500,14 @@ function Dashboard() {
       <div className="analytics-watermark"></div>
       <div className="analytics-watermark-icons"></div>
 
+      {recordingCountdown > 0 && (
+        <div className="fixed inset-0 z-[120] pointer-events-none flex items-center justify-center">
+          <div className="w-44 h-44 rounded-full bg-black/70 text-white flex items-center justify-center text-7xl font-bold shadow-2xl border-2 border-white/40">
+            {recordingCountdown}
+          </div>
+        </div>
+      )}
+
       {upgradePrompt && (
         <UpgradePrompt
           error={upgradePrompt.error}
@@ -2691,7 +3522,7 @@ function Dashboard() {
       {/* Date Range Slider and Network View Button - Top of Dashboard */}
       <div className="bg-white border-b border-gray-200 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between py-3">
+          <div className="flex flex-col gap-2 py-3 md:flex-row md:items-center md:justify-between">
             <div className="flex-1">
               {selectedDate && dateColumns.includes(selectedDate) && (
                 <DateRangeSlider
@@ -2701,12 +3532,96 @@ function Dashboard() {
                 />
               )}
             </div>
-            {/* Network View button removed */}
+            {samgovDateQuickOptions.length > 0 && (
+              <div className="flex items-center gap-2 md:ml-4">
+                <span className="text-xs font-medium text-gray-600">Date field:</span>
+                {samgovDateQuickOptions.map((opt) => (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() => setSelectedDate(opt.key)}
+                    className={`px-2.5 py-1.5 rounded-md text-xs font-medium border transition-colors ${
+                      selectedDate === opt.key
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <div ref={shortRootRef} className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 relative">
+        {portraitEnabled && isScreenRecordingSupported() && (
+          <div className="mb-6 rounded-2xl border border-gray-200 bg-white shadow-lg overflow-hidden" data-html2canvas-ignore="true">
+            <div className="px-5 py-4 border-b border-gray-100 bg-gradient-to-r from-indigo-50 to-white">
+              <h2 className="text-lg font-semibold text-gray-900">Live capture</h2>
+              <p className="text-sm text-gray-600 mt-0.5">Record your tab or screen • 9:16 Shorts • Upload to YouTube or LinkedIn</p>
+            </div>
+            <div className="p-5 flex flex-wrap items-center gap-3">
+              {!isRecordingScreen ? (
+                <>
+                  <label className="flex items-center gap-2 text-sm text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={captureShorts916}
+                      onChange={(e) => setCaptureShorts916(e.target.checked)}
+                      disabled={!data}
+                    />
+                    9:16 Shorts
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleStartScreenRecord}
+                    disabled={!data}
+                    className="px-5 py-2.5 bg-emerald-600 text-white rounded-lg font-semibold text-sm hover:bg-emerald-700 disabled:opacity-50 shadow-md"
+                    title="Record your tab or screen in real time"
+                  >
+                    Live capture
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span className="px-3 py-2 rounded-lg bg-red-100 text-red-800 text-sm font-medium">
+                    Recording {Math.floor(screenRecordingElapsed / 60)}:{String(screenRecordingElapsed % 60).padStart(2, '0')}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleStopScreenRecord}
+                    className="px-4 py-2.5 bg-red-600 text-white rounded-lg font-medium text-sm hover:bg-red-700"
+                  >
+                    Stop recording
+                  </button>
+                </>
+              )}
+              {lastShortVideo?.blob && !isRecordingScreen && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleUploadToYouTube()}
+                    disabled={!!uploadingToYouTubeId}
+                    className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-50"
+                    title={isYouTubeUploadConfigured() ? 'Upload to YouTube' : 'Add VITE_GOOGLE_CLIENT_ID to enable'}
+                  >
+                    {uploadingToYouTubeId === 'current' ? 'Uploading…' : 'Upload to YouTube'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleShareToLinkedIn}
+                    className="px-4 py-2 bg-[#0A66C2] text-white rounded-lg text-sm font-medium hover:bg-[#004182]"
+                    title="Download video and open LinkedIn to post"
+                  >
+                    Share to LinkedIn
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
         {/* Header */}
         <div className="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center animate-fade-in">
           <div>
@@ -2837,8 +3752,9 @@ function Dashboard() {
         {renderEntityFiltersPanel()}
 
         {/* Save & Share Buttons */}
-        <div className="mb-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
+        <div className="mb-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={handleSaveDashboard}
               disabled={saving || !data}
@@ -2870,45 +3786,44 @@ function Dashboard() {
             </button>
             <button
               onClick={async () => {
+                const effectiveShareId = shareId || generateShareId()
+                const dashboardData = {
+                  name: dashboardTitle,
+                  dashboardTitle: dashboardTitle,
+                  data: data,
+                  columns: columns,
+                  numericColumns: numericColumns,
+                  categoricalColumns: categoricalColumns,
+                  dateColumns: dateColumns,
+                  selectedNumeric: selectedNumeric,
+                  selectedCategorical: selectedCategorical,
+                  selectedDate: selectedDate,
+                  opportunityKeyword: opportunityKeyword,
+                  dashboardView: dashboardView, // Save the current view (advanced/simple)
+                  layouts: dashboardLayouts, // Include widget layouts
+                  widgetVisibility: dashboardWidgetVisibility, // Include widget visibility
+                }
+
+                // Always re-save latest state/title so existing links stay current.
+                const result = await saveSharedDashboard(effectiveShareId, dashboardData)
+                if (!result?.ok) {
+                  alert('Failed to update shared dashboard. Please try again.')
+                  return
+                }
+
                 if (!shareId) {
-                  const newShareId = generateShareId()
-                  const dashboardData = {
-                    name: dashboardTitle,
-                    dashboardTitle: dashboardTitle,
-                    data: data,
-                    columns: columns,
-                    numericColumns: numericColumns,
-                    categoricalColumns: categoricalColumns,
-                    dateColumns: dateColumns,
-                    selectedNumeric: selectedNumeric,
-                    selectedCategorical: selectedCategorical,
-                    selectedDate: selectedDate,
-                    opportunityKeyword: opportunityKeyword,
-                    dashboardView: dashboardView, // Save the current view (advanced/simple)
-                    layouts: dashboardLayouts, // Include widget layouts
-                    widgetVisibility: dashboardWidgetVisibility, // Include widget visibility
-                  }
-                  const result = await saveSharedDashboard(newShareId, dashboardData)
-                  if (result?.ok) {
-                    setShareId(newShareId)
-                    const shareUrl = getShareableUrl(newShareId)
-                    const copied = await copyToClipboard(shareUrl)
-                    if (copied) {
-                      setShareLinkCopied(true)
-                      setTimeout(() => setShareLinkCopied(false), 3000)
-                    }
-                    if (!result.backendSaved) {
-                      // Not fatal: link will only work in this browser.
-                      console.warn('Share link saved locally only (backend not configured).')
-                    }
-                  }
-                } else {
-                  const shareUrl = getShareableUrl(shareId)
-                  const copied = await copyToClipboard(shareUrl)
-                  if (copied) {
-                    setShareLinkCopied(true)
-                    setTimeout(() => setShareLinkCopied(false), 3000)
-                  }
+                  setShareId(effectiveShareId)
+                }
+
+                const shareUrl = getShareableUrl(effectiveShareId)
+                const copied = await copyToClipboard(shareUrl)
+                if (copied) {
+                  setShareLinkCopied(true)
+                  setTimeout(() => setShareLinkCopied(false), 3000)
+                }
+                if (!result.backendSaved) {
+                  // Not fatal: link will only work in this browser.
+                  console.warn('Share link saved locally only (backend not configured).')
                 }
               }}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm flex items-center gap-2"
@@ -2928,86 +3843,150 @@ function Dashboard() {
                 {saveFeedbackMessage}
               </span>
             )}
+            <div className="hidden sm:block h-6 border-l border-gray-300 mx-1" />
+            {isScreenRecordingSupported() && (
+              <>
+                {!isRecordingScreen ? (
+                  <>
+                    <label className="flex items-center gap-1.5 text-sm text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={captureShorts916}
+                        onChange={(e) => setCaptureShorts916(e.target.checked)}
+                        disabled={!data}
+                      />
+                      9:16 Shorts
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleStartScreenRecord}
+                      disabled={!data}
+                      className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors font-medium text-sm disabled:opacity-50"
+                      title="Record your tab or screen in real time"
+                    >
+                      Live capture
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span className="px-3 py-2 rounded-lg bg-red-100 text-red-800 text-sm font-medium">
+                      Recording {Math.floor(screenRecordingElapsed / 60)}:{String(screenRecordingElapsed % 60).padStart(2, '0')}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleStopScreenRecord}
+                      className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium text-sm"
+                    >
+                      Stop recording
+                    </button>
+                  </>
+                )}
+                {lastShortVideo?.blob && !isRecordingScreen && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => handleUploadToYouTube()}
+                      disabled={!!uploadingToYouTubeId}
+                      className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium text-sm disabled:opacity-50"
+                      title={isYouTubeUploadConfigured() ? 'Upload to YouTube' : 'Add VITE_GOOGLE_CLIENT_ID to enable'}
+                    >
+                      {uploadingToYouTubeId === 'current' ? 'Uploading…' : 'Upload to YouTube'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleShareToLinkedIn}
+                      className="px-4 py-2 bg-[#0A66C2] text-white rounded-lg hover:bg-[#004182] font-medium text-sm"
+                      title="Download video and open LinkedIn to post"
+                    >
+                      Share to LinkedIn
+                    </button>
+                  </>
+                )}
+              </>
+            )}
+            </div>
           </div>
         </div>
 
-        {/* Active Filter Indicator */}
-        {chartFilter && (
-          <div className="mb-4 flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg p-3 animate-slide-up">
-            <div className="flex items-center space-x-2">
-              <span className="text-sm font-medium text-blue-900">
-                Filtered by: <span className="font-semibold">
-                  {chartFilter.type === 'category' ? chartFilter.value : 
-                   chartFilter.type === 'date' ? new Date(chartFilter.value).toLocaleDateString() : ''}
+        <div ref={shortCaptureRef}>
+          {/* Active Filter Indicator */}
+          {chartFilter && (
+            <div className="mb-4 flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg p-3 animate-slide-up">
+              <div className="flex items-center space-x-2">
+                <span className="text-sm font-medium text-blue-900">
+                  Filtered by: <span className="font-semibold">
+                    {chartFilter.type === 'category' ? chartFilter.value :
+                     chartFilter.type === 'date' ? new Date(chartFilter.value).toLocaleDateString() : ''}
+                  </span>
                 </span>
-              </span>
+              </div>
+              <button
+                onClick={clearChartFilter}
+                className="text-sm text-blue-700 hover:text-blue-900 font-medium px-3 py-1 rounded hover:bg-blue-100 transition-colors"
+              >
+                Clear Filter
+              </button>
             </div>
-            <button
-              onClick={clearChartFilter}
-              className="text-sm text-blue-700 hover:text-blue-900 font-medium px-3 py-1 rounded hover:bg-blue-100 transition-colors"
-            >
-              Clear Filter
-            </button>
-          </div>
-        )}
+          )}
 
-        {/* Charts Section */}
-        {dashboardView === 'data' ? (
-          <DataMetadataEditor
-            data={data}
-            columns={columns}
-            numericColumns={effectiveNumericColumns}
-            categoricalColumns={categoricalColumns}
-            dateColumns={dateColumns}
-            onMetadataUpdate={handleMetadataUpdate}
-          />
-        ) : dashboardView === 'timeseries' ? (
-          <TimeSeriesReport
-            data={dashboardFilteredData || data}
-            numericColumns={effectiveNumericColumns}
-            dateColumns={dateColumns}
-            selectedNumeric={selectedNumeric}
-            selectedDate={selectedDate}
-          />
-        ) : dashboardView === 'advanced' ? (
-          <AdvancedDashboard
-            data={data}
-            filteredData={dashboardFilteredData}
-            selectedNumeric={selectedNumeric}
-            selectedCategorical={selectedCategorical}
-            selectedDate={selectedDate}
-            onChartFilter={handleChartFilter}
-            chartFilter={chartFilter}
-            categoricalColumns={categoricalColumns}
-            numericColumns={effectiveNumericColumns}
-            dateColumns={dateColumns}
-          />
-        ) : dashboardView === 'custom' ? (
-          <AdvancedDashboardGrid
-            data={data}
-            filteredData={dashboardFilteredData}
-            selectedNumeric={selectedNumeric}
-            selectedCategorical={selectedCategorical}
-            selectedDate={selectedDate}
-            onChartFilter={handleChartFilter}
-            chartFilter={chartFilter}
-            categoricalColumns={categoricalColumns}
-            numericColumns={effectiveNumericColumns}
-            dateColumns={dateColumns}
-          />
-        ) : (
-          <DashboardCharts
-            data={data}
-            filteredData={dashboardFilteredData}
-            selectedNumeric={selectedNumeric}
-            selectedCategorical={selectedCategorical}
-            selectedDate={selectedDate}
-            onChartFilter={handleChartFilter}
-            chartFilter={chartFilter}
-            onDateRangeFilter={handleDateRangeFilter}
-            onSubawardDrilldown={openSubawardsForRecipient}
-          />
-        )}
+          {/* Charts Section */}
+          {dashboardView === 'data' ? (
+            <DataMetadataEditor
+              data={data}
+              columns={columns}
+              numericColumns={effectiveNumericColumns}
+              categoricalColumns={categoricalColumns}
+              dateColumns={dateColumns}
+              onMetadataUpdate={handleMetadataUpdate}
+            />
+          ) : dashboardView === 'timeseries' ? (
+            <TimeSeriesReport
+              data={dashboardFilteredData || data}
+              numericColumns={effectiveNumericColumns}
+              dateColumns={dateColumns}
+              selectedNumeric={selectedNumeric}
+              selectedDate={selectedDate}
+            />
+          ) : dashboardView === 'advanced' ? (
+            <AdvancedDashboard
+              data={data}
+              filteredData={dashboardFilteredData}
+              selectedNumeric={selectedNumeric}
+              selectedCategorical={selectedCategorical}
+              selectedDate={selectedDate}
+              onChartFilter={handleChartFilter}
+              chartFilter={chartFilter}
+              categoricalColumns={categoricalColumns}
+              numericColumns={effectiveNumericColumns}
+              dateColumns={dateColumns}
+            />
+          ) : dashboardView === 'custom' ? (
+            <AdvancedDashboardGrid
+              data={data}
+              filteredData={dashboardFilteredData}
+              selectedNumeric={selectedNumeric}
+              selectedCategorical={selectedCategorical}
+              selectedDate={selectedDate}
+              onChartFilter={handleChartFilter}
+              chartFilter={chartFilter}
+              categoricalColumns={categoricalColumns}
+              numericColumns={effectiveNumericColumns}
+              dateColumns={dateColumns}
+            />
+          ) : (
+            <DashboardCharts
+              data={data}
+              filteredData={dashboardFilteredData}
+              selectedNumeric={selectedNumeric}
+              selectedCategorical={selectedCategorical}
+              selectedDate={selectedDate}
+              onChartFilter={handleChartFilter}
+              chartFilter={chartFilter}
+              onDateRangeFilter={handleDateRangeFilter}
+              onSubawardDrilldown={openSubawardsForRecipient}
+            />
+          )}
+        </div>
 
         {renderOpportunityListPanel()}
 

@@ -100,6 +100,7 @@ export const KNOWN_DATASETS_FIELDS = {
     { name: 'title', type: 'string' },
     { name: 'solicitationNumber', type: 'string' },
     { name: 'postedDate', type: 'date' },
+    { name: 'updatedDate', type: 'date' },
     { name: 'responseDeadLine', type: 'date' },
     { name: 'type', type: 'string' },
     { name: 'baseType', type: 'string' },

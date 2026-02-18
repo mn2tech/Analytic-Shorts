@@ -1,8 +1,10 @@
 import { Routes, Route, Outlet, useLocation, Navigate, useParams } from 'react-router-dom'
 import { useEffect } from 'react'
 import { AuthProvider } from './contexts/AuthContext'
+import { PortraitModeProvider } from './contexts/PortraitModeContext'
 import ProtectedRoute from './components/ProtectedRoute'
 import BrandWatermark from './components/BrandWatermark'
+import PortraitFrame from './components/PortraitFrame'
 import AppLayout from './layouts/AppLayout'
 import Home from './pages/Home'
 import Login from './pages/Login'
@@ -49,96 +51,100 @@ function PageViewTracker() {
 
 function App() {
   return (
-    <AuthProvider>
-      <PageViewTracker />
-      <Routes>
-        {/* Routes WITHOUT layout (no sidebar): login, signup, public share, app view. SharedDashboard stays minimal. */}
-        <Route path="/login" element={<Login />} />
-        <Route path="/signup" element={<Signup />} />
-        <Route path="/dashboard/shared/:shareId" element={<SharedDashboard />} />
-        <Route path="/apps/:id" element={<StudioAppView />} />
-        <Route path="/apps/:id/:pageId" element={<StudioAppView />} />
-        <Route path="/ai-visual-builder" element={<Navigate to="/studio" replace />} />
+    <PortraitModeProvider>
+      <AuthProvider>
+        <PortraitFrame>
+          <PageViewTracker />
+          <Routes>
+            {/* Routes WITHOUT layout (no sidebar): login, signup, public share, app view. SharedDashboard stays minimal. */}
+            <Route path="/login" element={<Login />} />
+            <Route path="/signup" element={<Signup />} />
+            <Route path="/dashboard/shared/:shareId" element={<SharedDashboard />} />
+            <Route path="/apps/:id" element={<StudioAppView />} />
+            <Route path="/apps/:id/:pageId" element={<StudioAppView />} />
+            <Route path="/ai-visual-builder" element={<Navigate to="/studio" replace />} />
 
-        {/* Routes WITH layout (sidebar + Navbar + Footer) */}
-        <Route element={<AppLayout />}>
-          <Route path="/" element={<Home />} />
-          <Route path="/pricing" element={<Pricing />} />
-          <Route path="/help" element={<Help />} />
-          <Route path="/privacy" element={<Privacy />} />
-          <Route path="/terms" element={<Terms />} />
-          <Route
-            path="/admin/analytics"
-            element={
-              <ProtectedRoute>
-                <AdminAnalytics />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/dashboards"
-            element={
-              <ProtectedRoute>
-                <MyDashboards />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/dashboard"
-            element={
-              <ProtectedRoute>
-                <Dashboard />
-              </ProtectedRoute>
-            }
-          />
-          <Route path="/studio" element={<Outlet />}>
-            <Route index element={<StudioIndexRedirect />} />
-            <Route
-              path="app/:id"
-              element={
-                <ProtectedRoute>
-                  <NavigateToStudioWithOpen />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="chat"
-              element={
-                <ProtectedRoute>
-                  <AiVisualBuilderStudio />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="data"
-              element={
-                <ProtectedRoute>
-                  <AiVisualBuilderStudio />
-                </ProtectedRoute>
-              }
-            />
-            <Route path="build" element={<Navigate to="/studio/preview" replace />} />
-            <Route
-              path="preview"
-              element={
-                <ProtectedRoute>
-                  <AiVisualBuilderStudio />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path=":dashboardId"
-              element={
-                <ProtectedRoute>
-                  <StudioDashboard />
-                </ProtectedRoute>
-              }
-            />
-          </Route>
-        </Route>
-      </Routes>
-      <BrandWatermark />
-    </AuthProvider>
+            {/* Routes WITH layout (sidebar + Navbar + Footer) */}
+            <Route element={<AppLayout />}>
+              <Route path="/" element={<Home />} />
+              <Route path="/pricing" element={<Pricing />} />
+              <Route path="/help" element={<Help />} />
+              <Route path="/privacy" element={<Privacy />} />
+              <Route path="/terms" element={<Terms />} />
+              <Route
+                path="/admin/analytics"
+                element={
+                  <ProtectedRoute>
+                    <AdminAnalytics />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/dashboards"
+                element={
+                  <ProtectedRoute>
+                    <MyDashboards />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/dashboard"
+                element={
+                  <ProtectedRoute>
+                    <Dashboard />
+                  </ProtectedRoute>
+                }
+              />
+              <Route path="/studio" element={<Outlet />}>
+                <Route index element={<StudioIndexRedirect />} />
+                <Route
+                  path="app/:id"
+                  element={
+                    <ProtectedRoute>
+                      <NavigateToStudioWithOpen />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="chat"
+                  element={
+                    <ProtectedRoute>
+                      <AiVisualBuilderStudio />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="data"
+                  element={
+                    <ProtectedRoute>
+                      <AiVisualBuilderStudio />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route path="build" element={<Navigate to="/studio/preview" replace />} />
+                <Route
+                  path="preview"
+                  element={
+                    <ProtectedRoute>
+                      <AiVisualBuilderStudio />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path=":dashboardId"
+                  element={
+                    <ProtectedRoute>
+                      <StudioDashboard />
+                    </ProtectedRoute>
+                  }
+                />
+              </Route>
+            </Route>
+          </Routes>
+          <BrandWatermark />
+        </PortraitFrame>
+      </AuthProvider>
+    </PortraitModeProvider>
   )
 }
 

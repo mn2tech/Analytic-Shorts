@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { usePortraitMode } from '../contexts/PortraitModeContext'
 
 function Navbar({ onOpenSidebar }) {
   const { user, userProfile, signOut } = useAuth()
+  const { enabled: portraitEnabled, toggle: togglePortrait } = usePortraitMode()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const menuRef = useRef(null)
 
@@ -40,7 +42,7 @@ function Navbar({ onOpenSidebar }) {
             <button
               type="button"
               onClick={onOpenSidebar}
-              className="lg:hidden shrink-0 p-2 -ml-2 rounded-lg hover:bg-gray-100 text-gray-600"
+              className={`${portraitEnabled ? '' : 'lg:hidden'} shrink-0 p-2 -ml-2 rounded-lg hover:bg-gray-100 text-gray-600`}
               aria-label="Open menu"
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -56,6 +58,27 @@ function Navbar({ onOpenSidebar }) {
           </Link>
           <div className="flex-1 min-w-0" />
           <div className="flex items-center space-x-4 shrink-0">
+            <button
+              type="button"
+              onClick={togglePortrait}
+              className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                portraitEnabled
+                  ? 'bg-slate-900 text-white shadow-md hover:bg-slate-800'
+                  : 'bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-200'
+              }`}
+              title={portraitEnabled ? 'Exit 9:16 portrait mode' : 'Enter 9:16 portrait mode'}
+              aria-pressed={portraitEnabled}
+            >
+              <span className="inline-block w-5 h-5 rounded border-2 border-current flex items-center justify-center text-[10px] font-bold" aria-hidden>
+                9:16
+              </span>
+              <span>{portraitEnabled ? 'Exit 9:16' : '9:16 Mode'}</span>
+            </button>
+            {portraitEnabled && (
+              <span className="hidden sm:inline-flex items-center text-[10px] font-semibold text-slate-600 bg-slate-100 rounded-full px-2 py-0.5" aria-label="Portrait mode on">
+                Portrait
+              </span>
+            )}
             <Link
               to="/help"
               className="text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium transition-colors"
