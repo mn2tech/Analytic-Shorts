@@ -3,6 +3,7 @@ const cors = require('cors')
 const multer = require('multer')
 const path = require('path')
 const fs = require('fs')
+const rateLimit = require('express-rate-limit')
 // Load .env from backend directory so it works when started from project root or backend/
 const envPath = path.join(__dirname, '.env')
 require('dotenv').config({ path: envPath })
@@ -33,6 +34,11 @@ const PORT = process.env.PORT || 5000
 
 // Middleware
 // CORS configuration - allow all origins (can be restricted in production)
+if (String(process.env.NODE_ENV || '').toLowerCase() === 'production') {
+  // Trust reverse proxy (ALB/nginx) so req.ip and rate limiting work correctly.
+  app.set('trust proxy', 1)
+}
+
 const corsOptions = {
   origin: function (origin, callback) {
     // Allow requests with no origin (mobile apps, Postman, etc.)
@@ -73,6 +79,55 @@ const corsOptions = {
 app.use(cors(corsOptions))
 // Webhook route must be before JSON parsing (Stripe needs raw body)
 app.use('/api/subscription/webhook', express.raw({ type: 'application/json' }), webhookRoutes)
+
+// Rate limiting (protect against abuse and runaway clients)
+const jsonRateLimit = ({ windowMs, limit, message }) =>
+  rateLimit({
+    windowMs,
+    limit,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Rate limit exceeded', message },
+    handler: (req, res, next, options) => {
+      res.status(options.statusCode).json(options.message)
+    },
+  })
+
+// General traffic limiter (high ceiling)
+app.use(
+  jsonRateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 2000,
+    message: 'Too many requests. Please slow down and try again shortly.',
+  })
+)
+
+// Stricter limiters for expensive endpoints
+app.use(
+  '/api/upload',
+  jsonRateLimit({
+    windowMs: 60 * 60 * 1000,
+    limit: 30,
+    message: 'Too many uploads. Please wait and try again.',
+  })
+)
+app.use(
+  '/api/ai',
+  jsonRateLimit({
+    windowMs: 60 * 60 * 1000,
+    limit: 120,
+    message: 'Too many AI requests. Please wait a bit and try again.',
+  })
+)
+app.use(
+  '/api/example/samgov',
+  jsonRateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 600,
+    message: 'Too many SAM.gov requests. Please wait and try again.',
+  })
+)
+
 app.use(express.json({ limit: '500mb' })) // Increase JSON body size limit for large files (supports Enterprise plan up to 500MB)
 app.use(express.urlencoded({ extended: true, limit: '500mb' })) // Increase URL-encoded body size limit (supports Enterprise plan up to 500MB)
 
