@@ -3,7 +3,7 @@ const multer = require('multer')
 const path = require('path')
 const fs = require('fs')
 const Papa = require('papaparse')
-const XLSX = require('xlsx')
+const ExcelJS = require('exceljs')
 const { detectColumnTypes, processData } = require('../controllers/dataProcessor')
 const { inferNumericColumnsAndConvert } = require('../utils/numericInference')
 const { validateData } = require('../controllers/dataValidator')
@@ -52,6 +52,64 @@ function numericColumnsFromTypedValues(data, columns) {
     }
     if (foundNumber) out.push(col)
   }
+  return out
+}
+
+function dedupeHeaders(headers) {
+  const seen = new Map()
+  return headers.map((h, idx) => {
+    const base = String(h || '').trim() || `Column ${idx + 1}`
+    const count = (seen.get(base) || 0) + 1
+    seen.set(base, count)
+    return count === 1 ? base : `${base} (${count})`
+  })
+}
+
+function normalizeExcelCellValue(v) {
+  if (v === null || v === undefined) return ''
+  if (v instanceof Date) return v.toISOString()
+  if (typeof v === 'object') {
+    // ExcelJS may return rich objects: { text, hyperlink }, { formula, result }, { richText: [...] }
+    if (typeof v.text === 'string') return v.text
+    if (typeof v.hyperlink === 'string') return v.text || v.hyperlink
+    if (Object.prototype.hasOwnProperty.call(v, 'result')) return normalizeExcelCellValue(v.result)
+    if (Array.isArray(v.richText)) return v.richText.map((r) => r?.text || '').join('')
+    try {
+      return JSON.stringify(v)
+    } catch (_) {
+      return String(v)
+    }
+  }
+  return String(v)
+}
+
+async function parseXlsxWithExcelJS(filePath) {
+  const workbook = new ExcelJS.Workbook()
+  // ExcelJS supports .xlsx. (We intentionally do not support legacy .xls here.)
+  await workbook.xlsx.readFile(filePath)
+  const worksheet = workbook.worksheets?.[0]
+  if (!worksheet) return []
+
+  // Read headers from first row
+  const headerRow = worksheet.getRow(1)
+  const rawHeaders = []
+  const maxCol = Math.max(worksheet.columnCount || 0, (headerRow?.cellCount || 0))
+  for (let c = 1; c <= maxCol; c++) {
+    rawHeaders.push(normalizeExcelCellValue(headerRow.getCell(c).value))
+  }
+  const headers = dedupeHeaders(rawHeaders)
+
+  const out = []
+  worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+    if (rowNumber === 1) return
+    const obj = {}
+    for (let c = 1; c <= headers.length; c++) {
+      const key = headers[c - 1]
+      const cell = row.getCell(c)
+      obj[key] = normalizeExcelCellValue(cell?.value)
+    }
+    out.push(obj)
+  })
   return out
 }
 
@@ -137,15 +195,14 @@ const upload = multer({
   fileFilter: (req, file, cb) => {
     const allowedTypes = [
       'text/csv',
-      'application/vnd.ms-excel',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     ]
     const ext = path.extname(file.originalname).toLowerCase()
     
-    if (allowedTypes.includes(file.mimetype) || ext === '.csv' || ext === '.xlsx' || ext === '.xls') {
+    if (allowedTypes.includes(file.mimetype) || ext === '.csv' || ext === '.xlsx') {
       cb(null, true)
     } else {
-      cb(new Error('Only CSV and Excel files are allowed'))
+      cb(new Error('Only CSV and .xlsx Excel files are allowed'))
     }
   },
 })
@@ -226,13 +283,16 @@ router.post('/', getUserFromToken, upload.single('file'), checkUploadLimitWithTi
       const fileContent = fs.readFileSync(filePath, 'utf-8')
       const parsed = parseCsvWithFallback(fileContent)
       rawData = unpackSingleColumnCsvLines(parsed.data) || parsed.data
-    } else if (fileExt === '.xlsx' || fileExt === '.xls') {
-      const workbook = XLSX.readFile(filePath)
-      const sheetName = workbook.SheetNames[0]
-      const worksheet = workbook.Sheets[sheetName]
-      rawData = XLSX.utils.sheet_to_json(worksheet, { defval: '' })
+    } else if (fileExt === '.xlsx') {
+      rawData = await parseXlsxWithExcelJS(filePath)
       rawData = maybeReparseSingleColumnCsvFromXlsx(rawData)
       rawData = unpackSingleColumnCsvLines(rawData) || rawData
+    } else if (fileExt === '.xls') {
+      fs.unlinkSync(filePath) // Clean up
+      return res.status(400).json({
+        error: 'Unsupported Excel format',
+        message: 'Legacy .xls files are not supported. Please re-save as .xlsx and try again.'
+      })
     } else {
       fs.unlinkSync(filePath) // Clean up
       return res.status(400).json({ error: 'Unsupported file format' })
