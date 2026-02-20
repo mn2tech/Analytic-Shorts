@@ -4012,15 +4012,6 @@ function Dashboard() {
             <div className="p-5 flex flex-wrap items-center gap-3">
               {!isRecordingScreen ? (
                 <>
-                  <label className="flex items-center gap-2 text-sm text-gray-700">
-                    <input
-                      type="checkbox"
-                      checked={captureShorts916}
-                      onChange={(e) => setCaptureShorts916(e.target.checked)}
-                      disabled={!data}
-                    />
-                    9:16 Shorts
-                  </label>
                   <button
                     type="button"
                     onClick={handleStartScreenRecord}
@@ -4295,15 +4286,6 @@ function Dashboard() {
               <>
                 {!isRecordingScreen ? (
                   <>
-                    <label className="flex items-center gap-1.5 text-sm text-gray-700">
-                      <input
-                        type="checkbox"
-                        checked={captureShorts916}
-                        onChange={(e) => setCaptureShorts916(e.target.checked)}
-                        disabled={!data}
-                      />
-                      9:16 Shorts
-                    </label>
                     <button
                       type="button"
                       onClick={handleStartScreenRecord}
