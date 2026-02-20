@@ -221,6 +221,51 @@ export function analyzeDataAndSuggestWidgets(data, numericColumns, categoricalCo
     }
   }
 
+  // Contract / SAM.gov: state column present -> suggest contract map
+  const stateCol = categoricalColumns?.find(col => col.toLowerCase() === 'state')
+  const isContractData = stateCol && (
+    categoricalColumns?.some(col => /noticeId|organization|solicitation/i.test(col)) ||
+    numericColumns?.some(col => /award_amount|opportunity_count/i.test(col))
+  )
+  if (isContractData && stateCol) {
+    suggestedWidgets.push('contract-map')
+    widgetConfigs['contract-map'] = {
+      title: 'Contracts by State',
+      selectedCategorical: stateCol,
+      selectedNumeric: numericColumns?.find(col => /award_amount|opportunity_count|amount/i.test(col)) || numericCol
+    }
+  }
+
+  // Maritime AIS: prioritize traffic over time, top vessels by MMSI, loitering (sog < 1)
+  const isAISData = numericColumns?.some(col =>
+    ['sog', 'cog', 'lat', 'lon'].includes(col.toLowerCase())
+  ) && categoricalColumns?.some(col =>
+    ['mmsi', 'vessel_type'].includes(col.toLowerCase())
+  ) && dateColumns?.some(col => /timestamp|date|time/i.test(col))
+
+  if (isAISData && hasDate && hasNumeric) {
+    const sogCol = numericColumns?.find(c => c.toLowerCase() === 'sog') || numericCol
+    const mmsiCol = categoricalColumns?.find(c => c.toLowerCase() === 'mmsi') || categoricalCol
+    const timeCol = dateColumns?.find(c => /timestamp|date|time/i.test(c)) || dateCol
+    if (widgetConfigs['line-chart']) {
+      widgetConfigs['line-chart'].title = 'Traffic volume over time'
+      widgetConfigs['line-chart'].selectedDate = timeCol
+    }
+    if (widgetConfigs['bar-chart'] && mmsiCol) {
+      widgetConfigs['bar-chart'].title = 'Top active vessels (by MMSI)'
+      widgetConfigs['bar-chart'].selectedCategorical = mmsiCol
+    }
+    if (sogCol && widgetConfigs['numeric-range-filter']) {
+      widgetConfigs['numeric-range-filter'] = {
+        ...widgetConfigs['numeric-range-filter'],
+        title: 'Suspicious loitering (sog < 1)',
+        selectedNumeric: sogCol,
+        min: 0,
+        max: 1
+      }
+    }
+  }
+
   // 3. Donut Chart - if we have categorical + numeric
   if (hasCategorical && hasNumeric) {
     suggestedWidgets.push('donut-chart')
@@ -323,7 +368,9 @@ export function generateDynamicLayouts(widgetIds) {
     'budget-insights': { w: 4, h: 6 },
     'category-filter': { w: 3, h: 3 },
     'date-range-filter': { w: 3, h: 3 },
-    'numeric-range-filter': { w: 3, h: 3 }
+    'numeric-range-filter': { w: 3, h: 3 },
+    'contract-map': { w: 6, h: 5 },
+    'usaspending-insights': { w: 4, h: 6 }
   }
 
   const createLayout = (breakpoint, cols) => {

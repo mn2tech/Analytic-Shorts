@@ -9,6 +9,7 @@ import HealthInsightsWidget from './widgets/HealthInsightsWidget'
 import SalesInsightsWidget from './widgets/SalesInsightsWidget'
 import USASpendingInsightsWidget from './widgets/USASpendingInsightsWidget'
 import { parseNumericValue } from '../utils/numberUtils'
+import { getFieldTooltip } from '../utils/fieldGlossary'
 
 const COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444', '#6366f1', '#14b8a6', '#f97316', '#06b6d4']
 
@@ -184,6 +185,11 @@ function AdvancedDashboard({ data, filteredData, selectedNumeric, selectedCatego
     }
   }
 
+  // Tooltip for chart labels (e.g. COG, SOG, baseType) – show when hovering over the field name
+  const numericTooltip = getFieldTooltip(selectedNumeric)
+  const categoricalTooltip = getFieldTooltip(selectedCategorical)
+  const dateTooltip = getFieldTooltip(selectedDate)
+
   const handleChartClick = (chartType, chartData, chartTitle) => {
     // Convert chart data back to original row format for insights
     let dataForInsights = []
@@ -271,8 +277,14 @@ function AdvancedDashboard({ data, filteredData, selectedNumeric, selectedCatego
         {/* Chart 1: Line Chart */}
         <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200 relative group">
           <div className="flex justify-between items-center mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">
-              {selectedNumeric || 'Value'} Over Time
+            <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-1.5">
+              <span title={numericTooltip || undefined} className={numericTooltip ? 'cursor-help border-b border-dotted border-gray-400' : ''}>
+                {selectedNumeric || 'Value'}
+              </span>
+              Over Time
+              {numericTooltip && (
+                <span className="text-gray-400 text-sm" title={numericTooltip} aria-label="Meaning">ⓘ</span>
+              )}
             </h3>
             {lineData.length > 0 && (
               <button
@@ -353,8 +365,14 @@ function AdvancedDashboard({ data, filteredData, selectedNumeric, selectedCatego
         {/* Chart 2: Sunburst/Donut with Legend */}
         <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200 relative group">
           <div className="flex justify-between items-center mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">
-              Distribution by {selectedCategorical || 'Category'}
+            <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-1.5">
+              Distribution by{' '}
+              <span title={categoricalTooltip || undefined} className={categoricalTooltip ? 'cursor-help border-b border-dotted border-gray-400' : ''}>
+                {selectedCategorical || 'Category'}
+              </span>
+              {categoricalTooltip && (
+                <span className="text-gray-400 text-sm" title={categoricalTooltip} aria-label="Meaning">ⓘ</span>
+              )}
             </h3>
             {donutData.length > 0 && (
               <button
@@ -499,8 +517,14 @@ function AdvancedDashboard({ data, filteredData, selectedNumeric, selectedCatego
 
         {/* Chart 4: Sunburst Chart */}
         <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">
-            {secondaryCategory ? `${selectedCategorical} → ${secondaryCategory}` : selectedCategorical || 'Hierarchical'} Distribution
+          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-1.5">
+            <span title={categoricalTooltip || undefined} className={categoricalTooltip ? 'cursor-help border-b border-dotted border-gray-400' : ''}>
+              {secondaryCategory ? `${selectedCategorical} → ${secondaryCategory}` : selectedCategorical || 'Hierarchical'}
+            </span>
+            Distribution
+            {categoricalTooltip && (
+              <span className="text-gray-400 text-sm" title={categoricalTooltip} aria-label="Meaning">ⓘ</span>
+            )}
           </h3>
           <div className="h-[300px]">
             <SunburstChart 
@@ -517,8 +541,14 @@ function AdvancedDashboard({ data, filteredData, selectedNumeric, selectedCatego
         {/* Chart 5: Bar Chart */}
         <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200 relative group">
           <div className="flex justify-between items-center mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">
-              {selectedCategorical || 'Category'} Comparison
+            <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-1.5">
+              <span title={categoricalTooltip || undefined} className={categoricalTooltip ? 'cursor-help border-b border-dotted border-gray-400' : ''}>
+                {selectedCategorical || 'Category'}
+              </span>
+              Comparison
+              {categoricalTooltip && (
+                <span className="text-gray-400 text-sm" title={categoricalTooltip} aria-label="Meaning">ⓘ</span>
+              )}
             </h3>
             <div className="flex items-center gap-2">
               {barData.length > 0 && (

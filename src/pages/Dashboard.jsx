@@ -11,6 +11,7 @@ import AIInsights from '../components/AIInsights'
 import ForecastChart from '../components/ForecastChart'
 import DataMetadataEditor from '../components/DataMetadataEditor'
 import TimeSeriesReport from '../components/TimeSeriesReport'
+import ContractMapWidget, { getStateAbbr } from '../components/widgets/ContractMapWidget'
 import DateRangeSlider from '../components/DateRangeSlider'
 import SubawardDrilldownModal from '../components/SubawardDrilldownModal'
 import UpgradePrompt from '../components/UpgradePrompt'
@@ -108,7 +109,38 @@ function Dashboard() {
   })
   const [agencySearch, setAgencySearch] = useState('')
   const [opportunityKeyword, setOpportunityKeyword] = useState('')
+  const [opportunityDateRangeDays, setOpportunityDateRangeDays] = useState(30) // 7, 30, or 364 (last year)
+  const [searchByIntent, setSearchByIntent] = useState(true)
+  const [intentKeywords, setIntentKeywords] = useState([])
   const [selectedOpportunityNoticeType, setSelectedOpportunityNoticeType] = useState('')
+  // Favorites: Set of IDs (for quick lookup) + array of full rows (so Favorites view shows them regardless of filters)
+  const idFromRow = (x) => String(x?.noticeId || x?.uiLink || `${x?.title || ''}-${x?.solicitationNumber || ''}`)
+  const [opportunityFavorites, setOpportunityFavorites] = useState(() => {
+    try {
+      const raw = localStorage.getItem('nm2-opportunity-favorites')
+      if (!raw) return new Set()
+      const data = JSON.parse(raw)
+      const ids = Array.isArray(data)
+        ? data.map((x) => (typeof x === 'string' ? x : idFromRow(x)))
+        : (data?.ids ?? (Array.isArray(data?.rows) ? data.rows.map(idFromRow) : []))
+      return new Set(Array.isArray(ids) ? ids : [])
+    } catch {
+      return new Set()
+    }
+  })
+  const [opportunityFavoriteRows, setOpportunityFavoriteRows] = useState(() => {
+    try {
+      const raw = localStorage.getItem('nm2-opportunity-favorites')
+      if (!raw) return []
+      const data = JSON.parse(raw)
+      const rows = data?.rows ?? (Array.isArray(data) ? data.filter((x) => typeof x === 'object' && x !== null) : [])
+      return Array.isArray(rows) ? rows.map((x) => ({ ...x })) : []
+    } catch {
+      return []
+    }
+  })
+  const [opportunityViewFilter, setOpportunityViewFilter] = useState('all') // 'all' | 'favorites'
+  const [selectedOpportunityOrg, setSelectedOpportunityOrg] = useState('') // when set, list shows only this org (used when a base type is selected)
   const deferredOpportunityKeyword = useDeferredValue(opportunityKeyword)
   const [apiKeywordOpportunityRows, setApiKeywordOpportunityRows] = useState([])
   const [apiKeywordLoading, setApiKeywordLoading] = useState(false)
@@ -127,6 +159,7 @@ function Dashboard() {
   const guideResizeRef = useRef({ startX: 0, startY: 0, baseRect: null })
   const shortVideoCancelRef = useRef(false)
   const shortVideoAbortRef = useRef(null)
+  const opportunityDateRangePrevRef = useRef(opportunityDateRangeDays)
   const MAX_CATEGORY_TABS = 12
   const MAX_METRIC_TABS = 10
 
@@ -914,8 +947,20 @@ function Dashboard() {
       : [...baseData]
     
     // Apply chart filter if exists
-    if (chartFilter.type === 'category' && selectedCategorical) {
-      result = result.filter((row) => row[selectedCategorical] === chartFilter.value)
+    if (chartFilter.type === 'category') {
+      const filterVal = chartFilter.value
+      const stateCol = columns?.find((c) => String(c).toLowerCase() === 'state')
+      const isStateAbbr = filterVal && String(filterVal).length === 2 && getStateAbbr(filterVal) === filterVal
+      const useStateCol = stateCol && (selectedCategorical === 'state' || isStateAbbr)
+      const filterCol = useStateCol ? stateCol : selectedCategorical
+      if (filterCol) {
+        if (filterCol === stateCol) {
+          const filterAbbr = getStateAbbr(filterVal)
+          result = result.filter((row) => getStateAbbr(row[filterCol]) === filterAbbr)
+        } else {
+          result = result.filter((row) => row[filterCol] === filterVal)
+        }
+      }
     } else if (chartFilter.type === 'date' && selectedDate) {
       result = result.filter((row) => {
         const rowDate = new Date(row[selectedDate])
@@ -925,7 +970,7 @@ function Dashboard() {
     }
     
     return result
-  }, [chartFilter, selectedCategorical, selectedDate])
+  }, [chartFilter, selectedCategorical, selectedDate, columns])
 
   const handleFilterChange = (filters, filtered) => {
     // Use requestAnimationFrame to make filtering non-blocking
@@ -965,6 +1010,11 @@ function Dashboard() {
 
   const handleChartFilter = (filter) => {
     setChartFilter(filter)
+    // When pie is "by organization" (base type selected), sync pie slice click to org filter for the list
+    if (isOpportunityDataset && selectedOpportunityNoticeType) {
+      if (filter?.type === 'category' && filter?.value) setSelectedOpportunityOrg(filter.value)
+      else setSelectedOpportunityOrg('')
+    }
   }
 
   const openSubawardsForRecipient = useCallback((recipientName) => {
@@ -1027,6 +1077,24 @@ function Dashboard() {
       colSet.has('legalBusinessName') &&
       colSet.has('registrationStatus')
     )
+  }, [columns])
+
+  const showMapTab = useMemo(() => {
+    return (columns || []).some((c) => String(c).toLowerCase() === 'state')
+  }, [columns])
+
+  // Maritime/vessel data: has lat + lon and at least one vessel field (sog, cog, mmsi, vessel_type)
+  const vesselMapConfig = useMemo(() => {
+    const cols = (columns || []).map((c) => String(c))
+    const lower = (c) => c.toLowerCase()
+    const hasLat = cols.some((c) => lower(c) === 'lat' || lower(c) === 'latitude')
+    const hasLon = cols.some((c) => lower(c) === 'lon' || lower(c) === 'longitude')
+    const vesselFields = ['sog', 'cog', 'mmsi', 'vessel_type']
+    const hasVesselField = vesselFields.some((f) => cols.some((c) => lower(c) === f))
+    if (!hasLat || !hasLon || !hasVesselField) return { show: false, latCol: 'lat', lonCol: 'lon' }
+    const latCol = cols.find((c) => lower(c) === 'lat') || cols.find((c) => lower(c) === 'latitude') || 'lat'
+    const lonCol = cols.find((c) => lower(c) === 'lon') || cols.find((c) => lower(c) === 'longitude') || 'lon'
+    return { show: true, latCol, lonCol }
   }, [columns])
 
   const samgovDateQuickOptions = useMemo(() => {
@@ -1134,45 +1202,169 @@ function Dashboard() {
 
     const now = new Date()
     const from = new Date(now)
-    // Keep within SAM.gov API 1-year date-window requirement.
-    from.setDate(from.getDate() - 364)
+    const days = Math.min(Math.max(Number(opportunityDateRangeDays) || 30, 1), 364)
+    from.setDate(from.getDate() - days)
 
     const controller = new AbortController()
     setApiKeywordLoading(true)
     setApiKeywordError('')
+    setIntentKeywords([])
 
-    apiClient.get('/api/example/samgov/live', {
-      params: {
-        title: q,
-        postedFrom: formatMmDdYyyy(from),
-        postedTo: formatMmDdYyyy(now),
-        // Keep keyword fetch bounded so SAM responds faster under load.
-        limit: 300,
-      },
-      timeout: 30000,
-      signal: controller.signal,
-    })
-      .then((res) => {
-        const rows = Array.isArray(res?.data?.data) ? res.data.data : []
-        setApiKeywordOpportunityRows(rows)
+    const baseParams = {
+      postedFrom: formatMmDdYyyy(from),
+      postedTo: formatMmDdYyyy(now),
+      limit: 200,
+    }
+
+    const fetchByIntent = async () => {
+      const intentRes = await apiClient.get('/api/example/samgov/expand-intent', {
+        params: { q },
+        timeout: 15000,
+        signal: controller.signal,
       })
-      .catch((err) => {
-        if (controller.signal.aborted) return
-        const status = err?.response?.status
-        if (status === 404) {
-          setApiKeywordOpportunityRows([])
-          setApiKeywordError('')
-          return
+      const keywords = Array.isArray(intentRes?.data?.keywords) ? intentRes.data.keywords : [q]
+      if (controller.signal.aborted) return
+      setIntentKeywords(keywords)
+      const results = await Promise.all(
+        keywords.map((kw) =>
+          apiClient.get('/api/example/samgov/live', {
+            params: { ...baseParams, title: kw },
+            timeout: 30000,
+            signal: controller.signal,
+          }).then((r) => Array.isArray(r?.data?.data) ? r.data.data : []).catch(() => [])
+        )
+      )
+      if (controller.signal.aborted) return
+      const seen = new Set()
+      const merged = []
+      for (const rows of results) {
+        for (const row of rows) {
+          const id = row.noticeId || row.uiLink || row.title
+          if (id && !seen.has(id)) {
+            seen.add(id)
+            merged.push(row)
+          }
         }
-        setApiKeywordOpportunityRows([])
-        setApiKeywordError(err?.response?.data?.message || err?.message || 'Keyword search API failed')
+      }
+      setApiKeywordOpportunityRows(merged)
+    }
+
+    const fetchByKeyword = () =>
+      apiClient.get('/api/example/samgov/live', {
+        params: { ...baseParams, title: q },
+        timeout: 30000,
+        signal: controller.signal,
       })
-      .finally(() => {
-        if (!controller.signal.aborted) setApiKeywordLoading(false)
-      })
+        .then((res) => {
+          const rows = Array.isArray(res?.data?.data) ? res.data.data : []
+          setApiKeywordOpportunityRows(rows)
+        })
+        .catch((err) => {
+          if (controller.signal.aborted) return
+          const status = err?.response?.status
+          if (status === 404) {
+            setApiKeywordOpportunityRows([])
+            setApiKeywordError('')
+            return
+          }
+          setApiKeywordOpportunityRows([])
+          setApiKeywordError(err?.response?.data?.message || err?.message || 'Keyword search API failed')
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setApiKeywordLoading(false)
+        })
+
+    if (searchByIntent) {
+      fetchByIntent()
+        .catch(async (err) => {
+          if (controller.signal.aborted) return
+          setApiKeywordError(err?.response?.data?.message || err?.message || 'Intent search failed. Falling back to keyword.')
+          await fetchByKeyword()
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setApiKeywordLoading(false)
+        })
+    } else {
+      fetchByKeyword()
+    }
 
     return () => controller.abort()
-  }, [deferredOpportunityKeyword, isOpportunityDataset])
+  }, [deferredOpportunityKeyword, isOpportunityDataset, searchByIntent, opportunityDateRangeDays])
+
+  // When user changes "Posted in" (7/30/364 days), refetch main opportunity data so the table reflects the selected range.
+  useEffect(() => {
+    if (!isOpportunityDataset || !data?.length) return
+    if (opportunityDateRangePrevRef.current === opportunityDateRangeDays) return
+    opportunityDateRangePrevRef.current = opportunityDateRangeDays
+
+    const formatMmDdYyyy = (d) => {
+      const mm = String(d.getMonth() + 1).padStart(2, '0')
+      const dd = String(d.getDate()).padStart(2, '0')
+      const yyyy = String(d.getFullYear())
+      return `${mm}/${dd}/${yyyy}`
+    }
+    const now = new Date()
+    const from = new Date(now)
+    const days = Math.min(Math.max(Number(opportunityDateRangeDays) || 30, 1), 364)
+    from.setDate(from.getDate() - days)
+    const postedFrom = formatMmDdYyyy(from)
+    const postedTo = formatMmDdYyyy(now)
+
+    const controller = new AbortController()
+    apiClient
+      .get('/api/example/samgov/live', {
+        params: { postedFrom, postedTo, limit: 1000 },
+        timeout: 30000,
+        signal: controller.signal,
+      })
+      .then((res) => {
+        const payload = res?.data
+        if (!payload?.data || !Array.isArray(payload.data)) return
+        const displayData = payload.data.length > 10000
+          ? payload.data.filter((_, i) => i % Math.ceil(payload.data.length / 10000) === 0)
+          : payload.data
+        setData(displayData)
+        setFilteredData(displayData)
+        setSidebarFilteredData(displayData)
+        if (payload.columns) setColumns(payload.columns)
+        if (payload.numericColumns) setNumericColumns(payload.numericColumns)
+        if (payload.categoricalColumns) setCategoricalColumns(payload.categoricalColumns)
+        if (payload.dateColumns) setDateColumns(payload.dateColumns)
+      })
+      .catch(() => { /* keep current data on error */ })
+    return () => controller.abort()
+  }, [opportunityDateRangeDays, isOpportunityDataset, data?.length])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('nm2-opportunity-favorites', JSON.stringify({
+        ids: [...opportunityFavorites],
+        rows: opportunityFavoriteRows
+      }))
+    } catch {
+      // ignore quota or parse errors
+    }
+  }, [opportunityFavorites, opportunityFavoriteRows])
+
+  const getOpportunityId = useCallback((row) => {
+    return String(row?.noticeId || row?.uiLink || `${row?.title || ''}-${row?.solicitationNumber || ''}`)
+  }, [])
+
+  const toggleOpportunityFavorite = useCallback((row) => {
+    const id = getOpportunityId(row)
+    setOpportunityFavorites((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+    setOpportunityFavoriteRows((prev) => {
+      if (prev.some((r) => getOpportunityId(r) === id)) return prev.filter((r) => getOpportunityId(r) !== id)
+      return [...prev, { ...row }]
+    })
+  }, [getOpportunityId])
+
+  const isOpportunityFavorite = useCallback((row) => opportunityFavorites.has(getOpportunityId(row)), [opportunityFavorites, getOpportunityId])
 
   const opportunityRows = useMemo(() => {
     const q = String(deferredOpportunityKeyword || '').trim().toLowerCase()
@@ -1321,7 +1513,16 @@ function Dashboard() {
           return { ...row, _matchReason: `Matched keyword: ${genericMatch}` }
         }).filter(Boolean)
 
-    if (!q) return filtered.slice(0, 20)
+    const isStateFilterActive = !!(
+      chartFilter?.type === 'category' &&
+      chartFilter?.value &&
+      String(chartFilter.value).length === 2 &&
+      columns?.find((c) => String(c).toLowerCase() === 'state') &&
+      getStateAbbr(chartFilter.value) === chartFilter.value
+    )
+    const rowLimit = !q ? (isStateFilterActive ? 200 : 20) : (isStateFilterActive ? 200 : 20)
+
+    if (!q) return filtered.slice(0, rowLimit)
 
     const merged = []
     const seen = new Set()
@@ -1334,11 +1535,13 @@ function Dashboard() {
     }
 
     for (const r of filtered) pushUnique(r)
+    const stateAbbrFilter = isStateFilterActive ? chartFilter.value : null
     for (const r of apiKeywordOpportunityRows) {
+      if (stateAbbrFilter && getStateAbbr(r?.state) !== stateAbbrFilter) continue
       pushUnique({ ...r, _matchReason: r?._matchReason || 'Matched via SAM API title search' })
     }
-    return merged.slice(0, 20)
-  }, [allOpportunityRows, deferredOpportunityKeyword, apiKeywordOpportunityRows])
+    return merged.slice(0, rowLimit)
+  }, [allOpportunityRows, deferredOpportunityKeyword, apiKeywordOpportunityRows, chartFilter, columns])
 
   const getOpportunityNoticeType = useCallback((row) => {
     const rawType = String(row?.baseType || row?.type || '').trim()
@@ -1349,6 +1552,37 @@ function Dashboard() {
     return rawType || 'Unknown'
   }, [])
 
+  // Normalize a category filter value (e.g. from "View by Base Type") to our notice type.
+  const normalizeToNoticeType = useCallback((value) => {
+    if (!value || typeof value !== 'string') return ''
+    const t = String(value).trim().toLowerCase()
+    if (t.includes('sources sought') || t.includes('source sought')) return 'Sources Sought'
+    if (t.includes('presolicitation') || t.includes('pre-solicitation')) return 'Presolicitation'
+    if (t.includes('solicitation')) return 'Solicitation'
+    return ''
+  }, [])
+
+  // Default "View by" to Base Type for opportunity dataset so "View by Base Type" appears.
+  useEffect(() => {
+    if (!isOpportunityDataset || !columns?.length) return
+    const catCols = Array.isArray(categoricalColumns) ? categoricalColumns : []
+    if (!catCols.includes('baseType')) return
+    const current = selectedCategorical
+    if (!current || !catCols.includes(current)) setSelectedCategorical('baseType')
+  }, [isOpportunityDataset, columns?.length, categoricalColumns, selectedCategorical])
+
+  // Sync "View by Base Type" (CategoryTabsBar) selection -> selectedOpportunityNoticeType so pie/by-org work.
+  useEffect(() => {
+    if (!isOpportunityDataset) return
+    const isBaseTypeColumn = selectedCategorical === 'baseType' || selectedCategorical === 'type'
+    if (!isBaseTypeColumn) return
+    const noticeType = chartFilter?.type === 'category' && chartFilter?.value
+      ? normalizeToNoticeType(chartFilter.value)
+      : ''
+    setSelectedOpportunityNoticeType((prev) => (prev !== noticeType ? noticeType : prev))
+    if (!noticeType) setSelectedOpportunityOrg('')
+  }, [isOpportunityDataset, selectedCategorical, chartFilter, normalizeToNoticeType])
+
   const getOpportunityNoticeTypeClass = useCallback((label) => {
     const l = String(label || '').toLowerCase()
     if (l === 'solicitation') return 'bg-blue-100 text-blue-800 border border-blue-200'
@@ -1356,6 +1590,29 @@ function Dashboard() {
     if (l === 'sources sought') return 'bg-amber-100 text-amber-800 border border-amber-200'
     return 'bg-gray-100 text-gray-700 border border-gray-200'
   }, [])
+
+  // When a base type is selected, group opportunities by organization for "by agency/org" view.
+  const opportunityByOrganization = useMemo(() => {
+    if (!selectedOpportunityNoticeType || !isOpportunityDataset) return []
+    const typeFiltered = opportunityRows.filter((row) => getOpportunityNoticeType(row) === selectedOpportunityNoticeType)
+    const byOrg = new Map()
+    for (const row of typeFiltered) {
+      const org = String(row?.organization || '').trim() || 'Unknown organization'
+      if (!byOrg.has(org)) byOrg.set(org, [])
+      byOrg.get(org).push(row)
+    }
+    return Array.from(byOrg.entries())
+      .map(([organization, rows]) => ({ organization, count: rows.length, rows }))
+      .sort((a, b) => b.count - a.count)
+  }, [selectedOpportunityNoticeType, isOpportunityDataset, opportunityRows, getOpportunityNoticeType])
+
+  // When a base type is selected, pie chart should show breakdown by organization for that type only.
+  const opportunityPieDataByOrg = useMemo(() => {
+    if (!isOpportunityDataset || !selectedOpportunityNoticeType) return null
+    const rows = Array.isArray(dashboardFilteredData) ? dashboardFilteredData : []
+    const filtered = rows.filter((row) => getOpportunityNoticeType(row) === selectedOpportunityNoticeType)
+    return filtered.length > 0 ? filtered : null
+  }, [isOpportunityDataset, selectedOpportunityNoticeType, dashboardFilteredData, getOpportunityNoticeType])
 
   const renderOpportunityListPanel = () => {
     if (!isOpportunityDataset || allOpportunityRows.length === 0) return null
@@ -1367,9 +1624,30 @@ function Dashboard() {
       else if (type === 'Sources Sought') acc.sourcesSought += 1
       return acc
     }, { solicitation: 0, presolicitation: 0, sourcesSought: 0 })
-    const visibleOpportunityRows = selectedOpportunityNoticeType
-      ? opportunityRows.filter((row) => getOpportunityNoticeType(row) === selectedOpportunityNoticeType)
-      : opportunityRows
+    let visibleOpportunityRows
+    if (opportunityViewFilter === 'favorites') {
+      // Favorites: show saved rows regardless of date/keyword/base type filters; merge in any from current data for legacy IDs
+      const savedIds = new Set(opportunityFavoriteRows.map((r) => getOpportunityId(r)))
+      const fromCurrent = (Array.isArray(allOpportunityRows) ? allOpportunityRows : []).filter(
+        (row) => opportunityFavorites.has(getOpportunityId(row)) && !savedIds.has(getOpportunityId(row))
+      )
+      visibleOpportunityRows = [...opportunityFavoriteRows, ...fromCurrent]
+      const postedKey = columns?.find((c) => String(c).toLowerCase() === 'posteddate' || String(c).toLowerCase() === 'posted_date') || 'postedDate'
+      visibleOpportunityRows.sort((a, b) => {
+        const da = a?.[postedKey] ? new Date(a[postedKey]).getTime() : 0
+        const db = b?.[postedKey] ? new Date(b[postedKey]).getTime() : 0
+        return db - da
+      })
+    } else {
+      visibleOpportunityRows = selectedOpportunityNoticeType
+        ? opportunityRows.filter((row) => getOpportunityNoticeType(row) === selectedOpportunityNoticeType)
+        : opportunityRows
+      if (selectedOpportunityOrg) {
+        visibleOpportunityRows = visibleOpportunityRows.filter(
+          (row) => (String(row?.organization || '').trim() || 'Unknown organization') === selectedOpportunityOrg
+        )
+      }
+    }
 
     return (
       <div className="mb-6 bg-white rounded-lg border border-gray-200 shadow-sm">
@@ -1377,15 +1655,25 @@ function Dashboard() {
           <div>
             <h3 className="text-lg font-semibold text-gray-900">Matching Opportunities</h3>
             <p className="text-sm text-gray-600">
-              Showing {visibleOpportunityRows.length} of {allOpportunityRows.length} filtered opportunities
+              Showing {opportunityViewFilter === 'favorites'
+                ? `${visibleOpportunityRows.length} favorites`
+                : `${visibleOpportunityRows.length} of ${allOpportunityRows.length} filtered opportunities`}
+              {chartFilter?.type === 'category' && chartFilter?.value && String(chartFilter.value).length === 2 ? ` in ${chartFilter.value}` : ''}
               {deferredOpportunityKeyword ? ` • API keyword matches: ${apiKeywordOpportunityRows.length}` : ''}
-              {selectedOpportunityNoticeType ? ` • Type: ${selectedOpportunityNoticeType}` : ''}
+              {selectedOpportunityNoticeType ? ` • Base type: ${selectedOpportunityNoticeType}` : ''}
+              {selectedOpportunityOrg ? ` • Org: ${selectedOpportunityOrg}` : ''}
             </p>
             {showKeywordTypeCounts && (
               <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
                 <button
                   type="button"
-                  onClick={() => setSelectedOpportunityNoticeType((prev) => prev === 'Solicitation' ? '' : 'Solicitation')}
+                  onClick={() => {
+                    const next = selectedOpportunityNoticeType === 'Solicitation' ? '' : 'Solicitation'
+                    setSelectedOpportunityNoticeType(next)
+                    if (next) setSelectedOpportunityOrg('')
+                    setChartFilter(next ? { type: 'category', value: next } : null)
+                    if (next && (columns?.includes('baseType') || columns?.includes('type'))) setSelectedCategorical(columns?.includes('baseType') ? 'baseType' : 'type')
+                  }}
                   className={`px-2 py-0.5 rounded-full border ${
                     selectedOpportunityNoticeType === 'Solicitation'
                       ? 'bg-blue-600 text-white border-blue-700'
@@ -1396,7 +1684,13 @@ function Dashboard() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setSelectedOpportunityNoticeType((prev) => prev === 'Presolicitation' ? '' : 'Presolicitation')}
+                  onClick={() => {
+                    const next = selectedOpportunityNoticeType === 'Presolicitation' ? '' : 'Presolicitation'
+                    setSelectedOpportunityNoticeType(next)
+                    if (next) setSelectedOpportunityOrg('')
+                    setChartFilter(next ? { type: 'category', value: next } : null)
+                    if (next && (columns?.includes('baseType') || columns?.includes('type'))) setSelectedCategorical(columns?.includes('baseType') ? 'baseType' : 'type')
+                  }}
                   className={`px-2 py-0.5 rounded-full border ${
                     selectedOpportunityNoticeType === 'Presolicitation'
                       ? 'bg-purple-600 text-white border-purple-700'
@@ -1407,7 +1701,13 @@ function Dashboard() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setSelectedOpportunityNoticeType((prev) => prev === 'Sources Sought' ? '' : 'Sources Sought')}
+                  onClick={() => {
+                    const next = selectedOpportunityNoticeType === 'Sources Sought' ? '' : 'Sources Sought'
+                    setSelectedOpportunityNoticeType(next)
+                    if (next) setSelectedOpportunityOrg('')
+                    setChartFilter(next ? { type: 'category', value: next } : null)
+                    if (next && (columns?.includes('baseType') || columns?.includes('type'))) setSelectedCategorical(columns?.includes('baseType') ? 'baseType' : 'type')
+                  }}
                   className={`px-2 py-0.5 rounded-full border ${
                     selectedOpportunityNoticeType === 'Sources Sought'
                       ? 'bg-amber-600 text-white border-amber-700'
@@ -1419,36 +1719,138 @@ function Dashboard() {
                 {selectedOpportunityNoticeType && (
                   <button
                     type="button"
-                    onClick={() => setSelectedOpportunityNoticeType('')}
+                    onClick={() => {
+                      setSelectedOpportunityNoticeType('')
+                      setSelectedOpportunityOrg('')
+                      setChartFilter(null)
+                    }}
                     className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 border border-gray-300"
                   >
-                    Clear type filter
+                    Clear base type filter
                   </button>
                 )}
               </div>
             )}
+            {selectedOpportunityNoticeType && opportunityByOrganization.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-gray-100">
+                <h4 className="text-xs font-semibold text-gray-700 mb-2">By agency / organization</h4>
+                <div className="flex flex-wrap gap-2">
+                  {selectedOpportunityOrg && (
+                    <button
+                      type="button"
+                      onClick={() => { setSelectedOpportunityOrg(''); setChartFilter(null) }}
+                      className="px-2 py-0.5 text-xs rounded-full bg-gray-200 text-gray-700 hover:bg-gray-300"
+                    >
+                      Clear org filter
+                    </button>
+                  )}
+                  {opportunityByOrganization.slice(0, 20).map(({ organization, count }) => {
+                    const isSelected = selectedOpportunityOrg === organization
+                    const maxCount = Math.max(...opportunityByOrganization.map((o) => o.count), 1)
+                    const pct = Math.max(8, Math.round((count / maxCount) * 100))
+                    return (
+                      <button
+                        key={organization}
+                        type="button"
+                        onClick={() => {
+                          const next = isSelected ? '' : organization
+                          setSelectedOpportunityOrg(next)
+                          setChartFilter(next ? { type: 'category', value: next } : null)
+                        }}
+                        className={`text-left px-2.5 py-1.5 rounded-lg border text-xs transition-colors ${
+                          isSelected
+                            ? 'bg-blue-600 text-white border-blue-700'
+                            : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                        }`}
+                        title={`${count} ${selectedOpportunityNoticeType}(s) • Click to ${isSelected ? 'clear' : 'filter by'} this organization`}
+                      >
+                        <span className="font-medium block truncate max-w-[200px]" title={organization}>{organization}</span>
+                        <span className="text-[10px] opacity-90">{count} opportunities</span>
+                        <div className="mt-1 h-1 w-full rounded bg-gray-200 overflow-hidden">
+                          <div
+                            className={`h-1 rounded ${isSelected ? 'bg-white' : 'bg-blue-500'}`}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+                {opportunityByOrganization.length > 20 && (
+                  <p className="text-[10px] text-gray-500 mt-1">
+                    Showing top 20 of {opportunityByOrganization.length} organizations. Clear base type filter or select an org to see list below.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
-          {chartFilter ? (
-            <span className="text-xs px-2.5 py-1 rounded-full bg-blue-100 text-blue-800 font-medium">
-              {chartFilter.type === 'category' ? `${selectedCategorical}: ${chartFilter.value}` : 'Date filter applied'}
-            </span>
-          ) : (
-            <span className="text-xs px-2.5 py-1 rounded-full bg-gray-100 text-gray-700 font-medium">
-              All filtered opportunities
-            </span>
-          )}
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex rounded-lg border border-gray-200 p-0.5 bg-gray-50">
+              <button
+                type="button"
+                onClick={() => setOpportunityViewFilter('all')}
+                className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${opportunityViewFilter === 'all' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+              >
+                All
+              </button>
+              <button
+                type="button"
+                onClick={() => setOpportunityViewFilter('favorites')}
+                className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors flex items-center gap-1 ${opportunityViewFilter === 'favorites' ? 'bg-white text-amber-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+              >
+                <span aria-hidden>★</span> Favorites {opportunityFavorites.size > 0 ? `(${opportunityFavorites.size})` : ''}
+              </button>
+            </div>
+            {chartFilter ? (
+              <span className="text-xs px-2.5 py-1 rounded-full bg-blue-100 text-blue-800 font-medium">
+                {chartFilter.type === 'category' ? (() => {
+                  const stateCol = columns?.find((c) => String(c).toLowerCase() === 'state')
+                  const isStateFilter = stateCol && chartFilter.value && String(chartFilter.value).length === 2 && getStateAbbr(chartFilter.value) === chartFilter.value
+                  const colLabel = isStateFilter ? stateCol : selectedCategorical
+                  return `${colLabel || 'Filter'}: ${chartFilter.value}`
+                })() : 'Date filter applied'}
+              </span>
+            ) : (
+              <span className="text-xs px-2.5 py-1 rounded-full bg-gray-100 text-gray-700 font-medium">
+                All filtered opportunities
+              </span>
+            )}
+          </div>
         </div>
         <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/60">
-          <label className="block text-xs font-medium text-gray-600 mb-1">
-            Keyword Search
-          </label>
-          <input
-            type="text"
-            value={opportunityKeyword}
-            onChange={(e) => setOpportunityKeyword(e.target.value)}
-            placeholder="Search title, solicitation, organization..."
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
+          <div className="flex items-center gap-3 mb-3">
+            <label className="text-xs font-medium text-gray-600 whitespace-nowrap">
+              Posted in
+            </label>
+            <select
+              value={opportunityDateRangeDays}
+              onChange={(e) => setOpportunityDateRangeDays(Number(e.target.value))}
+              className="px-2.5 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+            >
+              <option value={7}>Last 7 days</option>
+              <option value={30}>Last 30 days</option>
+              <option value={364}>Last year</option>
+            </select>
+          </div>
+          {(() => {
+            const stateCol = columns?.find((c) => String(c).toLowerCase() === 'state')
+            const isStateFilter = chartFilter?.type === 'category' && chartFilter?.value && stateCol && String(chartFilter.value).length === 2 && getStateAbbr(chartFilter.value) === chartFilter.value
+            const stateLabel = chartFilter?.value || ''
+            return (
+              <>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  {isStateFilter ? 'Drill down by keyword' : 'Keyword Search'}
+                </label>
+                <input
+                  type="text"
+                  value={opportunityKeyword}
+                  onChange={(e) => setOpportunityKeyword(e.target.value)}
+                  placeholder={isStateFilter ? `Search within ${stateLabel} (title, org, solicitation…)` : 'Search title, solicitation, organization...'}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </>
+            )
+          })()}
           <div className="mt-2 flex flex-wrap gap-2">
             {predefinedOpportunityKeywords.map((kw) => {
               const active = opportunityKeyword.toLowerCase() === kw.toLowerCase()
@@ -1482,7 +1884,9 @@ function Dashboard() {
         <div className="divide-y divide-gray-100 max-h-[420px] overflow-y-auto">
           {visibleOpportunityRows.length === 0 ? (
             <div className="px-5 py-8 text-sm text-gray-600">
-              No opportunities match this keyword/type in the current filtered set.
+              {opportunityViewFilter === 'favorites'
+                ? 'No favorites yet. Click the star on any opportunity to add it here.'
+                : 'No opportunities match this keyword/type in the current filtered set.'}
             </div>
           ) : visibleOpportunityRows.map((row, idx) => (
             <div key={String(row.noticeId || row.uiLink || idx)} className="px-5 py-4">
@@ -1514,16 +1918,27 @@ function Dashboard() {
                     </p>
                   </div>
                 </div>
-                {row.uiLink && (
-                  <a
-                    href={row.uiLink}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="shrink-0 inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+                <div className="shrink-0 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => toggleOpportunityFavorite(row)}
+                    className={`p-1.5 rounded-lg border transition-colors ${isOpportunityFavorite(row) ? 'bg-amber-50 border-amber-300 text-amber-600 hover:bg-amber-100' : 'bg-gray-50 border-gray-200 text-gray-400 hover:border-amber-200 hover:text-amber-500'}`}
+                    title={isOpportunityFavorite(row) ? 'Remove from favorites' : 'Add to favorites'}
+                    aria-label={isOpportunityFavorite(row) ? 'Remove from favorites' : 'Add to favorites'}
                   >
-                    Open
-                  </a>
-                )}
+                    <span className="text-lg leading-none">{isOpportunityFavorite(row) ? '★' : '☆'}</span>
+                  </button>
+                  {row.uiLink && (
+                    <a
+                      href={row.uiLink}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+                    >
+                      Open
+                    </a>
+                  )}
+                </div>
               </div>
             </div>
           ))}
@@ -3392,6 +3807,17 @@ function Dashboard() {
             />
           ) : (
             <>
+              {showMapTab && (
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden p-4 mb-6" style={{ minHeight: '360px' }}>
+                  <ContractMapWidget
+                    data={dashboardFilteredData || data}
+                    selectedCategorical="state"
+                    selectedNumeric={effectiveNumericColumns?.includes('award_amount') ? 'award_amount' : effectiveNumericColumns?.includes('opportunity_count') ? 'opportunity_count' : null}
+                    chartFilter={chartFilter}
+                    onChartFilter={handleChartFilter}
+                  />
+                </div>
+              )}
               <DashboardCharts
                 data={data}
                 filteredData={dashboardFilteredData}
@@ -3400,6 +3826,13 @@ function Dashboard() {
                 selectedDate={selectedDate}
                 onChartFilter={handleChartFilter}
                 chartFilter={chartFilter}
+                pieFilteredData={opportunityPieDataByOrg}
+                pieDimensionOverride={opportunityPieDataByOrg ? 'organization' : undefined}
+                pieTitleOverride={opportunityPieDataByOrg ? `By organization (${selectedOpportunityNoticeType})` : undefined}
+                showVesselMap={vesselMapConfig.show}
+                vesselMapData={dashboardFilteredData}
+                vesselLatCol={vesselMapConfig.latCol}
+                vesselLonCol={vesselMapConfig.lonCol}
               />
               {/* Metric Cards - Only in simple view */}
               {dashboardView === 'simple' && (
@@ -3948,18 +4381,31 @@ function Dashboard() {
               selectedDate={selectedDate}
             />
           ) : dashboardView === 'advanced' ? (
-            <AdvancedDashboard
-              data={data}
-              filteredData={dashboardFilteredData}
-              selectedNumeric={selectedNumeric}
-              selectedCategorical={selectedCategorical}
-              selectedDate={selectedDate}
-              onChartFilter={handleChartFilter}
-              chartFilter={chartFilter}
-              categoricalColumns={categoricalColumns}
-              numericColumns={effectiveNumericColumns}
-              dateColumns={dateColumns}
-            />
+            <>
+              <details className="mb-6 bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                <summary className="px-4 py-3 cursor-pointer list-none flex items-center gap-2 font-medium text-gray-700 hover:bg-gray-50 select-none">
+                  <span className="text-blue-600" aria-hidden>📖</span>
+                  Dashboard guide – what each view and term means
+                </summary>
+                <div className="px-4 pb-4 pt-1 border-t border-gray-100 text-sm text-gray-600 space-y-3">
+                  <p><strong>Views:</strong> <em>Charts</em> = line + pie + metrics. <em>Advanced</em> = more charts at once (line, donut, bar, sunburst). <em>Custom</em> = your own layout. <em>Time Series</em> = trends over time. <em>Data &amp; Metadata</em> = raw table and column types.</p>
+                  <p><strong>Datasets:</strong> <em>Sales</em> = revenue by product/region. <em>Maritime AIS</em> = vessel positions and speed (SOG, COG). <em>SAM.gov</em> = federal contract opportunities. <em>USA Spending</em> = federal awards.</p>
+                  <p><strong>Hover over field names</strong> (e.g. COG, SOG, base type, organization) in the chart titles above to see what they mean. COG = course over ground (direction in degrees). SOG = speed over ground (knots). MMSI = vessel ID. Base type = Solicitation / Presolicitation / Sources Sought.</p>
+                </div>
+              </details>
+              <AdvancedDashboard
+                data={data}
+                filteredData={dashboardFilteredData}
+                selectedNumeric={selectedNumeric}
+                selectedCategorical={selectedCategorical}
+                selectedDate={selectedDate}
+                onChartFilter={handleChartFilter}
+                chartFilter={chartFilter}
+                categoricalColumns={categoricalColumns}
+                numericColumns={effectiveNumericColumns}
+                dateColumns={dateColumns}
+              />
+            </>
           ) : dashboardView === 'custom' ? (
             <AdvancedDashboardGrid
               data={data}
@@ -3974,17 +4420,37 @@ function Dashboard() {
               dateColumns={dateColumns}
             />
           ) : (
-            <DashboardCharts
-              data={data}
-              filteredData={dashboardFilteredData}
-              selectedNumeric={selectedNumeric}
-              selectedCategorical={selectedCategorical}
-              selectedDate={selectedDate}
-              onChartFilter={handleChartFilter}
-              chartFilter={chartFilter}
-              onDateRangeFilter={handleDateRangeFilter}
-              onSubawardDrilldown={openSubawardsForRecipient}
-            />
+            <>
+              {showMapTab && (
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden p-4 mb-6" style={{ minHeight: '360px' }}>
+                  <ContractMapWidget
+                    data={dashboardFilteredData || data}
+                    selectedCategorical="state"
+                    selectedNumeric={effectiveNumericColumns?.includes('award_amount') ? 'award_amount' : effectiveNumericColumns?.includes('opportunity_count') ? 'opportunity_count' : null}
+                    chartFilter={chartFilter}
+                    onChartFilter={handleChartFilter}
+                  />
+                </div>
+              )}
+              <DashboardCharts
+                data={data}
+                filteredData={dashboardFilteredData}
+                selectedNumeric={selectedNumeric}
+                selectedCategorical={selectedCategorical}
+                selectedDate={selectedDate}
+                onChartFilter={handleChartFilter}
+                chartFilter={chartFilter}
+                onDateRangeFilter={handleDateRangeFilter}
+                onSubawardDrilldown={openSubawardsForRecipient}
+                pieFilteredData={opportunityPieDataByOrg}
+                pieDimensionOverride={opportunityPieDataByOrg ? 'organization' : undefined}
+                pieTitleOverride={opportunityPieDataByOrg ? `By organization (${selectedOpportunityNoticeType})` : undefined}
+                showVesselMap={vesselMapConfig.show}
+                vesselMapData={dashboardFilteredData}
+                vesselLatCol={vesselMapConfig.latCol}
+                vesselLonCol={vesselMapConfig.lonCol}
+              />
+            </>
           )}
         </div>
 

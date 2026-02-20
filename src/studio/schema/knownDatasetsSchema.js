@@ -16,7 +16,8 @@ export const KNOWN_DATASET_IDS = [
   'today-snapshot',
   'revenue-trends',
   'alters-insights',
-  'samgov/live'
+  'samgov/live',
+  'maritime-ais'
 ]
 
 /**
@@ -112,6 +113,15 @@ export const KNOWN_DATASETS_FIELDS = {
     { name: 'state', type: 'string' },
     { name: 'uiLink', type: 'string' },
     { name: 'award_amount', type: 'number' }
+  ],
+  'maritime-ais': [
+    { name: 'timestamp', type: 'date' },
+    { name: 'mmsi', type: 'string' },
+    { name: 'lat', type: 'number' },
+    { name: 'lon', type: 'number' },
+    { name: 'sog', type: 'number' },
+    { name: 'cog', type: 'number' },
+    { name: 'vessel_type', type: 'string' }
   ]
 }
 

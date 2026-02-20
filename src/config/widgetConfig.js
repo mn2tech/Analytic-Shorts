@@ -111,6 +111,16 @@ export const WIDGET_CONFIGS = {
     minH: 4,
     maxW: 6,
     maxH: 10
+  },
+  'contract-map': {
+    id: 'contract-map',
+    title: 'Contracts by State',
+    component: 'contract-map',
+    defaultLayout: { i: 'contract-map', x: 0, y: 14, w: 6, h: 5 },
+    minW: 4,
+    minH: 4,
+    maxW: 8,
+    maxH: 6
   }
 }
 

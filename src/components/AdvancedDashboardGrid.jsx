@@ -279,7 +279,7 @@ function AdvancedDashboardGrid({
       
       // Check if insights widgets are suggested but not in saved layouts
       // If so, add them to the layouts
-      const insightsWidgets = ['budget-insights', 'unemployment-insights', 'health-insights', 'sales-insights', 'usaspending-insights']
+      const insightsWidgets = ['budget-insights', 'unemployment-insights', 'health-insights', 'sales-insights', 'usaspending-insights', 'contract-map']
       
       insightsWidgets.forEach(widgetId => {
         if (dataAnalysis.suggestedWidgets.includes(widgetId)) {
@@ -397,7 +397,7 @@ function AdvancedDashboardGrid({
     if (savedVisibility && typeof savedVisibility === 'object' && !Array.isArray(savedVisibility) && Object.keys(savedVisibility).length > 0) {
       // Ensure insights widgets are visible if they're suggested
       const updatedVisibility = { ...savedVisibility }
-      const insightsWidgets = ['budget-insights', 'unemployment-insights', 'health-insights', 'sales-insights', 'usaspending-insights']
+      const insightsWidgets = ['budget-insights', 'unemployment-insights', 'health-insights', 'sales-insights', 'usaspending-insights', 'contract-map']
       insightsWidgets.forEach(widgetId => {
         if (dataAnalysis.suggestedWidgets.includes(widgetId)) {
           updatedVisibility[widgetId] = true

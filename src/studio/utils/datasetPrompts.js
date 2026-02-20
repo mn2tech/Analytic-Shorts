@@ -83,6 +83,11 @@ export const DATASET_PROMPTS = {
     'One-page exec dashboard: KPIs, trend line (metric over date if you have it), bar chart by category top 10, category dropdown filter.',
     'Concentration view: total and count KPIs, bar chart by category (top 10), pie by second category; add filters.',
     'Performance dashboard: KPI tiles, bar chart by dimension, table of top rows; use your column names for filters.'
+  ],
+  'maritime-ais': [
+    'Traffic volume over time: line chart of AIS message count by timestamp (or by hour/day); use timestamp as date axis.',
+    'Top active vessels (by MMSI): bar chart of message count by mmsi (top 10 or 20); KPI total count.',
+    'Suspicious loitering (sog < 1): filter or highlight vessels with speed over ground (sog) below 1 knot; table or bar chart of mmsi where sog < 1.'
   ]
 }
 

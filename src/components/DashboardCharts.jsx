@@ -4,6 +4,7 @@ import ChartInsights from './ChartInsights'
 import DateRangeSlider from './DateRangeSlider'
 import { parseNumericValue } from '../utils/numberUtils'
 import { usePortraitMode } from '../contexts/PortraitModeContext'
+import VesselMapWidget from './widgets/VesselMapWidget'
 
 const COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444', '#6366f1', '#14b8a6']
 
@@ -19,7 +20,7 @@ const sampleDataForCharts = (data, maxRows = 5000) => {
   return sampled
 }
 
-function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategorical, selectedDate, onChartFilter, chartFilter, onDateRangeFilter, onSubawardDrilldown }) {
+function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategorical, selectedDate, onChartFilter, chartFilter, onDateRangeFilter, onSubawardDrilldown, pieFilteredData, pieDimensionOverride, pieTitleOverride, showVesselMap, vesselMapData, vesselLatCol, vesselLonCol }) {
   const [hoveredSegment, setHoveredSegment] = useState(null)
   const [chartInsights, setChartInsights] = useState(null)
   const [maximized, setMaximized] = useState(null) // { type: 'line' | 'pie', title: string } | null
@@ -88,11 +89,13 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
   
   // IMPORTANT: Pie chart should also respect filtered data (e.g. date slider),
   // otherwise it will look "stuck" while other charts update.
+  // When pieFilteredData is provided (e.g. opportunity base-type filter), use it for the pie only.
   const pieBaseData = useMemo(() => {
+    if (pieFilteredData && Array.isArray(pieFilteredData) && pieFilteredData.length > 0) return pieFilteredData
     const dataToUse = filteredData || data
     if (!Array.isArray(dataToUse) || dataToUse.length === 0) return []
     return dataToUse
-  }, [filteredData, data])
+  }, [pieFilteredData, filteredData, data])
 
   const sampledPieData = useMemo(() => {
     if (!pieBaseData || pieBaseData.length === 0) return []
@@ -123,16 +126,20 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
 
     // Pie charts should be categorical breakdowns. Using a date as a "category"
     // usually creates misleading slices (e.g. summing 5 days -> 600 rooms).
-    const categoryColumn = selectedCategorical
-    if (!categoryColumn || !selectedNumeric) return []
+    // When pieDimensionOverride is set (e.g. "organization" for opportunity base type), use it.
+    const categoryColumn = pieDimensionOverride || selectedCategorical
+    if (!categoryColumn) return []
+    // When showing pie by org for base type, use opportunity_count if no metric selected
+    const metricColumn = selectedNumeric || (pieDimensionOverride ? 'opportunity_count' : null)
+    if (!metricColumn) return []
 
-    const agg = preferredAggregationForMetric(selectedNumeric)
+    const agg = preferredAggregationForMetric(metricColumn)
     const grouped = new Map() // key -> { sum, count }
 
     // Process sampled data instead of full dataset
     sampledPieData.forEach((row) => {
       const key = row?.[categoryColumn] || 'Unknown'
-      const raw = row?.[selectedNumeric]
+      const raw = row?.[metricColumn]
       if (raw === null || raw === undefined || raw === '') return
       const value = parseNumericValue(raw)
       if (!grouped.has(key)) grouped.set(key, { sum: 0, count: 0 })
@@ -150,10 +157,10 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
       .sort((a, b) => b.value - a.value)
       .slice(0, 8)
 
-  }, [sampledPieData, selectedCategorical, selectedNumeric])
+  }, [sampledPieData, pieDimensionOverride, selectedCategorical, selectedNumeric])
 
   const handlePieClick = (data, index) => {
-    const categoryColumn = selectedCategorical
+    const categoryColumn = pieDimensionOverride || selectedCategorical
     if (categoryColumn && data && data.name) {
       const isCurrentlySelected = chartFilter?.type === 'category' && chartFilter?.value === data.name
       if (isCurrentlySelected) {
@@ -179,10 +186,12 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
   const pieData = preparePieChartData
   const pieAgg = useMemo(() => preferredAggregationForMetric(selectedNumeric), [selectedNumeric])
   const pieTitle = useMemo(() => {
+    if (pieTitleOverride) return pieTitleOverride
     if (!selectedCategorical || !selectedNumeric) return 'Breakdown'
     const aggLabel = pieAgg === 'avg' ? 'Average' : 'Total'
-    return `${aggLabel} ${formatFieldLabel(selectedNumeric)} by ${formatFieldLabel(selectedCategorical)}`
-  }, [selectedCategorical, selectedNumeric, pieAgg])
+    const dimLabel = formatFieldLabel(pieDimensionOverride || selectedCategorical)
+    return `${aggLabel} ${formatFieldLabel(selectedNumeric)} by ${dimLabel}`
+  }, [pieTitleOverride, selectedCategorical, selectedNumeric, pieAgg, pieDimensionOverride])
 
   const totalValue = useMemo(() => {
     if (!pieData || pieData.length === 0) return 0
@@ -222,14 +231,17 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
     const maxShare = totalValue > 0
       ? Math.max(...nonZero.map((d) => Number(d.value || 0))) / totalValue
       : 1
-    // Avoid cluttered pies and near-single-slice pies.
-    const isMeaningful = nonZero.length >= 2 && !tooManySlices && maxShare < 0.98
+    // When showing "by organization" for a base type (override), always show the pie if we have data.
+    const isOverridePie = Boolean(pieDimensionOverride)
+    const isMeaningful = isOverridePie
+      ? nonZero.length >= 1 && !tooManySlices
+      : nonZero.length >= 2 && !tooManySlices && maxShare < 0.98
     return { isMeaningful }
-  }, [hasValidPieData, pieData, totalValue])
+  }, [hasValidPieData, pieData, totalValue, pieDimensionOverride])
 
-  const showLineChart = lineQuality.isMeaningful
+  const showLineChart = !showVesselMap && lineQuality.isMeaningful
   const showPieChart = pieQuality.isMeaningful
-  const chartCount = (showLineChart ? 1 : 0) + (showPieChart ? 1 : 0)
+  const chartCount = (showVesselMap ? 1 : showLineChart ? 1 : 0) + (showPieChart ? 1 : 0)
 
   const handleChartClick = (chartType, chartData, chartTitle) => {
     // Convert chart data back to original row format for insights
@@ -316,6 +328,23 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
         chartCount <= 1 ? 'grid-cols-1 max-w-4xl mx-auto' : portraitEnabled ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-2'
       }`}
     >
+      {/* Vessel Map (Maritime lat/lon) - replaces line chart when data has vessel positions */}
+      {showVesselMap && (
+      <div className={`bg-white rounded-lg shadow-sm ${chartCardPadding} border border-gray-200 hover:shadow-md transition-shadow relative group`}>
+        <div className="flex justify-between items-center mb-4">
+          <h3 className={`${chartTitleClass} font-semibold text-gray-900 pr-2 break-words`}>
+            Vessel positions
+          </h3>
+        </div>
+        <VesselMapWidget
+          data={vesselMapData || filteredData || data}
+          latCol={vesselLatCol || 'lat'}
+          lonCol={vesselLonCol || 'lon'}
+          tooltipFields={['mmsi', 'vessel_type', 'sog', 'cog']}
+        />
+      </div>
+      )}
+
       {/* Line Chart */}
       {showLineChart && (
       <div className={`bg-white rounded-lg shadow-sm ${chartCardPadding} border border-gray-200 hover:shadow-md transition-shadow relative group`}>
@@ -481,11 +510,12 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
         </div>
         {hasValidPieData ? (
           <div className={portraitEnabled ? 'flex flex-col gap-4' : 'flex items-center gap-6'}>
-            {/* Chart on left */}
+            {/* Chart on left - fixed width so center label cannot overlap the legend */}
             <div
-              className={`relative w-full ${
-                portraitEnabled ? 'max-w-[360px] mx-auto' : 'flex-1 max-w-[300px]'
+              className={`relative overflow-hidden ${
+                portraitEnabled ? 'w-full max-w-[280px] mx-auto' : 'w-[280px] shrink-0'
               }`}
+              style={portraitEnabled ? undefined : { minHeight: baseChartHeight }}
             >
               <ResponsiveContainer width="100%" height={baseChartHeight}>
                 <PieChart key={`pie-${pieData.length}-${selectedCategorical}`}>
@@ -535,18 +565,18 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
                   />
                 </PieChart>
               </ResponsiveContainer>
-              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                <p className="text-3xl font-bold text-gray-900">
+              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none select-none" aria-hidden="true">
+                <p className="text-2xl font-bold text-gray-900 leading-tight">
                   {(pieAgg === 'avg' ? overallAvgValue : totalValue).toLocaleString()}
                 </p>
-                <p className="text-sm text-gray-600">
+                <p className="text-xs text-gray-600 leading-tight mt-0.5">
                   {pieAgg === 'avg' ? `Avg ${formatFieldLabel(selectedNumeric)}` : `Total ${formatFieldLabel(selectedNumeric)}`}
                 </p>
               </div>
             </div>
-            
-            {/* Legend on right */}
-            <div className={`${portraitEnabled ? 'w-full max-h-[280px] overflow-auto pr-1' : 'flex-1'} space-y-2`}>
+
+            {/* Legend on right - takes remaining space so it never overlaps the chart */}
+            <div className={`${portraitEnabled ? 'w-full max-h-[280px] overflow-auto pr-1' : 'flex-1 min-w-0'} space-y-2`}>
               {pieData.slice(0, 8).map((item, index) => {
                 const percentage = pieAgg === 'sum' && totalValue > 0
                   ? ((item.value / totalValue) * 100).toFixed(1)
@@ -565,16 +595,16 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
                     onMouseLeave={() => setHoveredSegment(null)}
                     onClick={() => handlePieClick({ name: item.name }, index)}
                   >
-                    <div className="flex items-center space-x-2 flex-1">
+                    <div className="flex items-center space-x-2 flex-1 min-w-0">
                       <div 
-                        className={`w-4 h-4 rounded-full transition-all ${
+                        className={`w-4 h-4 shrink-0 rounded-full transition-all ${
                           isHovered ? 'scale-125 shadow-md' : 'group-hover:scale-110'
                         }`}
                         style={{ backgroundColor: COLORS[index % COLORS.length] }}
                       ></div>
-                      <span className={`font-medium transition-colors ${
+                      <span className={`font-medium transition-colors truncate min-w-0 ${
                         isHovered ? 'text-blue-700 font-semibold' : 'text-gray-700'
-                      }`}>{item.name}</span>
+                      }`} title={item.name}>{item.name}</span>
                     </div>
                     <span className={`font-semibold ml-2 transition-colors ${
                       isHovered ? 'text-blue-700' : 'text-gray-900'

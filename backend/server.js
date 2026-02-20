@@ -25,6 +25,7 @@ const sharedRoutes = require('./routes/shared')
 const datalakeRoutes = require('./routes/datalake')
 const ownerSummaryRoutes = require('./routes/ownerSummary')
 const youtubeRoutes = require('./routes/youtube')
+const datasetsRoutes = require('./routes/datasets')
 const accessLogger = require('./middleware/accessLogger')
 
 const app = express()
@@ -96,6 +97,7 @@ app.post('/api/studio/ai-schema/', (req, res, next) => {
 app.use('/api/upload', uploadRoutes)
 app.use('/api/insights', insightsRoutes)
 app.use('/api/example', exampleRoutes)
+app.use('/api/datasets', datasetsRoutes)
 app.use('/api/dashboards', dashboardRoutes)
 app.use('/api/subscription', subscriptionRoutes)
 app.use('/api/analytics', analyticsRoutes)
@@ -171,7 +173,10 @@ app.use((req, res) => {
       'GET /api/example/donations',
       'GET /api/example/medical',
       'GET /api/example/banking',
-      'GET /api/example/yearly-income'
+      'GET /api/example/yearly-income',
+      'GET /api/example/samgov/expand-intent',
+      'GET /api/example/samgov/live',
+      'GET /api/datasets/maritime-ais'
     ]
   })
 })

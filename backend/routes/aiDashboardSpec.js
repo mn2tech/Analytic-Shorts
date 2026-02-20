@@ -101,14 +101,21 @@ async function getDataForDataset(datasetId, req) {
     }
   }
 
-  // Example dataset: in-memory first, then API
+  // Example dataset: in-memory first, then /api/datasets, then /api/example
   const fromExamples = getExampleDatasetData(trimmed)
   if (fromExamples && Array.isArray(fromExamples)) return fromExamples
 
+  const port = process.env.PORT || 5000
+  const baseUrl = `http://localhost:${port}`
+  const encoded = encodeURIComponent(trimmed).replace(/%2F/g, '/')
+
   try {
-    const port = process.env.PORT || 5000
-    const baseUrl = `http://localhost:${port}`
-    const encoded = encodeURIComponent(trimmed).replace(/%2F/g, '/')
+    const dsRes = await axios.get(`${baseUrl}/api/datasets/${encoded}`, { timeout: 10000 })
+    const data = dsRes.data && dsRes.data.data ? dsRes.data.data : Array.isArray(dsRes.data) ? dsRes.data : null
+    if (Array.isArray(data)) return data
+  } catch (_) {}
+
+  try {
     const res = await axios.get(`${baseUrl}/api/example/${encoded}`, { timeout: 10000 })
     const data = res.data && res.data.data ? res.data.data : Array.isArray(res.data) ? res.data : null
     return Array.isArray(data) ? data : null

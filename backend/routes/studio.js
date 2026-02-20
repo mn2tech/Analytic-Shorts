@@ -37,20 +37,24 @@ async function getDatasetData(datasetId) {
       return exampleData
     }
 
-    // If not found in examples, try to fetch from API endpoint
-    // This handles dynamic datasets like unemployment, cdc-health, government-budget, usaspending/live
+    // Try /api/datasets (e.g. maritime-ais) then /api/example
     const port = process.env.PORT || 5000
     const baseUrl = `http://localhost:${port}`
-    // Handle dataset IDs with slashes (e.g., "usaspending/live")
     const encodedDatasetId = encodeURIComponent(datasetId).replace(/%2F/g, '/')
+
+    try {
+      const dsRes = await axios.get(`${baseUrl}/api/datasets/${encodedDatasetId}`, { timeout: 10000 })
+      if (dsRes.data && Array.isArray(dsRes.data.data)) return dsRes.data.data
+    } catch (_) {
+      // not a datasets route, continue to example
+    }
+
     const response = await axios.get(`${baseUrl}/api/example/${encodedDatasetId}`, {
       timeout: 10000
     })
-    
     if (response.data && response.data.data) {
       return response.data.data
     }
-    
     return null
   } catch (error) {
     // If it's a 404, that's okay - dataset just doesn't exist
@@ -262,7 +266,8 @@ const datasetRegistry = {
   'today-snapshot': { type: 'api', endpoint: '/api/example/today-snapshot' },
   'revenue-trends': { type: 'api', endpoint: '/api/example/revenue-trends' },
   'alters-insights': { type: 'api', endpoint: '/api/example/alters-insights' },
-  'samgov/live': { type: 'api', endpoint: '/api/example/samgov/live' }
+  'samgov/live': { type: 'api', endpoint: '/api/example/samgov/live' },
+  'maritime-ais': { type: 'api', endpoint: '/api/datasets/maritime-ais' }
 }
 
 // Helper to parse numeric values

@@ -5,8 +5,10 @@ const path = require('path')
 const Papa = require('papaparse')
 const { createClient } = require('@supabase/supabase-js')
 const { detectColumnTypes, processData } = require('../controllers/dataProcessor')
+const OpenAI = require('openai')
 
 const router = express.Router()
+const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null
 
 const supabaseUrl = process.env.SUPABASE_URL
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -60,6 +62,12 @@ const API_REPORTS = [
     name: 'SAM.gov Entity Data Bank (Live)',
     description: 'Live SAM.gov entity registration records (UEI, status, NAICS, location)',
     endpoint: '/api/example/samgov/databank?size=10'
+  },
+  {
+    id: 'maritime-ais',
+    name: 'Maritime AIS Demo',
+    description: 'Mock AIS vessel data: timestamp, MMSI, lat/lon, speed (sog), course (cog), vessel type. Use for traffic, top vessels, loitering (sog < 1).',
+    endpoint: '/api/datasets/maritime-ais'
   },
 ]
 
@@ -1210,6 +1218,87 @@ function getSamgovUpdatedDateValue(o) {
   )
 }
 
+/**
+ * Intent-based search: turn natural language into SAM.gov search keywords.
+ * GET /api/example/samgov/expand-intent?q=we need cloud migration and analytics
+ * Returns { keywords: ["cloud migration", "analytics", ...] }
+ */
+router.get('/samgov/expand-intent', async (req, res) => {
+  try {
+    const q = (req.query.q || req.query.query || '').toString().trim()
+    if (!q) {
+      return res.status(400).json({ error: 'Missing q (query) parameter' })
+    }
+    if (!openai) {
+      return res.status(503).json({
+        error: 'Intent expansion not configured',
+        message: 'Set OPENAI_API_KEY in backend .env to use intent-based search.',
+        fallback: [q],
+      })
+    }
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        {
+          role: 'system',
+          content: `You are a search assistant for SAM.gov (US federal contract opportunities). Given a user's natural-language intent or goal, output 4 to 8 short search keywords or phrases that would find relevant contract opportunities. Output only a JSON array of strings, no other text. Example: ["cloud migration", "infrastructure modernization", "AWS", "data analytics"]`,
+        },
+        {
+          role: 'user',
+          content: q,
+        },
+      ],
+      temperature: 0.3,
+      max_tokens: 256,
+    })
+    const text = completion?.choices?.[0]?.message?.content?.trim() || '[]'
+    let keywords = [q]
+    try {
+      const parsed = JSON.parse(text)
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        keywords = parsed.filter((k) => typeof k === 'string' && k.trim().length > 0).map((k) => k.trim()).slice(0, 8)
+        if (keywords.length === 0) keywords = [q]
+      }
+    } catch (_) {
+      keywords = [q]
+    }
+    return res.json({ keywords, query: q })
+  } catch (err) {
+    console.error('[samgov/expand-intent]', err?.message || err)
+    const q = (req.query.q || req.query.query || '').toString().trim()
+    return res.status(500).json({
+      error: 'Intent expansion failed',
+      message: err?.message || 'Try using a keyword instead.',
+      fallback: q ? [q] : [],
+    })
+  }
+})
+
+// Normalize SAM.gov state to a string (API sometimes returns { code: "VA" } or similar)
+function normalizeSamgovState(val) {
+  if (val == null) return ''
+  if (typeof val === 'string') return val.trim()
+  if (typeof val === 'object') {
+    const code = val.code ?? val.stateCode ?? val.state ?? val.abbreviation ?? val.name
+    return typeof code === 'string' ? code.trim() : ''
+  }
+  return String(val).trim()
+}
+
+// Shorten SAM.gov organization for display (fullParentPathName is a long hierarchy e.g. "DEPT OF DEFENSE.DLA AVIATION.DLA AVIATION PHILADELPHIA")
+function shortenSamgovOrganization(fullParentPathName, organizationName) {
+  const full = (fullParentPathName || organizationName || '').toString().trim()
+  if (!full) return ''
+  // Take last segment: SAM.gov uses "." or " > " as separators (e.g. "DOD.DLA.DLA AVIATION PHILADELPHIA")
+  const segments = full.split(/\.\s*|\s*>\s*/).map((s) => s.trim()).filter(Boolean)
+  const lastSegment = segments.length > 1 ? segments[segments.length - 1] : full
+  const alt = (organizationName || '').toString().trim()
+  // Use the shortest non-empty option so we always show a short name when the path has multiple segments
+  const candidates = [lastSegment, alt, full].filter(Boolean)
+  const best = candidates.reduce((a, b) => (a.length <= b.length ? a : b))
+  return best || full
+}
+
 router.get('/samgov/live', async (req, res) => {
   try {
     const apiKey = (process.env.SAM_GOV_API_KEY || req.query.api_key || '').toString().trim()
@@ -1297,7 +1386,8 @@ router.get('/samgov/live', async (req, res) => {
     }
 
     let transformedData = items.map((o) => {
-      const popState = o?.placeOfPerformance?.state?.code || o?.placeOfPerformance?.state || o?.officeAddress?.state || ''
+      const rawState = o?.placeOfPerformance?.state ?? o?.officeAddress?.state ?? ''
+      const popState = normalizeSamgovState(rawState)
       const awardAmountRaw = o?.award?.amount
       const award_amount = awardAmountRaw == null || awardAmountRaw === '' ? null : Number(String(awardAmountRaw).replace(/[$,\s]/g, ''))
       return {
@@ -1310,7 +1400,7 @@ router.get('/samgov/live', async (req, res) => {
         type: o.type || '',
         baseType: o.baseType || '',
         active: o.active || '',
-        organization: o.fullParentPathName || o.organizationName || '',
+        organization: shortenSamgovOrganization(o.fullParentPathName, o.organizationName),
         naicsCode: o.naicsCode || '',
         classificationCode: o.classificationCode || '',
         setAside: o.setAside || o.typeOfSetAsideDescription || '',
@@ -1463,7 +1553,7 @@ router.get('/samgov/agency-report', async (req, res) => {
 
     const grouped = new Map()
     for (const o of items) {
-      const agency = (o?.fullParentPathName || o?.organizationName || 'Unknown Agency').toString().trim() || 'Unknown Agency'
+      const agency = shortenSamgovOrganization(o?.fullParentPathName, o?.organizationName) || 'Unknown Agency'
       const awardAmountRaw = o?.award?.amount
       const awardAmount = awardAmountRaw == null || awardAmountRaw === '' ? null : Number(String(awardAmountRaw).replace(/[$,\s]/g, ''))
 
@@ -1609,7 +1699,8 @@ router.get('/samgov/agency-opportunities', async (req, res) => {
     }
 
     let transformedData = filteredItems.map((o) => {
-      const popState = o?.placeOfPerformance?.state?.code || o?.placeOfPerformance?.state || o?.officeAddress?.state || ''
+      const rawState = o?.placeOfPerformance?.state ?? o?.officeAddress?.state ?? ''
+      const popState = normalizeSamgovState(rawState)
       const awardAmountRaw = o?.award?.amount
       const award_amount = awardAmountRaw == null || awardAmountRaw === '' ? null : Number(String(awardAmountRaw).replace(/[$,\s]/g, ''))
       return {
@@ -1622,7 +1713,7 @@ router.get('/samgov/agency-opportunities', async (req, res) => {
         type: o.type || '',
         baseType: o.baseType || '',
         active: o.active || '',
-        organization: o.fullParentPathName || o.organizationName || '',
+        organization: shortenSamgovOrganization(o.fullParentPathName, o.organizationName),
         naicsCode: o.naicsCode || '',
         classificationCode: o.classificationCode || '',
         setAside: o.setAside || o.typeOfSetAsideDescription || '',

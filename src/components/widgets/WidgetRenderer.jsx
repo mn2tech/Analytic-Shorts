@@ -9,6 +9,7 @@ import UnemploymentInsightsWidget from './UnemploymentInsightsWidget'
 import HealthInsightsWidget from './HealthInsightsWidget'
 import SalesInsightsWidget from './SalesInsightsWidget'
 import USASpendingInsightsWidget from './USASpendingInsightsWidget'
+import ContractMapWidget from './ContractMapWidget'
 
 /**
  * WidgetRenderer - Renders the appropriate widget component based on widget ID
@@ -128,7 +129,16 @@ function WidgetRenderer({
           selectedDate={selectedDate}
         />
       )
-    
+    case 'contract-map':
+      return (
+        <ContractMapWidget
+          data={filteredData || data}
+          selectedCategorical={selectedCategorical}
+          selectedNumeric={selectedNumeric}
+          chartFilter={chartFilter}
+          onChartFilter={onChartFilter}
+        />
+      )
     default:
       return (
         <div className="h-full flex items-center justify-center text-gray-400 text-sm">
