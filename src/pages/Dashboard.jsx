@@ -1217,12 +1217,26 @@ function Dashboard() {
     }
 
     const fetchByIntent = async () => {
-      const intentRes = await apiClient.get('/api/example/samgov/expand-intent', {
-        params: { q },
-        timeout: 15000,
-        signal: controller.signal,
-      })
-      const keywords = Array.isArray(intentRes?.data?.keywords) ? intentRes.data.keywords : [q]
+      let keywords = [q]
+      try {
+        const intentRes = await apiClient.get('/api/example/samgov/expand-intent', {
+          params: { q },
+          timeout: 15000,
+          signal: controller.signal,
+        })
+        const k = Array.isArray(intentRes?.data?.keywords) ? intentRes.data.keywords : [q]
+        keywords = Array.isArray(k) && k.length ? k : [q]
+      } catch (err) {
+        if (controller.signal.aborted) return
+        const status = err?.response?.status
+        // If the intent-expansion route isn't available (404) or AI isn't configured (503),
+        // silently fall back to the raw keyword without showing a warning.
+        if (status === 404 || status === 503) {
+          keywords = [q]
+        } else {
+          throw err
+        }
+      }
       if (controller.signal.aborted) return
       setIntentKeywords(keywords)
       const results = await Promise.all(
