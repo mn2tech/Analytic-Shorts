@@ -24,7 +24,7 @@ export const getUserProfile = async (userId) => {
   }
 }
 
-// Create or update user profile
+// Create or update user profile (name, avatar_url, company, role for LinkedIn-style feed)
 export const updateUserProfile = async (userId, profileData) => {
   try {
     const { data, error } = await supabase
@@ -32,7 +32,8 @@ export const updateUserProfile = async (userId, profileData) => {
       .upsert({
         id: userId,
         user_id: userId,
-        name: profileData.name,
+        name: profileData.name ?? undefined,
+        avatar_url: profileData.avatar_url !== undefined ? profileData.avatar_url : undefined,
         company: profileData.company,
         role: profileData.role,
         preferences: profileData.preferences || {},

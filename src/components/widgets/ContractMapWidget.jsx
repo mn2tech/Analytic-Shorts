@@ -31,8 +31,10 @@ const STATE_TO_FIPS = {
 const US_STATES_TOPOLOGY = 'https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json'
 
 const FIPS_TO_ABBR = {}
+const FIPS_TO_FULL_NAME = {}
 Object.entries(STATE_TO_FIPS).forEach(([abbrOrName, fips]) => {
   if (abbrOrName.length === 2) FIPS_TO_ABBR[fips] = abbrOrName
+  else FIPS_TO_FULL_NAME[fips] = abbrOrName
 })
 
 // Approximate state centroids [longitude, latitude] for label placement (no d3-geo dependency)
@@ -55,6 +57,15 @@ const STATE_CENTROIDS = {
 function normalizeState(value) {
   if (value == null || value === '') return null
   const s = String(value).trim()
+  if (!s) return null
+  // Already a FIPS code (numeric or zero-padded string)?
+  const asNum = Number(s)
+  if (!Number.isNaN(asNum) && asNum >= 1 && asNum <= 56) {
+    const two = asNum <= 9 ? `0${asNum}` : String(asNum)
+    if (FIPS_TO_ABBR[two]) return two
+  }
+  const twoDigit = s.length === 1 ? s.padStart(2, '0') : s
+  if (s.length <= 2 && FIPS_TO_ABBR[twoDigit]) return twoDigit
   const fips = STATE_TO_FIPS[s] || STATE_TO_FIPS[s.toUpperCase()]
   return fips || null
 }
@@ -64,6 +75,16 @@ export function getStateAbbr(value) {
   if (value == null || value === '') return ''
   const fips = normalizeState(value)
   return (fips && FIPS_TO_ABBR[fips]) || String(value).trim()
+}
+
+/** Display label with full name and abbreviation, e.g. "Maryland (MD)". Export for use in filters and lists. */
+export function getStateDisplayLabel(value) {
+  if (value == null || value === '') return ''
+  const fips = normalizeState(value)
+  const abbr = (fips && FIPS_TO_ABBR[fips]) || (String(value).trim().length === 2 ? String(value).trim() : '')
+  const fullName = fips && FIPS_TO_FULL_NAME[fips]
+  if (fullName && abbr) return `${fullName} (${abbr})`
+  return abbr || fullName || String(value).trim()
 }
 
 function ContractMapWidget({
@@ -103,6 +124,15 @@ function ContractMapWidget({
   }, [])
 
   const { byFips, maxVal, total } = useMemo(() => {
+    const norm = (str) => String(str || '').toLowerCase().replace(/\s+/g, '_').trim()
+    const getRowVal = (row, key) => {
+      if (row == null || key == null) return undefined
+      if (Object.prototype.hasOwnProperty.call(row, key)) return row[key]
+      const keyNorm = norm(key)
+      if (!keyNorm) return undefined
+      const found = Object.keys(row).find((c) => norm(c) === keyNorm)
+      return found != null ? row[found] : undefined
+    }
     const map = new Map()
     let totalCount = 0
     let sumNumeric = 0
@@ -111,19 +141,20 @@ function ContractMapWidget({
     const numCol = selectedNumeric
 
     for (const row of rows) {
-      const stateVal = row[catCol]
+      const stateVal = getRowVal(row, catCol)
       const fips = normalizeState(stateVal)
       if (!fips) continue
       const prev = map.get(fips) || { count: 0, sum: 0 }
       prev.count += 1
-      if (numCol != null && row[numCol] != null) {
-        const n = Number(row[numCol])
+      const numVal = numCol != null ? getRowVal(row, numCol) : null
+      if (numVal != null) {
+        const n = Number(numVal)
         if (!isNaN(n)) prev.sum += n
       }
       map.set(fips, prev)
       totalCount += 1
-      if (numCol != null && row[numCol] != null) {
-        const n = Number(row[numCol])
+      if (numVal != null) {
+        const n = Number(numVal)
         if (!isNaN(n)) sumNumeric += n
       }
     }
@@ -217,7 +248,9 @@ function ContractMapWidget({
                     const fips = fipsToId(geo.id)
                     const rec = byFips.get(fips)
                     const val = rec ? (selectedNumeric ? rec.sum : rec.count) : 0
-                    const stateName = geo.properties?.name ?? FIPS_TO_ABBR[fips] ?? fips
+                    const abbr = FIPS_TO_ABBR[fips]
+                    const fullName = FIPS_TO_FULL_NAME[fips] ?? geo.properties?.name
+                    const stateName = fullName && abbr ? `${fullName} (${abbr})` : (abbr ?? fullName ?? fips)
                     return (
                       <Geography
                         key={geo.rsmKey}
@@ -241,28 +274,47 @@ function ContractMapWidget({
                     const rec = byFips.get(fips)
                     const val = rec ? (selectedNumeric ? rec.sum : rec.count) : 0
                     const coord = STATE_CENTROIDS[fips]
+                    const abbr = FIPS_TO_ABBR[fips]
                     if (!coord) return null
                     const hasData = !!rec
+                    const textStyle = {
+                      fontFamily: 'system-ui, sans-serif',
+                      fontSize: '13px',
+                      fontWeight: 700,
+                      fill: hasData ? '#ffffff' : '#e5e7eb',
+                      pointerEvents: 'none',
+                      userSelect: 'none'
+                    }
                     return (
                       <Marker key={`label-${geo.rsmKey}`} coordinates={coord}>
-                        <text
-                          textAnchor="middle"
-                          dominantBaseline="middle"
-                          stroke={hasData ? '#1e3a8a' : '#374151'}
-                          strokeWidth={1.5}
-                          strokeLinejoin="round"
-                          paintOrder="stroke fill"
-                          style={{
-                            fontFamily: 'system-ui, sans-serif',
-                            fontSize: '13px',
-                            fontWeight: 700,
-                            fill: hasData ? '#ffffff' : '#e5e7eb',
-                            pointerEvents: 'none',
-                            userSelect: 'none'
-                          }}
-                        >
-                          {formatVal(val)}
-                        </text>
+                        <g>
+                          {abbr && (
+                            <text
+                              textAnchor="middle"
+                              dominantBaseline="middle"
+                              dy={-10}
+                              stroke={hasData ? '#1e3a8a' : '#374151'}
+                              strokeWidth={1.5}
+                              strokeLinejoin="round"
+                              paintOrder="stroke fill"
+                              style={{ ...textStyle, fontSize: '11px', fontWeight: 600 }}
+                            >
+                              {abbr}
+                            </text>
+                          )}
+                          <text
+                            textAnchor="middle"
+                            dominantBaseline="middle"
+                            dy={abbr ? 10 : 0}
+                            stroke={hasData ? '#1e3a8a' : '#374151'}
+                            strokeWidth={1.5}
+                            strokeLinejoin="round"
+                            paintOrder="stroke fill"
+                            style={textStyle}
+                          >
+                            {formatVal(val)}
+                          </text>
+                        </g>
                       </Marker>
                     )
                   })}

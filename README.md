@@ -86,6 +86,34 @@ The application will be available at:
 - Frontend: http://localhost:3000
 - Backend API: http://localhost:5000
 
+### Social Analytics (Feed & Go Live)
+
+The **Social Analytics** MVP adds a shareable feed of dashboard posts, likes/comments/saves, and **Go Live** collaboration via embedded Jitsi.
+
+**Required environment variables:**
+
+- **Backend** (`backend/.env`): `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (never expose the service role key to the frontend).
+- **Frontend** (e.g. `.env.local`): `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and optionally `VITE_API_URL` if the API is on another origin. For **Go Live** without the 5‑minute cutoff, set either **`VITE_JITSI_8X8_APP_ID`** (full AppID from 8x8, e.g. `vpaas-magic-cookie-5e91fefe740644f2c8f3840e535a64ea6`) or **`VITE_JITSI_8X8_TENANT`** (tenant ID only) from your [8x8.vc](https://8x8.vc) app.
+
+**Database:** Run the Social Analytics migration so the backend can read/write posts, likes, comments, saves, follows, and live sessions:
+
+1. Open the [Supabase SQL Editor](https://supabase.com/dashboard/project/_/sql) for your project.
+2. Copy the contents of `supabase/migrations/20250220000000_social_analytics.sql` and run it.
+
+**Routes:**
+
+- **Frontend:** `/feed` (feed), `/post/:id` (single post + dashboard viewer), `/publish/:dashboardId` (publish form), `/live/:sessionId` (split-screen: dashboard + Jitsi).
+- **Backend:** `POST /api/posts`, `GET /api/feed?scope=public|mine|all|saved|trending`, `GET /api/posts/:id`, `POST /api/posts/:id/like`, `POST /api/posts/:id/save`, `GET/POST /api/posts/:id/comments`, `POST /api/posts/:id/live-sessions`, `GET /api/live/:sessionId`, `POST /api/live/:sessionId/end`.
+
+**How to test end-to-end:**
+
+1. Ensure Supabase Auth is configured and you can sign up / log in.
+2. Create or open a dashboard (e.g. from **My Dashboards** or Studio), then click **Publish** to create a post from that dashboard.
+3. Open **Feed** to see the post; like, comment, or save (when logged in).
+4. Click **Go Live** on a post to create or join a Jitsi session; use **Copy link** on the Live page to invite others. Only the host can **End session**.
+
+**Video cutting off after ~5 minutes:** The default server (`meet.jit.si`) may disconnect after a short time. **Recommended:** use **8x8 JaaS** (free tier, e.g. 30 users): create an app at [8x8.vc](https://8x8.vc), then set **`VITE_JITSI_8X8_APP_ID`** (full AppID, e.g. `vpaas-magic-cookie-5e91fefe740644f2c8f3840e535a64ea6`) or **`VITE_JITSI_8X8_TENANT`** (tenant ID only) in the frontend env. The app will then use 8x8 for Go Live with no 5‑minute limit. Alternatively, set **`VITE_JITSI_DOMAIN`** to a self‑hosted Jitsi server and load its `external_api.js` in `index.html`.
+
 ## 📁 Project Structure
 
 ```

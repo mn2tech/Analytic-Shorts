@@ -15,7 +15,7 @@ function Login() {
   // Redirect if already logged in
   useEffect(() => {
     if (user) {
-      navigate('/dashboard')
+      navigate('/feed')
     }
   }, [user, navigate])
 
@@ -40,14 +40,12 @@ function Login() {
         const { data: { session } } = await supabase.auth.getSession()
         if (session) {
           // Session is set, auth state should update automatically via onAuthStateChange
-          // Navigate to dashboard - ProtectedRoute will allow access once user state updates
-          navigate('/dashboard')
+          navigate('/feed')
         } else {
           setError('Session not created. Please try again.')
         }
       } else if (result && result.session) {
-        // Session exists, navigate to dashboard
-        navigate('/dashboard')
+        navigate('/feed')
       } else {
         setError('Sign in failed. Please check your credentials and try again.')
       }

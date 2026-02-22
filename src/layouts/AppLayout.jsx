@@ -8,8 +8,10 @@ import { createPortal } from 'react-dom'
 import { Outlet, NavLink, Link, useLocation, useNavigate } from 'react-router-dom'
 import Navbar from '../components/Navbar'
 import Footer from '../components/Footer'
+import ChatBot from '../components/ChatBot'
 import { useAuth } from '../contexts/AuthContext'
 import { usePortraitMode } from '../contexts/PortraitModeContext'
+import { getUnreadCount } from '../services/messagesService'
 import apiClient from '../config/api'
 
 const STORAGE_KEY_FULLSCREEN = 'aiVisualBuilder_fullScreen'
@@ -38,6 +40,9 @@ const PATH_TO_LABEL = [
   { path: '/admin/analytics', label: 'Admin' },
   { path: '/help', label: 'Help' },
   { path: '/pricing', label: 'Pricing' },
+  { path: '/feed', label: 'Feed' },
+  { path: '/messages', label: 'Messages' },
+  { path: '/careers', label: 'Careers' },
   { path: '/dashboard', label: 'Dashboard Viewer' },
   { path: '/dashboards', label: 'My Dashboards' },
   { path: '/studio', label: 'Studio' },
@@ -144,7 +149,29 @@ function AppLayout() {
   const [quickActionLoading, setQuickActionLoading] = useState(null) // 'samgov' | null
   const [hasAdminAccess, setHasAdminAccess] = useState(false)
   const [samgovQuickActionVisible, setSamgovQuickActionVisible] = useState(true)
+  const [messagesUnreadCount, setMessagesUnreadCount] = useState(0)
   const showAdminLink = isAdminByProfile(user, userProfile) || isDefaultAdminEmail(user) || hasAdminAccess
+
+  const refreshMessagesUnread = useCallback(() => {
+    if (!user) return
+    getUnreadCount().then(setMessagesUnreadCount).catch(() => setMessagesUnreadCount(0))
+  }, [user])
+
+  useEffect(() => {
+    if (!user) {
+      setMessagesUnreadCount(0)
+      return
+    }
+    refreshMessagesUnread()
+    const onChanged = () => refreshMessagesUnread()
+    window.addEventListener('messages-unread-changed', onChanged)
+    const onFocus = () => refreshMessagesUnread()
+    window.addEventListener('focus', onFocus)
+    return () => {
+      window.removeEventListener('messages-unread-changed', onChanged)
+      window.removeEventListener('focus', onFocus)
+    }
+  }, [user, refreshMessagesUnread])
 
   const toggleSection = useCallback((key) => {
     setSectionOpen((prev) => {
@@ -192,12 +219,11 @@ function AppLayout() {
       }
 
       try {
-        await apiClient.get('/api/analytics/admin-check', { timeout: 10000 })
-        if (!cancelled) setHasAdminAccess(true)
-      } catch (_) {
-        if (!cancelled && !isAdminByProfile(user, userProfile)) {
-          setHasAdminAccess(false)
-        }
+        const { data } = await apiClient.get('/api/analytics/admin-check', { timeout: 10000 })
+        if (!cancelled) setHasAdminAccess(!!data?.isAdmin)
+      } catch (err) {
+        // 403 = not admin (old backend or non-admin); treat as no access, avoid console noise
+        if (!cancelled) setHasAdminAccess(false)
       }
     }
 
@@ -319,6 +345,10 @@ function AppLayout() {
               <span>🏠</span>
               <span>Home</span>
             </NavLink>
+            <NavLink to="/feed" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
+              <span>📰</span>
+              <span>Feed</span>
+            </NavLink>
             <NavLink to="/dashboard" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
               <span>📈</span>
               <span>Dashboard</span>
@@ -331,6 +361,12 @@ function AppLayout() {
               <span>📋</span>
               <span>My Dashboards</span>
             </NavLink>
+            {user && (
+              <NavLink to="/profile" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
+                <span>👤</span>
+                <span>Profile</span>
+              </NavLink>
+            )}
             <NavLink to="/#upload" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
               <span>📤</span>
               <span>Upload Data</span>
@@ -388,6 +424,7 @@ function AppLayout() {
           <Outlet />
         </main>
         {!hideFooter && <Footer />}
+        <ChatBot />
       </div>
     )
   }
@@ -605,12 +642,50 @@ function AppLayout() {
                     <span className={sidebarOpen ? '' : 'lg:hidden'}>Home</span>
                   </NavLink>
                 </SidebarTooltip>
+                <SidebarTooltip show={!sidebarOpen} label="Feed">
+                  <NavLink to="/feed" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
+                    <span>📰</span>
+                    <span className={sidebarOpen ? '' : 'lg:hidden'}>Feed</span>
+                  </NavLink>
+                </SidebarTooltip>
+                <SidebarTooltip show={!sidebarOpen} label="Careers">
+                  <NavLink to="/careers" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
+                    <span>💼</span>
+                    <span className={sidebarOpen ? '' : 'lg:hidden'}>Careers</span>
+                  </NavLink>
+                </SidebarTooltip>
+                {user && (
+                  <SidebarTooltip show={!sidebarOpen} label="Messages">
+                    <NavLink to="/messages" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
+                      <span className="relative">
+                        ✉️
+                        {messagesUnreadCount > 0 && (
+                          <span
+                            className="absolute -top-1.5 -right-1.5 min-w-[1.25rem] h-5 px-1 flex items-center justify-center text-[10px] font-bold text-white bg-red-500 rounded-full"
+                            aria-label={`${messagesUnreadCount} unread`}
+                          >
+                            {messagesUnreadCount > 99 ? '99+' : messagesUnreadCount}
+                          </span>
+                        )}
+                      </span>
+                      <span className={sidebarOpen ? '' : 'lg:hidden'}>Messages</span>
+                    </NavLink>
+                  </SidebarTooltip>
+                )}
                 <SidebarTooltip show={!sidebarOpen} label="My Dashboards">
                   <NavLink to="/dashboards" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
                     <span>📋</span>
                     <span className={sidebarOpen ? '' : 'lg:hidden'}>My Dashboards</span>
                   </NavLink>
                 </SidebarTooltip>
+                {user && (
+                  <SidebarTooltip show={!sidebarOpen} label="Profile">
+                    <NavLink to="/profile" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
+                      <span>👤</span>
+                      <span className={sidebarOpen ? '' : 'lg:hidden'}>Profile</span>
+                    </NavLink>
+                  </SidebarTooltip>
+                )}
                 <SidebarTooltip show={!sidebarOpen} label="Dashboard Viewer">
                   <NavLink to="/dashboard" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
                     <span>📈</span>
@@ -655,6 +730,7 @@ function AppLayout() {
         </main>
         {!hideFooter && <Footer />}
       </div>
+      <ChatBot />
     </div>
   )
 }

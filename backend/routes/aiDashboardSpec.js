@@ -24,9 +24,55 @@ router.get('/', (req, res) => {
       'GET /api/ai/dataset-schema?dataset=<id>',
       'GET /api/ai/dataset-data?dataset=<id>',
       'POST /api/ai/dataset-chat',
+      'POST /api/ai/chat',
       'POST /api/ai/dashboard-spec'
     ]
   })
+})
+
+const APP_CHAT_SYSTEM = `You are a helpful assistant for NM2TECH Analytics Shorts, an analytics and dashboard platform. You help users with:
+- Feed: social feed for sharing dashboards, posts, liking, saving, and messaging other members.
+- Dashboards: create and view data dashboards; use Studio to build them with AI or manually.
+- Careers: job postings and resume uploads for the community.
+- Profile: name, avatar, and preferences.
+- General: how to get started, upload data, create charts, share to the feed, go live on a post, or find help.
+Keep answers concise and friendly. If you don't know something, suggest visiting the Help page or exploring the app. Do not make up feature names; stick to what exists (Feed, Studio, Careers, Profile, Messages, Dashboards).`
+
+// POST /api/ai/chat - app-wide assistant (chatbot widget)
+router.post('/chat', async (req, res) => {
+  try {
+    if (!openai) {
+      return res.status(503).json({ error: 'Chat is not available right now.', message: 'AI is not configured.' })
+    }
+    const { messages } = req.body || {}
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return res.status(400).json({ error: 'messages array is required' })
+    }
+    const last = messages[messages.length - 1]
+    if (!last || last.role !== 'user' || typeof last.content !== 'string' || !last.content.trim()) {
+      return res.status(400).json({ error: 'Last message must be from user with non-empty content' })
+    }
+    const trimmed = messages.map((m) => ({
+      role: m.role === 'user' ? 'user' : m.role === 'assistant' ? 'assistant' : 'user',
+      content: String(m.content || '').trim().slice(0, 4000)
+    })).filter((m) => m.content.length > 0)
+    const chatMessages = [
+      { role: 'system', content: APP_CHAT_SYSTEM },
+      ...trimmed
+    ]
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: chatMessages,
+      max_tokens: 600,
+      temperature: 0.6
+    })
+    const reply = completion?.choices?.[0]?.message?.content?.trim() || ''
+    if (!reply) return res.status(502).json({ error: 'No reply from assistant' })
+    res.json({ reply })
+  } catch (err) {
+    console.error('POST /api/ai/chat', err)
+    res.status(500).json({ error: err.message || 'Chat failed' })
+  }
 })
 
 // Basic PII blocklist for column names (avoid echoing sensitive values in samples)

@@ -1,6 +1,18 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { parseNumericValue } from '../utils/numberUtils'
 
+const defaultFilterState = {
+  dateRange: { start: '', end: '' },
+  category: '',
+  numericRange: { min: 0, max: 100 },
+  opportunity: {
+    keyword: '',
+    setAside: '',
+    department: '',
+    primeContractor: '',
+  },
+}
+
 function Filters({
   data,
   numericColumns,
@@ -11,19 +23,23 @@ function Filters({
   selectedCategorical,
   selectedDate,
   onColumnChange,
+  initialFilters = null, // When provided (e.g. shared dashboard), restore filter state so shared view matches
 }) {
-  const [filters, setFilters] = useState({
-    dateRange: { start: '', end: '' },
-    category: '',
-    numericRange: { min: 0, max: 100 },
-    opportunity: {
-      keyword: '',
-      setAside: '',
-      department: '',
-      primeContractor: '',
-    },
-  })
-  
+  const [filters, setFilters] = useState(defaultFilterState)
+
+  // Restore filter state from shared dashboard so filtering matches the creator's view
+  useEffect(() => {
+    if (initialFilters && typeof initialFilters === 'object' && Object.keys(initialFilters).length > 0) {
+      setFilters((prev) => ({
+        ...prev,
+        ...initialFilters,
+        dateRange: { ...prev.dateRange, ...(initialFilters.dateRange || {}) },
+        numericRange: { ...prev.numericRange, ...(initialFilters.numericRange || {}) },
+        opportunity: { ...prev.opportunity, ...(initialFilters.opportunity || {}) },
+      }))
+    }
+  }, [initialFilters])
+
   // Debounce timer ref
   const debounceTimer = useRef(null)
 

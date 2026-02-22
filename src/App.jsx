@@ -1,6 +1,7 @@
 import { Routes, Route, Outlet, useLocation, Navigate, useParams } from 'react-router-dom'
 import { useEffect } from 'react'
 import { AuthProvider } from './contexts/AuthContext'
+import { NotificationProvider } from './contexts/NotificationContext'
 import { PortraitModeProvider } from './contexts/PortraitModeContext'
 import ProtectedRoute from './components/ProtectedRoute'
 import BrandWatermark from './components/BrandWatermark'
@@ -20,6 +21,14 @@ import AdminAnalytics from './pages/AdminAnalytics'
 import StudioDashboard from './pages/studio/StudioDashboard'
 import StudioAppView from './pages/studio/StudioAppView'
 import AiVisualBuilderStudio from './pages/AiVisualBuilderStudio'
+import Feed from './pages/Feed'
+import Post from './pages/Post'
+import Careers from './pages/Careers'
+import Profile from './pages/Profile'
+import Messages from './pages/Messages'
+import EditPost from './pages/EditPost'
+import Publish from './pages/Publish'
+import Live from './pages/Live'
 
 /** Redirect /studio to /studio/chat, preserving search (e.g. ?open=:id). */
 function StudioIndexRedirect() {
@@ -53,6 +62,7 @@ function App() {
   return (
     <PortraitModeProvider>
       <AuthProvider>
+        <NotificationProvider>
         <PortraitFrame>
           <PageViewTracker />
           <Routes>
@@ -63,6 +73,7 @@ function App() {
             <Route path="/apps/:id" element={<StudioAppView />} />
             <Route path="/apps/:id/:pageId" element={<StudioAppView />} />
             <Route path="/ai-visual-builder" element={<Navigate to="/studio" replace />} />
+            <Route path="/live/:sessionId" element={<Live />} />
 
             {/* Routes WITH layout (sidebar + Navbar + Footer) */}
             <Route element={<AppLayout />}>
@@ -76,6 +87,41 @@ function App() {
                 element={
                   <ProtectedRoute>
                     <AdminAnalytics />
+                  </ProtectedRoute>
+                }
+              />
+              <Route path="/feed" element={<Feed />} />
+              <Route path="/careers" element={<Careers />} />
+              <Route path="/post/:id" element={<Post />} />
+              <Route
+                path="/profile"
+                element={
+                  <ProtectedRoute>
+                    <Profile />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/messages"
+                element={
+                  <ProtectedRoute>
+                    <Messages />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/post/:id/edit"
+                element={
+                  <ProtectedRoute>
+                    <EditPost />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/publish/:dashboardId"
+                element={
+                  <ProtectedRoute>
+                    <Publish />
                   </ProtectedRoute>
                 }
               />
@@ -143,6 +189,7 @@ function App() {
           </Routes>
           <BrandWatermark />
         </PortraitFrame>
+        </NotificationProvider>
       </AuthProvider>
     </PortraitModeProvider>
   )

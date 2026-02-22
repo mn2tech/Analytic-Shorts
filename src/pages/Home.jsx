@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, Link, useSearchParams } from 'react-router-dom'
 import FileUploader from '../components/FileUploader'
 import ExampleDatasetButton from '../components/ExampleDatasetButton'
 import OnboardingTour from '../components/OnboardingTour'
@@ -8,6 +8,8 @@ import { useAuth } from '../contexts/AuthContext'
 
 function Home() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const fromFeed = searchParams.get('from') === 'feed'
   const { user } = useAuth()
   const [error, setError] = useState(null)
   const [showTour, setShowTour] = useState(false)
@@ -150,6 +152,20 @@ function Home() {
         steps={homeTourSteps}
       />
       
+      {/* From-feed hint */}
+      {fromFeed && user && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
+          <div className="rounded-xl bg-blue-50 border border-blue-200 px-4 py-3 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm text-blue-800">
+              <span className="font-medium">Creating a post:</span> Upload your data below, then build your dashboard and share it to the Feed.
+            </p>
+            <Link to="/feed" className="text-sm font-medium text-blue-600 hover:text-blue-700 whitespace-nowrap">
+              Back to Feed
+            </Link>
+          </div>
+        </div>
+      )}
+
       {/* Hero Section */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 md:py-24">
         <div className="text-center mb-16 animate-fade-in overflow-visible">

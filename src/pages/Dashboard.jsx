@@ -11,7 +11,7 @@ import AIInsights from '../components/AIInsights'
 import ForecastChart from '../components/ForecastChart'
 import DataMetadataEditor from '../components/DataMetadataEditor'
 import TimeSeriesReport from '../components/TimeSeriesReport'
-import ContractMapWidget, { getStateAbbr } from '../components/widgets/ContractMapWidget'
+import ContractMapWidget, { getStateAbbr, getStateDisplayLabel } from '../components/widgets/ContractMapWidget'
 import DateRangeSlider from '../components/DateRangeSlider'
 import SubawardDrilldownModal from '../components/SubawardDrilldownModal'
 import UpgradePrompt from '../components/UpgradePrompt'
@@ -160,6 +160,7 @@ function Dashboard() {
   const shortVideoCancelRef = useRef(false)
   const shortVideoAbortRef = useRef(null)
   const opportunityDateRangePrevRef = useRef(opportunityDateRangeDays)
+  const filterSnapshotRef = useRef(null) // Current sidebar filter state for sharing
   const MAX_CATEGORY_TABS = 12
   const MAX_METRIC_TABS = 10
 
@@ -341,6 +342,7 @@ function Dashboard() {
   const CategoryTabsBar = () => {
     if (!categoryTabs?.values?.length) return null
     const label = formatFieldLabel(selectedCategorical)
+    const isStateCol = selectedCategorical && String(selectedCategorical).toLowerCase() === 'state'
     return (
       <div className="mb-4">
         <div className="flex items-center justify-between gap-3 mb-2">
@@ -379,9 +381,9 @@ function Dashboard() {
                   ? 'bg-blue-600 text-white border-blue-600'
                   : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
               }`}
-              title={`Filter to: ${v}`}
+              title={`Filter to: ${isStateCol ? getStateDisplayLabel(v) : v}`}
             >
-              {v}
+              {isStateCol ? getStateDisplayLabel(v) : v}
             </button>
           ))}
         </div>
@@ -872,11 +874,15 @@ function Dashboard() {
           .sort((a, b) => b.s - a.s)[0]?.c || ''
       }
 
-      if (parsedData.numericColumns && parsedData.numericColumns.length > 0) {
+      // Restore saved selections when loading a saved/shared dashboard so it matches what was saved/shared
+      if (parsedData.selectedNumeric != null && parsedData.selectedNumeric !== '' && (parsedData.numericColumns || []).includes(parsedData.selectedNumeric)) {
+        setSelectedNumeric(parsedData.selectedNumeric)
+      } else if (parsedData.numericColumns && parsedData.numericColumns.length > 0) {
         setSelectedNumeric(pickBestNumeric(parsedData.numericColumns))
       }
-      if (parsedData.categoricalColumns && parsedData.categoricalColumns.length > 0) {
-        // Auto-select priority columns: Budget Category > Metric > best categorical (low/moderate cardinality)
+      if (parsedData.selectedCategorical != null && parsedData.selectedCategorical !== '' && (parsedData.categoricalColumns || []).includes(parsedData.selectedCategorical)) {
+        setSelectedCategorical(parsedData.selectedCategorical)
+      } else if (parsedData.categoricalColumns && parsedData.categoricalColumns.length > 0) {
         const budgetCategoryColumn = parsedData.categoricalColumns.find(col =>
           col.toLowerCase().includes('budget') && col.toLowerCase().includes('category')
         )
@@ -887,7 +893,9 @@ function Dashboard() {
         const columnToSelect = budgetCategoryColumn || metricColumn || bestCategorical || parsedData.categoricalColumns[0]
         setSelectedCategorical(columnToSelect)
       }
-      if (parsedData.dateColumns && parsedData.dateColumns.length > 0) {
+      if (parsedData.selectedDate != null && parsedData.selectedDate !== '' && (parsedData.dateColumns || []).includes(parsedData.selectedDate)) {
+        setSelectedDate(parsedData.selectedDate)
+      } else if (parsedData.dateColumns && parsedData.dateColumns.length > 0) {
         const isSamgovOpportunitiesDataset =
           (parsedData.source && /sam\.gov opportunities/i.test(String(parsedData.source))) ||
           ((parsedData.columns || []).some((c) => ['noticeId', 'responseDeadLine', 'postedDate'].includes(c)))
@@ -900,6 +908,14 @@ function Dashboard() {
         } else {
           setSelectedDate(parsedData.dateColumns[0])
         }
+      }
+      if (parsedData.opportunityKeyword != null && String(parsedData.opportunityKeyword).trim() !== '') {
+        setOpportunityKeyword(String(parsedData.opportunityKeyword).trim())
+      }
+      if (parsedData.selectedOpportunityNoticeType != null && String(parsedData.selectedOpportunityNoticeType).trim() !== '') {
+        const noticeType = String(parsedData.selectedOpportunityNoticeType).trim()
+        setSelectedOpportunityNoticeType(noticeType)
+        setChartFilter({ type: 'category', value: noticeType })
       }
 
       // Entity datasets are best explored via table + filters by default.
@@ -973,6 +989,7 @@ function Dashboard() {
   }, [chartFilter, selectedCategorical, selectedDate, columns])
 
   const handleFilterChange = (filters, filtered) => {
+    filterSnapshotRef.current = filters
     // Use requestAnimationFrame to make filtering non-blocking
     requestAnimationFrame(() => {
       // Store sidebar-filtered data
@@ -1672,7 +1689,7 @@ function Dashboard() {
               Showing {opportunityViewFilter === 'favorites'
                 ? `${visibleOpportunityRows.length} favorites`
                 : `${visibleOpportunityRows.length} of ${allOpportunityRows.length} filtered opportunities`}
-              {chartFilter?.type === 'category' && chartFilter?.value && String(chartFilter.value).length === 2 ? ` in ${chartFilter.value}` : ''}
+              {chartFilter?.type === 'category' && chartFilter?.value && String(chartFilter.value).length === 2 ? ` in ${getStateDisplayLabel(chartFilter.value)}` : ''}
               {deferredOpportunityKeyword ? ` • API keyword matches: ${apiKeywordOpportunityRows.length}` : ''}
               {selectedOpportunityNoticeType ? ` • Base type: ${selectedOpportunityNoticeType}` : ''}
               {selectedOpportunityOrg ? ` • Org: ${selectedOpportunityOrg}` : ''}
@@ -1821,7 +1838,7 @@ function Dashboard() {
                   const stateCol = columns?.find((c) => String(c).toLowerCase() === 'state')
                   const isStateFilter = stateCol && chartFilter.value && String(chartFilter.value).length === 2 && getStateAbbr(chartFilter.value) === chartFilter.value
                   const colLabel = isStateFilter ? stateCol : selectedCategorical
-                  return `${colLabel || 'Filter'}: ${chartFilter.value}`
+                  return `${colLabel || 'Filter'}: ${isStateFilter ? getStateDisplayLabel(chartFilter.value) : chartFilter.value}`
                 })() : 'Date filter applied'}
               </span>
             ) : (
@@ -1918,7 +1935,7 @@ function Dashboard() {
                         Solicitation: {row.solicitationNumber}
                       </span>
                     )}
-                    {row.state && <span>State: {row.state}</span>}
+                    {row.state && <span>State: {getStateDisplayLabel(row.state)}</span>}
                     {opportunityKeyword && row._matchReason && (
                       <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100">
                         {row._matchReason}
@@ -2470,7 +2487,9 @@ function Dashboard() {
         selectedNumeric: selectedNumeric,
         selectedCategorical: selectedCategorical,
         selectedDate: selectedDate,
-        dashboardView: dashboardView
+        dashboardView: dashboardView,
+        opportunityKeyword: opportunityKeyword || undefined,
+        selectedOpportunityNoticeType: selectedOpportunityNoticeType || undefined
       }
 
       let result
@@ -3779,7 +3798,7 @@ function Dashboard() {
               <div className="flex items-center space-x-2">
                 <span className="text-sm font-medium text-blue-900">
                   Filtered by: <span className="font-semibold">
-                    {chartFilter.type === 'category' ? chartFilter.value : 
+                    {chartFilter.type === 'category' ? (String(chartFilter.value).length === 2 && getStateAbbr(chartFilter.value) === chartFilter.value ? getStateDisplayLabel(chartFilter.value) : chartFilter.value) :
                      chartFilter.type === 'date' ? new Date(chartFilter.value).toLocaleDateString() : ''}
                   </span>
                 </span>
@@ -4237,9 +4256,13 @@ function Dashboard() {
                   selectedCategorical: selectedCategorical,
                   selectedDate: selectedDate,
                   opportunityKeyword: opportunityKeyword,
+                  selectedOpportunityNoticeType: selectedOpportunityNoticeType || undefined, // Base type filter for pie/by-org
                   dashboardView: dashboardView, // Save the current view (advanced/simple)
                   layouts: dashboardLayouts, // Include widget layouts
                   widgetVisibility: dashboardWidgetVisibility, // Include widget visibility
+                  filterSnapshot: filterSnapshotRef.current || undefined, // Sidebar filters so shared view matches
+                  opportunityFavorites: opportunityFavorites.size > 0 ? [...opportunityFavorites] : undefined,
+                  opportunityFavoriteRows: opportunityFavoriteRows.length > 0 ? opportunityFavoriteRows : undefined,
                 }
 
                 // Always re-save latest state/title so existing links stay current.
@@ -4344,7 +4367,7 @@ function Dashboard() {
               <div className="flex items-center space-x-2">
                 <span className="text-sm font-medium text-blue-900">
                   Filtered by: <span className="font-semibold">
-                    {chartFilter.type === 'category' ? chartFilter.value :
+                    {chartFilter.type === 'category' ? (String(chartFilter.value).length === 2 && getStateAbbr(chartFilter.value) === chartFilter.value ? getStateDisplayLabel(chartFilter.value) : chartFilter.value) :
                      chartFilter.type === 'date' ? new Date(chartFilter.value).toLocaleDateString() : ''}
                   </span>
                 </span>

@@ -55,12 +55,17 @@ const getUserFromToken = async (req, res, next) => {
     const { data: { user }, error } = await supabase.auth.getUser(token)
     
     if (error) {
-      console.error('Token verification error:', error.message || error)
+      const msg = error.message || String(error)
+      if (/auth session missing|session expired|invalid refresh token/i.test(msg)) {
+        console.warn('Token verification (expected when not signed in or session expired):', msg)
+      } else {
+        console.error('Token verification error:', error.message || error)
+      }
       return res.status(401).json({ error: 'Invalid or expired token', details: error.message })
     }
     
     if (!user || !user.id) {
-      console.error('No user found in token. User:', user)
+      console.warn('No user in token (session may have expired)')
       return res.status(401).json({ error: 'Invalid token - no user found' })
     }
     
@@ -135,7 +140,9 @@ router.post('/', getUserFromToken, checkDashboardLimit, async (req, res) => {
       selectedCategorical,
       selectedDate,
       dashboardView,
-      schema
+      schema,
+      opportunityKeyword,
+      selectedOpportunityNoticeType
     } = req.body
     
     // For Studio dashboards, data can be empty (data comes from data_source)
@@ -221,7 +228,9 @@ router.put('/:id', getUserFromToken, async (req, res) => {
       selectedCategorical,
       selectedDate,
       dashboardView,
-      schema
+      schema,
+      opportunityKeyword,
+      selectedOpportunityNoticeType
     } = req.body
     
     // First verify the dashboard belongs to the user
@@ -247,6 +256,8 @@ router.put('/:id', getUserFromToken, async (req, res) => {
     if (selectedCategorical !== undefined) updateData.selected_categorical = selectedCategorical
     if (selectedDate !== undefined) updateData.selected_date = selectedDate
     if (dashboardView !== undefined) updateData.dashboard_view = dashboardView
+    if (opportunityKeyword !== undefined) updateData.opportunity_keyword = opportunityKeyword
+    if (selectedOpportunityNoticeType !== undefined) updateData.selected_opportunity_notice_type = selectedOpportunityNoticeType
     // Only update schema if it's provided (to avoid cache issues)
     if (schema !== undefined && schema !== null) {
       try {

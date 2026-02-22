@@ -1,6 +1,20 @@
 // Utility functions for sharing dashboards
 import apiClient from '../config/api'
 
+// Load shared dashboard from backend (public endpoint – no auth sent to avoid token errors for viewers)
+async function fetchSharedDashboardFromBackend(shareId) {
+  const base = import.meta.env.VITE_API_URL || ''
+  const url = `${base}/api/shared/${shareId}`
+  const res = await fetch(url, { credentials: 'include' })
+  if (!res.ok) {
+    const err = new Error(res.status === 404 ? 'Not found' : `HTTP ${res.status}`)
+    err.status = res.status
+    err.response = { status: res.status }
+    throw err
+  }
+  return res.json()
+}
+
 export const generateShareId = () => {
   return `share_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
 }
@@ -70,35 +84,29 @@ export const loadSharedDashboard = async (shareId) => {
   try {
     console.log('Loading shared dashboard with shareId:', shareId)
     
-    // First try to load from backend
+    // First try to load from backend (public request – no auth header, so viewers don't trigger token errors)
     try {
       console.log('Attempting to load from backend...')
-      const response = await apiClient.get(`/api/shared/${shareId}`)
+      const response = await fetchSharedDashboardFromBackend(shareId)
       console.log('Backend response received:', {
-        hasData: !!response.data,
-        hasDashboardData: !!response.data?.dashboardData,
-        dashboardType: response.data?.dashboardData?.dashboardType
+        hasData: !!response,
+        hasDashboardData: !!response?.dashboardData,
+        dashboardType: response?.dashboardData?.dashboardType
       })
       
-      if (response.data && response.data.dashboardData) {
+      if (response && response.dashboardData) {
         console.log('✅ Loaded shared dashboard from backend')
-        console.log('Dashboard data type:', typeof response.data.dashboardData)
-        console.log('Dashboard type:', response.data.dashboardData.dashboardType)
-        return response.data.dashboardData
+        return response.dashboardData
       }
-      // If dashboardData is at root level
-      if (response.data && response.data.dashboardType) {
+      if (response && response.dashboardType) {
         console.log('✅ Loaded shared dashboard from backend (root level)')
-        return response.data
+        return response
       }
       
       console.warn('⚠️ Backend returned data but no dashboardData found')
     } catch (backendError) {
       console.error('❌ Backend error loading shared dashboard:', backendError)
-      console.error('Error status:', backendError.response?.status)
-      console.error('Error data:', backendError.response?.data)
-      
-      if (backendError.response?.status === 404) {
+      if (backendError.status === 404 || backendError.response?.status === 404) {
         console.log('Dashboard not found in backend (404), trying localStorage...')
       } else {
         console.log('Backend error, falling back to localStorage...')

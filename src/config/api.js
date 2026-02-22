@@ -91,8 +91,11 @@ apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response) {
-      // Server responded with error
-      console.error('API Error:', error.response.status, error.response.data)
+      // Don't log 403 for admin-check (expected for non-admins; avoids console noise)
+      const isAdminCheck = error.config?.url?.includes('/api/analytics/admin-check')
+      if (!(error.response.status === 403 && isAdminCheck)) {
+        console.error('API Error:', error.response.status, error.response.data)
+      }
     } else if (error.request) {
       // Request made but no response
       console.error('Network Error:', error.message)

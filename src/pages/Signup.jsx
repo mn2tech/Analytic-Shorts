@@ -50,9 +50,9 @@ function Signup() {
       // but the account is still created successfully
       if (result) {
         setSuccess(true)
-        // If user exists and is confirmed, navigate to dashboard
+        // If user exists and is confirmed, take them to the feed
         if (result.user && result.user.email_confirmed_at) {
-          navigate('/dashboard')
+          navigate('/feed')
         } else {
           // Email confirmation required or user not immediately available
           // Show success message and redirect to login

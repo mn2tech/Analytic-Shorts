@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import Loader from '../components/Loader'
 import { getDashboards, deleteDashboard } from '../services/dashboardService'
 import { useAuth } from '../contexts/AuthContext'
@@ -14,6 +14,7 @@ function MyDashboards() {
   const [dashboards, setDashboards] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [errorStatus, setErrorStatus] = useState(null) // 401 = auth, 5xx = server, etc.
   const [deletingId, setDeletingId] = useState(null)
   const [sharingId, setSharingId] = useState(null)
   const [shareLinkCopiedId, setShareLinkCopiedId] = useState(null)
@@ -111,11 +112,21 @@ function MyDashboards() {
     try {
       setLoading(true)
       setError(null)
+      setErrorStatus(null)
       const data = await getDashboards()
-      setDashboards(data || [])
+      setDashboards(Array.isArray(data) ? data : [])
     } catch (err) {
       console.error('Error loading dashboards:', err)
-      setError('Failed to load dashboards. Please try again.')
+      const status = err.response?.status
+      const isNetwork = err.code === 'ERR_NETWORK' || err.message === 'Network Error'
+      setErrorStatus(status)
+      if (status === 401) {
+        setError('Sign in to view your dashboards. Your session may have expired.')
+      } else if (isNetwork || status >= 500) {
+        setError('Failed to load dashboards. Start the backend with: npm run server (or use npm run dev:all).')
+      } else {
+        setError('Failed to load dashboards. Please try again.')
+      }
     } finally {
       setLoading(false)
     }
@@ -129,7 +140,7 @@ function MyDashboards() {
       return
     }
 
-    // Prepare data in the format expected by Dashboard component
+    // Prepare data in the format expected by Dashboard component (same shape as shared payload)
     const dashboardData = {
       dashboardId: dashboard.id,
       name: dashboard.name,
@@ -141,7 +152,9 @@ function MyDashboards() {
       selectedNumeric: dashboard.selected_numeric,
       selectedCategorical: dashboard.selected_categorical,
       selectedDate: dashboard.selected_date,
-      dashboardView: dashboard.dashboard_view || 'advanced'
+      dashboardView: dashboard.dashboard_view || 'advanced',
+      opportunityKeyword: dashboard.opportunity_keyword ?? '',
+      selectedOpportunityNoticeType: dashboard.selected_opportunity_notice_type ?? ''
     }
 
     // Store in sessionStorage (same way as file upload)
@@ -236,11 +249,19 @@ function MyDashboards() {
         </div>
 
         {error && (
-          <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
-            {error}
+          <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex flex-wrap items-center gap-3">
+            <span>{error}</span>
+            {errorStatus === 401 && (
+              <Link
+                to="/login"
+                className="inline-flex px-3 py-1.5 text-sm font-medium rounded-md bg-red-600 text-white hover:bg-red-700"
+              >
+                Sign in
+              </Link>
+            )}
             <button
               onClick={loadDashboards}
-              className="ml-4 text-red-800 underline hover:text-red-900"
+              className="text-red-800 underline hover:text-red-900 font-medium"
             >
               Retry
             </button>
@@ -308,6 +329,14 @@ function MyDashboards() {
 
                   <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0">
                     <span className="text-xs text-gray-500">Open →</span>
+                    <Link
+                      to={`/publish/${dashboard.id}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-gray-500 hover:text-green-600 transition-colors px-2 py-1.5 rounded hover:bg-green-50 text-sm font-medium whitespace-nowrap"
+                      title="Publish as Analytics Short"
+                    >
+                      Publish
+                    </Link>
                     <button
                       type="button"
                       onClick={(e) => handleShareDashboard(dashboard, e)}
@@ -362,7 +391,15 @@ function MyDashboards() {
                   <h3 className="text-lg font-semibold text-gray-900 group-hover:text-blue-600 transition-colors">
                     {dashboard.name || 'Untitled Dashboard'}
                   </h3>
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-2">
+                    <Link
+                      to={`/publish/${dashboard.id}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-gray-600 hover:text-green-600 transition-colors px-2 py-1 rounded hover:bg-green-50 text-sm font-medium"
+                      title="Publish as Analytics Short"
+                    >
+                      Publish
+                    </Link>
                     <button
                       type="button"
                       onClick={(e) => handleShareDashboard(dashboard, e)}

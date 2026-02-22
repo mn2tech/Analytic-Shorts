@@ -27,6 +27,11 @@ const datalakeRoutes = require('./routes/datalake')
 const ownerSummaryRoutes = require('./routes/ownerSummary')
 const youtubeRoutes = require('./routes/youtube')
 const datasetsRoutes = require('./routes/datasets')
+const postsRoutes = require('./routes/posts')
+const messagesRoutes = require('./routes/messages')
+const careersRoutes = require('./routes/careers')
+const followRoutes = require('./routes/follow')
+const liveRoutes = require('./routes/live')
 const accessLogger = require('./middleware/accessLogger')
 
 const app = express()
@@ -134,11 +139,21 @@ app.use(express.urlencoded({ extended: true, limit: '500mb' })) // Increase URL-
 // Access logging middleware (after body parsing, before routes)
 app.use(accessLogger)
 
+// Social Analytics: POST /api/posts first so it always matches (before any /api mount)
+const { requireAuth } = require('./middleware/requireAuth')
+const postsController = require('./controllers/postsController')
+app.post('/api/posts', requireAuth, (req, res) => postsController.createPost(req, res))
+
 // Create uploads directory if it doesn't exist
 const uploadsDir = path.join(__dirname, 'uploads')
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true })
 }
+
+const thumbnailRoutes = require('./routes/thumbnail')
+// Serve uploaded files (thumbnails, etc.) under /api/uploads
+app.use('/api/uploads', express.static(path.join(__dirname, 'uploads')))
+app.use('/api/thumbnail-upload', thumbnailRoutes)
 
 // Routes - register /api/studio/ai-schema FIRST so it always matches
 app.post('/api/studio/ai-schema', (req, res, next) => {
@@ -182,6 +197,11 @@ app.use('/api/shared', sharedRoutes)
 app.use('/api/datalake', datalakeRoutes)
 app.use('/api/owner-summary', ownerSummaryRoutes)
 app.use('/api/youtube', youtubeRoutes)
+app.use('/api', messagesRoutes)
+app.use('/api', careersRoutes)
+app.use('/api', followRoutes)
+app.use('/api', postsRoutes)
+app.use('/api/live', liveRoutes)
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -231,7 +251,17 @@ app.use((req, res) => {
       'GET /api/example/yearly-income',
       'GET /api/example/samgov/expand-intent',
       'GET /api/example/samgov/live',
-      'GET /api/datasets/maritime-ais'
+      'GET /api/datasets/maritime-ais',
+      'GET /api/feed',
+      'POST /api/posts',
+      'GET /api/posts/:id',
+      'POST /api/posts/:id/like',
+      'POST /api/posts/:id/save',
+      'GET /api/posts/:id/comments',
+      'POST /api/posts/:id/comments',
+      'POST /api/posts/:id/live-sessions',
+      'GET /api/live/:sessionId',
+      'POST /api/live/:sessionId/end'
     ]
   })
 })

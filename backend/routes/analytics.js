@@ -58,15 +58,12 @@ const isAdmin = (req, res, next) => {
   next()
 }
 
-// Lightweight admin status endpoint for UI visibility checks
+// Lightweight admin status endpoint for UI visibility checks (200 + isAdmin so frontend avoids 403 noise)
 router.get('/admin-check', getUserFromToken, (req, res) => {
   const adminEmails = getAdminEmails()
   const email = req.user?.email?.toLowerCase()
   const isAdminUser = !!email && adminEmails.includes(email)
-  if (!isAdminUser) {
-    return res.status(403).json({ error: 'Admin access required' })
-  }
-  return res.json({ isAdmin: true })
+  return res.json({ isAdmin: !!isAdminUser })
 })
 
 // Get visitor statistics

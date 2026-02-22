@@ -21,7 +21,9 @@ function AdvancedDashboardGrid({
   numericColumns = [],
   dateColumns = [],
   viewMode = 'edit',
-  onLayoutChange: externalOnLayoutChange // Callback to notify parent of layout changes
+  onLayoutChange: externalOnLayoutChange, // Callback to notify parent of layout changes
+  initialLayouts = null,   // When provided (e.g. shared dashboard), use these instead of localStorage
+  initialWidgetVisibility = null
 }) {
   const [layouts, setLayouts] = useState({})
   const [widgetVisibility, setWidgetVisibility] = useState({})
@@ -231,34 +233,29 @@ function AdvancedDashboardGrid({
 
   // Initialize layouts and visibility based on data analysis
   useEffect(() => {
-    // Check if layouts were passed from shared dashboard (via URL params or localStorage)
-    const urlParams = new URLSearchParams(window.location.search)
-    const pathParts = window.location.pathname.split('/shared/')
-    const shareId = urlParams.get('share') || (pathParts.length > 1 ? pathParts[1] : null)
-    
-    let savedLayouts = null
-    let savedVisibility = null
-    
-    if (shareId) {
-      // Try to load from shared dashboard
-      try {
-        const sharedData = localStorage.getItem(`shared_dashboard_${shareId}`)
-        if (sharedData) {
-          const parsed = JSON.parse(sharedData)
-          if (parsed.layouts) savedLayouts = parsed.layouts
-          if (parsed.widgetVisibility) savedVisibility = parsed.widgetVisibility
+    // Prefer props from parent (e.g. SharedDashboard passing shared payload layouts)
+    let savedLayouts = initialLayouts && typeof initialLayouts === 'object' && !Array.isArray(initialLayouts) && Object.keys(initialLayouts).length > 0 ? initialLayouts : null
+    let savedVisibility = initialWidgetVisibility && typeof initialWidgetVisibility === 'object' && !Array.isArray(initialWidgetVisibility) ? initialWidgetVisibility : null
+
+    if (!savedLayouts || !savedVisibility) {
+      const urlParams = new URLSearchParams(window.location.search)
+      const pathParts = window.location.pathname.split('/shared/')
+      const shareId = urlParams.get('share') || (pathParts.length > 1 ? pathParts[1].split('?')[0] : null)
+
+      if (!savedLayouts && shareId) {
+        try {
+          const sharedData = localStorage.getItem(`shared_dashboard_${shareId}`)
+          if (sharedData) {
+            const parsed = JSON.parse(sharedData)
+            if (parsed.layouts) savedLayouts = parsed.layouts
+            if (parsed.widgetVisibility) savedVisibility = parsed.widgetVisibility
+          }
+        } catch (error) {
+          console.error('Error loading shared layouts:', error)
         }
-      } catch (error) {
-        console.error('Error loading shared layouts:', error)
       }
-    }
-    
-    // Fallback to user's saved layouts
-    if (!savedLayouts) {
-      savedLayouts = loadLayouts()
-    }
-    if (!savedVisibility) {
-      savedVisibility = loadWidgetVisibility()
+      if (!savedLayouts) savedLayouts = loadLayouts()
+      if (!savedVisibility) savedVisibility = loadWidgetVisibility()
     }
     
     // Validate and fix saved layouts
@@ -419,7 +416,7 @@ function AdvancedDashboardGrid({
       })
       setWidgetVisibility(defaultVisibility)
     }
-  }, [dataAnalysis])
+  }, [dataAnalysis, initialLayouts, initialWidgetVisibility])
 
   // Save layouts when they change (but not during drag) and notify parent
   // Use debouncing to prevent excessive updates

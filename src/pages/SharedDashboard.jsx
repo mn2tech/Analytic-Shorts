@@ -4,12 +4,20 @@ import Navbar from '../components/Navbar'
 import Loader from '../components/Loader'
 import DashboardCharts from '../components/DashboardCharts'
 import AdvancedDashboard from '../components/AdvancedDashboard'
-import TabNavigation from '../components/TabNavigation'
+import AdvancedDashboardGrid from '../components/AdvancedDashboardGrid'
+import ContractMapWidget, { getStateAbbr, getStateDisplayLabel } from '../components/widgets/ContractMapWidget'
 import MetricCards from '../components/MetricCards'
 import Filters from '../components/Filters'
 import AIInsights from '../components/AIInsights'
+import DateRangeSlider from '../components/DateRangeSlider'
+import DataMetadataEditor from '../components/DataMetadataEditor'
+import TimeSeriesReport from '../components/TimeSeriesReport'
+import { parseNumericValue } from '../utils/numberUtils'
 import { loadSharedDashboard } from '../utils/shareUtils'
 import SharedStudioDashboardView from '../components/SharedStudioDashboardView'
+
+const SHARED_DASHBOARD_CACHE = new Map()
+const CACHE_MAX = 5
 import DashboardRenderer from '../components/aiVisualBuilder/DashboardRenderer'
 import { applyQuickSwitchToSpec } from '../studio/utils/specQuickSwitch'
 
@@ -74,19 +82,28 @@ function SharedDashboard() {
   const [selectedCategorical, setSelectedCategorical] = useState('')
   const [selectedDate, setSelectedDate] = useState('')
   const [loading, setLoading] = useState(true)
+  const [showLoader, setShowLoader] = useState(false)
   const [error, setError] = useState(null)
   const [chartFilter, setChartFilter] = useState(null)
   const [sidebarFilteredData, setSidebarFilteredData] = useState(null)
   const [dashboardView, setDashboardView] = useState('advanced') // Default to advanced
-  const [activeTab, setActiveTab] = useState('Overview')
   const [dashboardTitle, setDashboardTitle] = useState('Analytics Dashboard')
   const [isTitleCustomized, setIsTitleCustomized] = useState(false)
   const [studioDashboardData, setStudioDashboardData] = useState(null)
   const [dashboardSpecData, setDashboardSpecData] = useState(null)
   const [dashboardSpecViewSpec, setDashboardSpecViewSpec] = useState(null)
   const [filterValues, setFilterValues] = useState({})
+  const [sharedLayouts, setSharedLayouts] = useState(null)
+  const [sharedWidgetVisibility, setSharedWidgetVisibility] = useState(null)
+  const [sharedFilterSnapshot, setSharedFilterSnapshot] = useState(null)
   const [fullScreen, setFullScreen] = useState(false)
+  const [showFilters, setShowFilters] = useState(false)
   const [opportunityKeyword, setOpportunityKeyword] = useState('')
+  const [selectedOpportunityOrg, setSelectedOpportunityOrg] = useState('')
+  const [opportunityDateRangeDays, setOpportunityDateRangeDays] = useState(30)
+  const [opportunityViewFilter, setOpportunityViewFilter] = useState('all')
+  const [opportunityFavorites, setOpportunityFavorites] = useState(() => new Set())
+  const [opportunityFavoriteRows, setOpportunityFavoriteRows] = useState(() => [])
   const lastAutoTitleMetric = useRef('')
   const MAX_METRIC_TABS = 10
   const MAX_CATEGORY_TABS = 12
@@ -142,8 +159,31 @@ function SharedDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dashboardSpecData, specFields.numericFields.join('|'), specFields.categoricalFields.join('|')])
 
-  const metricTabs = useMemo(() => {
+  // Same as Dashboard: hide award_amount from selectors when all values are 0/empty
+  const effectiveNumericColumns = useMemo(() => {
     const cols = Array.isArray(numericColumns) ? numericColumns : []
+    if (!cols.includes('award_amount')) return cols
+    const rows = Array.isArray(data) ? data : []
+    if (!rows.length) return cols
+    let hasNonZeroAwardAmount = false
+    for (const row of rows) {
+      const v = parseNumericValue(row?.award_amount)
+      if (Number.isFinite(v) && v !== 0) {
+        hasNonZeroAwardAmount = true
+        break
+      }
+    }
+    return hasNonZeroAwardAmount ? cols : cols.filter((c) => c !== 'award_amount')
+  }, [numericColumns, data])
+
+  useEffect(() => {
+    if (selectedNumeric && !effectiveNumericColumns.includes(selectedNumeric)) {
+      setSelectedNumeric(effectiveNumericColumns[0] || '')
+    }
+  }, [selectedNumeric, effectiveNumericColumns])
+
+  const metricTabs = useMemo(() => {
+    const cols = Array.isArray(effectiveNumericColumns) ? effectiveNumericColumns : []
     if (cols.length < 2) return null
 
     const score = (col) => {
@@ -178,7 +218,7 @@ function SharedDashboard() {
       total: cols.length,
       truncated: cols.length > MAX_METRIC_TABS
     }
-  }, [numericColumns, selectedNumeric])
+  }, [effectiveNumericColumns, selectedNumeric])
 
   const MetricTabsBar = () => {
     if (!metricTabs?.values?.length) return null
@@ -249,6 +289,7 @@ function SharedDashboard() {
   const CategoryTabsBar = () => {
     if (!categoryTabs?.values?.length) return null
     const label = formatFieldLabel(selectedCategorical)
+    const isStateCol = selectedCategorical && String(selectedCategorical).toLowerCase() === 'state'
     return (
       <div className="mb-4">
         <div className="flex items-center justify-between gap-3 mb-2">
@@ -267,8 +308,9 @@ function SharedDashboard() {
         >
           <button
             type="button"
+            onMouseDown={(e) => { e.preventDefault(); setChartFilter(null) }}
             onClick={() => setChartFilter(null)}
-            className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-sm border transition-colors ${
+            className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-sm border transition-colors cursor-pointer ${
               activeCategoryTabValue === 'All'
                 ? 'bg-blue-600 text-white border-blue-600'
                 : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
@@ -288,9 +330,9 @@ function SharedDashboard() {
                   ? 'bg-blue-600 text-white border-blue-600'
                   : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
               }`}
-              title={`Filter to: ${v}`}
+              title={`Filter to: ${isStateCol ? getStateDisplayLabel(v) : v}`}
             >
-              {v}
+              {isStateCol ? getStateDisplayLabel(v) : v}
             </button>
           ))}
         </div>
@@ -299,15 +341,29 @@ function SharedDashboard() {
   }
 
   useEffect(() => {
+    setShowLoader(false)
+    const showLoaderTimer = setTimeout(() => setShowLoader(true), 300)
+
     const loadDashboard = async () => {
       if (!shareId) {
         setError('Invalid share link')
         setLoading(false)
+        setShowLoader(false)
         return
       }
 
-      console.log('Loading shared dashboard with shareId:', shareId)
-      const sharedData = await loadSharedDashboard(shareId)
+      let sharedData = SHARED_DASHBOARD_CACHE.get(shareId)
+      if (!sharedData) {
+        console.log('Loading shared dashboard with shareId:', shareId)
+        sharedData = await loadSharedDashboard(shareId)
+        if (sharedData) {
+          SHARED_DASHBOARD_CACHE.set(shareId, sharedData)
+          if (SHARED_DASHBOARD_CACHE.size > CACHE_MAX) {
+            const firstKey = SHARED_DASHBOARD_CACHE.keys().next().value
+            SHARED_DASHBOARD_CACHE.delete(firstKey)
+          }
+        }
+      }
       console.log('Loaded shared data:', {
         hasData: !!sharedData,
         dashboardType: sharedData?.dashboardType,
@@ -320,6 +376,7 @@ function SharedDashboard() {
         console.error('Shared dashboard not found for shareId:', shareId)
         setError(`Shared dashboard not found or expired. Share ID: ${shareId}. Please check the share link and try again. If you just published this dashboard, check the browser console for save errors.`)
         setLoading(false)
+        setShowLoader(false)
         return
       }
 
@@ -329,11 +386,13 @@ function SharedDashboard() {
         if (!rows.length) {
           setError('This shared Studio dashboard is missing a data snapshot. Ask the owner to re-share after saving the dashboard (so it embeds shareable rows).')
           setLoading(false)
+          setShowLoader(false)
           return
         }
         setDashboardSpecData({ spec: sharedData.spec, data: rows })
         setDashboardSpecViewSpec(sharedData.spec)
         setLoading(false)
+        setShowLoader(false)
         return
       }
 
@@ -344,6 +403,7 @@ function SharedDashboard() {
       if (isStudioDashboard) {
         setStudioDashboardData(sharedData)
         setLoading(false)
+        setShowLoader(false)
         return
       }
 
@@ -358,9 +418,18 @@ function SharedDashboard() {
       setCategoricalColumns(sharedData.categoricalColumns || [])
       setDateColumns(sharedData.dateColumns || [])
       setSelectedNumeric(sharedData.selectedNumeric || '')
-      setSelectedCategorical(sharedData.selectedCategorical || '')
+      const allCols = sharedData.columns || []
+      const stateCol = allCols.find((c) => String(c).toLowerCase() === 'state')
+      const baseTypeCol = allCols.find((c) => { const l = String(c).toLowerCase(); return l === 'basetype' || l === 'type'; })
+      const lowerCols = new Set(allCols.map((c) => String(c).toLowerCase()))
+      const hasOpportunityCols = lowerCols.has('noticeid') && lowerCols.has('title') && lowerCols.has('uilink')
+      const defaultCat = sharedData.selectedCategorical || stateCol || (hasOpportunityCols && baseTypeCol ? baseTypeCol : null) || ''
+      setSelectedCategorical(defaultCat)
       setSelectedDate(sharedData.selectedDate || '')
       setOpportunityKeyword(sharedData.opportunityKeyword || '')
+      if (sharedData.selectedOpportunityNoticeType) {
+        setChartFilter({ type: 'category', value: sharedData.selectedOpportunityNoticeType })
+      }
 
       const sharedCustomTitle = String(sharedData.dashboardTitle || sharedData.name || '').trim()
       if (sharedCustomTitle) {
@@ -373,6 +442,21 @@ function SharedDashboard() {
       // Restore dashboard view if saved
       if (sharedData.dashboardView) {
         setDashboardView(sharedData.dashboardView)
+      }
+      if (sharedData.layouts && typeof sharedData.layouts === 'object') {
+        setSharedLayouts(sharedData.layouts)
+      }
+      if (sharedData.widgetVisibility && typeof sharedData.widgetVisibility === 'object') {
+        setSharedWidgetVisibility(sharedData.widgetVisibility)
+      }
+      if (sharedData.filterSnapshot && typeof sharedData.filterSnapshot === 'object') {
+        setSharedFilterSnapshot(sharedData.filterSnapshot)
+      }
+      if (Array.isArray(sharedData.opportunityFavorites) && sharedData.opportunityFavorites.length > 0) {
+        setOpportunityFavorites(new Set(sharedData.opportunityFavorites))
+      }
+      if (Array.isArray(sharedData.opportunityFavoriteRows) && sharedData.opportunityFavoriteRows.length > 0) {
+        setOpportunityFavoriteRows(sharedData.opportunityFavoriteRows.map((r) => ({ ...r })))
       }
 
       // Generate dashboard title
@@ -509,9 +593,11 @@ function SharedDashboard() {
     }
     
     setLoading(false)
+    setShowLoader(false)
     }
     
     loadDashboard()
+    return () => clearTimeout(showLoaderTimer)
   }, [shareId])
 
   const isOpportunityDataset = useMemo(() => {
@@ -522,6 +608,53 @@ function SharedDashboard() {
       colSet.has('uiLink')
     )
   }, [columns])
+
+  const getOpportunityNoticeType = useCallback((row) => {
+    const rawType = String(row?.baseType || row?.type || '').trim()
+    const t = rawType.toLowerCase()
+    if (t.includes('sources sought') || t.includes('source sought')) return 'Sources Sought'
+    if (t.includes('presolicitation') || t.includes('pre-solicitation')) return 'Presolicitation'
+    if (t.includes('solicitation')) return 'Solicitation'
+    return rawType || 'Other'
+  }, [])
+
+  const getOpportunityId = useCallback((row) => String(row?.noticeId || row?.uiLink || `${row?.title || ''}-${row?.solicitationNumber || ''}`), [])
+  const toggleOpportunityFavorite = useCallback((row) => {
+    const id = getOpportunityId(row)
+    setOpportunityFavorites((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+    setOpportunityFavoriteRows((prev) => {
+      const has = prev.some((r) => getOpportunityId(r) === id)
+      if (has) return prev.filter((r) => getOpportunityId(r) !== id)
+      return [...prev, { ...row }]
+    })
+  }, [getOpportunityId])
+  const isOpportunityFavorite = useCallback((row) => opportunityFavorites.has(getOpportunityId(row)), [opportunityFavorites, getOpportunityId])
+
+  const BASE_TYPE_VALUES = ['Solicitation', 'Presolicitation', 'Sources Sought']
+  const selectedOpportunityNoticeType =
+    chartFilter?.type === 'category' && BASE_TYPE_VALUES.includes(String(chartFilter?.value))
+      ? String(chartFilter.value)
+      : null
+
+  const opportunityPieDataByOrg = useMemo(() => {
+    if (!isOpportunityDataset || !selectedOpportunityNoticeType) return null
+    const rows = Array.isArray(filteredData) ? filteredData : []
+    const filtered = rows.filter((row) => getOpportunityNoticeType(row) === selectedOpportunityNoticeType)
+    return filtered.length > 0 ? filtered : null
+  }, [isOpportunityDataset, selectedOpportunityNoticeType, filteredData, getOpportunityNoticeType])
+
+  const getOpportunityNoticeTypeClass = useCallback((label) => {
+    const l = String(label || '').toLowerCase()
+    if (l === 'solicitation') return 'bg-blue-100 text-blue-800 border border-blue-200'
+    if (l === 'presolicitation') return 'bg-purple-100 text-purple-800 border border-purple-200'
+    if (l === 'sources sought') return 'bg-amber-100 text-amber-800 border border-amber-200'
+    return 'bg-gray-100 text-gray-700 border border-gray-200'
+  }, [])
 
   const allOpportunityRows = useMemo(() => {
     if (!isOpportunityDataset) return []
@@ -540,9 +673,23 @@ function SharedDashboard() {
     return out
   }, [filteredData, isOpportunityDataset])
 
+  const dateFilteredOpportunityRows = useMemo(() => {
+    if (!isOpportunityDataset || allOpportunityRows.length === 0) return allOpportunityRows
+    const days = Math.min(Math.max(Number(opportunityDateRangeDays) || 30, 1), 364)
+    const cutoff = new Date()
+    cutoff.setDate(cutoff.getDate() - days)
+    const postedKey = columns?.find((c) => String(c).toLowerCase() === 'posteddate' || String(c).toLowerCase() === 'posted_date') || 'postedDate'
+    return allOpportunityRows.filter((row) => {
+      const d = row?.[postedKey]
+      if (!d) return true
+      const date = new Date(d)
+      return !Number.isNaN(date.getTime()) && date >= cutoff
+    })
+  }, [isOpportunityDataset, allOpportunityRows, opportunityDateRangeDays, columns])
+
   const opportunityRows = useMemo(() => {
     const q = String(opportunityKeyword || '').trim().toLowerCase()
-    const sourceRows = Array.isArray(allOpportunityRows) ? allOpportunityRows : []
+    const sourceRows = Array.isArray(dateFilteredOpportunityRows) ? dateFilteredOpportunityRows : []
     if (!q) return sourceRows.slice(0, 20).map((row) => ({ ...row, _matchReason: '' }))
 
     const normalize = (s) =>
@@ -576,10 +723,64 @@ function SharedDashboard() {
       .filter(Boolean)
 
     return matches.slice(0, 20)
-  }, [allOpportunityRows, opportunityKeyword])
+  }, [dateFilteredOpportunityRows, opportunityKeyword])
+
+  const opportunityByOrganization = useMemo(() => {
+    if (!selectedOpportunityNoticeType || !isOpportunityDataset) return []
+    const typeFiltered = opportunityRows.filter((row) => getOpportunityNoticeType(row) === selectedOpportunityNoticeType)
+    const byOrg = new Map()
+    for (const row of typeFiltered) {
+      const org = String(row?.organization || '').trim() || 'Unknown organization'
+      if (!byOrg.has(org)) byOrg.set(org, [])
+      byOrg.get(org).push(row)
+    }
+    return Array.from(byOrg.entries())
+      .map(([organization, rows]) => ({ organization, count: rows.length, rows }))
+      .sort((a, b) => b.count - a.count)
+  }, [selectedOpportunityNoticeType, isOpportunityDataset, opportunityRows, getOpportunityNoticeType])
 
   const renderOpportunityListPanel = () => {
     if (!isOpportunityDataset || allOpportunityRows.length === 0) return null
+
+    const showKeywordTypeCounts = !!opportunityKeyword
+    const noticeTypeCounts = opportunityRows.reduce(
+      (acc, row) => {
+        const type = getOpportunityNoticeType(row)
+        if (type === 'Solicitation') acc.solicitation += 1
+        else if (type === 'Presolicitation') acc.presolicitation += 1
+        else if (type === 'Sources Sought') acc.sourcesSought += 1
+        return acc
+      },
+      { solicitation: 0, presolicitation: 0, sourcesSought: 0 }
+    )
+
+    let visibleOpportunityRows
+    if (opportunityViewFilter === 'favorites') {
+      const savedIds = new Set(opportunityFavoriteRows.map((r) => getOpportunityId(r)))
+      const fromCurrent = (Array.isArray(allOpportunityRows) ? allOpportunityRows : []).filter(
+        (row) => opportunityFavorites.has(getOpportunityId(row)) && !savedIds.has(getOpportunityId(row))
+      )
+      visibleOpportunityRows = [...opportunityFavoriteRows, ...fromCurrent]
+      const postedKey = columns?.find((c) => String(c).toLowerCase() === 'posteddate' || String(c).toLowerCase() === 'posted_date') || 'postedDate'
+      visibleOpportunityRows.sort((a, b) => {
+        const da = a?.[postedKey] ? new Date(a[postedKey]).getTime() : 0
+        const db = b?.[postedKey] ? new Date(b[postedKey]).getTime() : 0
+        return db - da
+      })
+    } else {
+      visibleOpportunityRows = selectedOpportunityNoticeType
+        ? opportunityRows.filter((row) => getOpportunityNoticeType(row) === selectedOpportunityNoticeType)
+        : opportunityRows
+      if (selectedOpportunityOrg) {
+        visibleOpportunityRows = visibleOpportunityRows.filter(
+          (row) => (String(row?.organization || '').trim() || 'Unknown organization') === selectedOpportunityOrg
+        )
+      }
+    }
+
+    const stateCol = columns?.find((c) => String(c).toLowerCase() === 'state')
+    const isStateFilter = chartFilter?.type === 'category' && chartFilter?.value && stateCol && String(chartFilter.value).length === 2 && getStateAbbr(chartFilter.value) === chartFilter.value
+    const stateLabel = chartFilter?.value || ''
 
     return (
       <div className="mb-6 bg-white rounded-lg border border-gray-200 shadow-sm">
@@ -587,28 +788,186 @@ function SharedDashboard() {
           <div>
             <h3 className="text-lg font-semibold text-gray-900">Matching Opportunities</h3>
             <p className="text-sm text-gray-600">
-              Showing {opportunityRows.length} of {allOpportunityRows.length} filtered opportunities
+              Showing {opportunityViewFilter === 'favorites'
+                ? `${visibleOpportunityRows.length} favorites`
+                : `${visibleOpportunityRows.length} of ${allOpportunityRows.length} filtered opportunities`}
+              {chartFilter?.type === 'category' && chartFilter?.value && String(chartFilter.value).length === 2 ? ` in ${getStateDisplayLabel(chartFilter.value)}` : ''}
+              {opportunityKeyword ? ` • API keyword matches: 0` : ''}
+              {selectedOpportunityNoticeType ? ` • Base type: ${selectedOpportunityNoticeType}` : ''}
+              {selectedOpportunityOrg ? ` • Org: ${selectedOpportunityOrg}` : ''}
             </p>
+            {showKeywordTypeCounts && (
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = selectedOpportunityNoticeType === 'Solicitation' ? '' : 'Solicitation'
+                    setChartFilter(next ? { type: 'category', value: next } : null)
+                    setSelectedOpportunityOrg('')
+                    if (next && (columns?.includes('baseType') || columns?.includes('type'))) setSelectedCategorical(columns?.includes('baseType') ? 'baseType' : 'type')
+                  }}
+                  className={`px-2 py-0.5 rounded-full border ${
+                    selectedOpportunityNoticeType === 'Solicitation'
+                      ? 'bg-blue-600 text-white border-blue-700'
+                      : 'bg-blue-100 text-blue-800 border-blue-200'
+                  }`}
+                >
+                  Solicitation: {noticeTypeCounts.solicitation}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = selectedOpportunityNoticeType === 'Presolicitation' ? '' : 'Presolicitation'
+                    setChartFilter(next ? { type: 'category', value: next } : null)
+                    setSelectedOpportunityOrg('')
+                    if (next && (columns?.includes('baseType') || columns?.includes('type'))) setSelectedCategorical(columns?.includes('baseType') ? 'baseType' : 'type')
+                  }}
+                  className={`px-2 py-0.5 rounded-full border ${
+                    selectedOpportunityNoticeType === 'Presolicitation'
+                      ? 'bg-purple-600 text-white border-purple-700'
+                      : 'bg-purple-100 text-purple-800 border-purple-200'
+                  }`}
+                >
+                  Presolicitation: {noticeTypeCounts.presolicitation}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = selectedOpportunityNoticeType === 'Sources Sought' ? '' : 'Sources Sought'
+                    setChartFilter(next ? { type: 'category', value: next } : null)
+                    setSelectedOpportunityOrg('')
+                    if (next && (columns?.includes('baseType') || columns?.includes('type'))) setSelectedCategorical(columns?.includes('baseType') ? 'baseType' : 'type')
+                  }}
+                  className={`px-2 py-0.5 rounded-full border ${
+                    selectedOpportunityNoticeType === 'Sources Sought'
+                      ? 'bg-amber-600 text-white border-amber-700'
+                      : 'bg-amber-100 text-amber-800 border-amber-200'
+                  }`}
+                >
+                  Sources Sought: {noticeTypeCounts.sourcesSought}
+                </button>
+                {selectedOpportunityNoticeType && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setChartFilter(null)
+                      setSelectedOpportunityOrg('')
+                    }}
+                    className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 border border-gray-300"
+                  >
+                    Clear base type filter
+                  </button>
+                )}
+              </div>
+            )}
+            {selectedOpportunityNoticeType && opportunityByOrganization.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-gray-100">
+                <h4 className="text-xs font-semibold text-gray-700 mb-2">By agency / organization</h4>
+                <div className="flex flex-wrap gap-2">
+                  {selectedOpportunityOrg && (
+                    <button
+                      type="button"
+                      onClick={() => { setSelectedOpportunityOrg(''); setChartFilter(null) }}
+                      className="px-2 py-0.5 text-xs rounded-full bg-gray-200 text-gray-700 hover:bg-gray-300"
+                    >
+                      Clear org filter
+                    </button>
+                  )}
+                  {opportunityByOrganization.slice(0, 20).map(({ organization, count }) => {
+                    const isSelected = selectedOpportunityOrg === organization
+                    const maxCount = Math.max(...opportunityByOrganization.map((o) => o.count), 1)
+                    const pct = Math.max(8, Math.round((count / maxCount) * 100))
+                    return (
+                      <button
+                        key={organization}
+                        type="button"
+                        onClick={() => {
+                          const next = isSelected ? '' : organization
+                          setSelectedOpportunityOrg(next)
+                          setChartFilter(next ? { type: 'category', value: next } : null)
+                        }}
+                        className={`text-left px-2.5 py-1.5 rounded-lg border text-xs transition-colors ${
+                          isSelected
+                            ? 'bg-blue-600 text-white border-blue-700'
+                            : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                        }`}
+                        title={`${count} ${selectedOpportunityNoticeType}(s) • Click to ${isSelected ? 'clear' : 'filter by'} this organization`}
+                      >
+                        <span className="font-medium block truncate max-w-[200px]" title={organization}>{organization}</span>
+                        <span className="text-[10px] opacity-90">{count} opportunities</span>
+                        <div className="mt-1 h-1 w-full rounded bg-gray-200 overflow-hidden">
+                          <div
+                            className={`h-1 rounded ${isSelected ? 'bg-white' : 'bg-blue-500'}`}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+                {opportunityByOrganization.length > 20 && (
+                  <p className="text-[10px] text-gray-500 mt-1">
+                    Showing top 20 of {opportunityByOrganization.length} organizations.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
-          {chartFilter ? (
-            <span className="text-xs px-2.5 py-1 rounded-full bg-blue-100 text-blue-800 font-medium">
-              {chartFilter.type === 'category' ? `${selectedCategorical}: ${chartFilter.value}` : 'Date filter applied'}
-            </span>
-          ) : (
-            <span className="text-xs px-2.5 py-1 rounded-full bg-gray-100 text-gray-700 font-medium">
-              All filtered opportunities
-            </span>
-          )}
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex rounded-lg border border-gray-200 p-0.5 bg-gray-50">
+              <button
+                type="button"
+                onClick={() => setOpportunityViewFilter('all')}
+                className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${opportunityViewFilter === 'all' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+              >
+                All
+              </button>
+              <button
+                type="button"
+                onClick={() => setOpportunityViewFilter('favorites')}
+                className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors flex items-center gap-1 ${opportunityViewFilter === 'favorites' ? 'bg-white text-amber-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+              >
+                <span aria-hidden>★</span> Favorites {opportunityFavorites.size > 0 ? `(${opportunityFavorites.size})` : ''}
+              </button>
+            </div>
+            {chartFilter ? (
+              <span className="text-xs px-2.5 py-1 rounded-full bg-blue-100 text-blue-800 font-medium">
+                {chartFilter.type === 'category' ? (() => {
+                  const isStateF = stateCol && chartFilter.value && String(chartFilter.value).length === 2 && getStateAbbr(chartFilter.value) === chartFilter.value
+                  const colLabel = isStateF ? stateCol : selectedCategorical
+                  return `${colLabel || 'Filter'}: ${isStateF ? getStateDisplayLabel(chartFilter.value) : chartFilter.value}`
+                })() : 'Date filter applied'}
+              </span>
+            ) : (
+              <span className="text-xs px-2.5 py-1 rounded-full bg-gray-100 text-gray-700 font-medium">
+                All filtered opportunities
+              </span>
+            )}
+          </div>
         </div>
         <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/60">
+          <div className="flex items-center gap-3 mb-3">
+            <label className="text-xs font-medium text-gray-600 whitespace-nowrap">
+              Posted in
+            </label>
+            <select
+              value={opportunityDateRangeDays}
+              onChange={(e) => setOpportunityDateRangeDays(Number(e.target.value))}
+              className="px-2.5 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+            >
+              <option value={7}>Last 7 days</option>
+              <option value={30}>Last 30 days</option>
+              <option value={364}>Last year</option>
+            </select>
+          </div>
           <label className="block text-xs font-medium text-gray-600 mb-1">
-            Keyword Search
+            {isStateFilter ? 'Drill down by keyword' : 'Keyword Search'}
           </label>
           <input
             type="text"
             value={opportunityKeyword}
             onChange={(e) => setOpportunityKeyword(e.target.value)}
-            placeholder="Search title, solicitation, organization..."
+            placeholder={isStateFilter ? `Search within ${stateLabel} (title, org, solicitation…)` : 'Search title, solicitation, organization...'}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
           <div className="mt-2 flex flex-wrap gap-2">
@@ -632,11 +991,13 @@ function SharedDashboard() {
           </div>
         </div>
         <div className="divide-y divide-gray-100 max-h-[420px] overflow-y-auto">
-          {opportunityRows.length === 0 ? (
+          {visibleOpportunityRows.length === 0 ? (
             <div className="px-5 py-8 text-sm text-gray-600">
-              No opportunities match this keyword in the current filtered set.
+              {opportunityViewFilter === 'favorites'
+                ? 'No favorites yet. Click the star on any opportunity to add it here.'
+                : 'No opportunities match this keyword/type in the current filtered set.'}
             </div>
-          ) : opportunityRows.map((row, idx) => (
+          ) : visibleOpportunityRows.map((row, idx) => (
             <div key={String(row.noticeId || row.uiLink || idx)} className="px-5 py-4">
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
@@ -644,13 +1005,15 @@ function SharedDashboard() {
                     {row.title || 'Untitled Opportunity'}
                   </p>
                   <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-600">
+                    <span className={`px-2 py-0.5 rounded-full font-medium ${getOpportunityNoticeTypeClass(getOpportunityNoticeType(row))}`}>
+                      {getOpportunityNoticeType(row)}
+                    </span>
                     {row.solicitationNumber && (
                       <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-700">
                         Solicitation: {row.solicitationNumber}
                       </span>
                     )}
-                    {row.type && <span>Type: {row.type}</span>}
-                    {row.state && <span>State: {row.state}</span>}
+                    {row.state && <span>State: {getStateDisplayLabel(row.state)}</span>}
                     {opportunityKeyword && row._matchReason && (
                       <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100">
                         {row._matchReason}
@@ -664,16 +1027,27 @@ function SharedDashboard() {
                     </p>
                   </div>
                 </div>
-                {row.uiLink && (
-                  <a
-                    href={row.uiLink}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="shrink-0 inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+                <div className="shrink-0 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => toggleOpportunityFavorite(row)}
+                    className={`p-1.5 rounded-lg border transition-colors ${isOpportunityFavorite(row) ? 'bg-amber-50 border-amber-300 text-amber-600 hover:bg-amber-100' : 'bg-gray-50 border-gray-200 text-gray-400 hover:border-amber-200 hover:text-amber-500'}`}
+                    title={isOpportunityFavorite(row) ? 'Remove from favorites' : 'Add to favorites'}
+                    aria-label={isOpportunityFavorite(row) ? 'Remove from favorites' : 'Add to favorites'}
                   >
-                    Open
-                  </a>
-                )}
+                    <span className="text-lg leading-none">{isOpportunityFavorite(row) ? '★' : '☆'}</span>
+                  </button>
+                  {row.uiLink && (
+                    <a
+                      href={row.uiLink}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+                    >
+                      Open
+                    </a>
+                  )}
+                </div>
               </div>
             </div>
           ))}
@@ -682,14 +1056,27 @@ function SharedDashboard() {
     )
   }
 
-  const applyChartFilter = (baseData) => {
+  // Same selection/filter framework as main Dashboard: resolve state column from schema so state click filters correctly (no default to 0)
+  const applyChartFilter = useCallback((baseData) => {
     if (!baseData) return baseData
     if (!chartFilter) return baseData
-    
-    let result = [...baseData]
-    
-    if (chartFilter.type === 'category' && selectedCategorical) {
-      result = result.filter((row) => row[selectedCategorical] === chartFilter.value)
+
+    let result = baseData.length > 50000 ? baseData.slice() : [...baseData]
+
+    if (chartFilter.type === 'category') {
+      const filterVal = chartFilter.value
+      const stateCol = columns?.find((c) => String(c).toLowerCase() === 'state')
+      const isStateAbbr = filterVal && String(filterVal).length === 2 && getStateAbbr(filterVal) === filterVal
+      const useStateCol = stateCol && (String(selectedCategorical || '').toLowerCase() === 'state' || isStateAbbr)
+      const filterCol = useStateCol ? stateCol : selectedCategorical
+      if (filterCol) {
+        if (filterCol === stateCol) {
+          const filterAbbr = getStateAbbr(filterVal)
+          result = result.filter((row) => getStateAbbr(row[filterCol]) === filterAbbr)
+        } else {
+          result = result.filter((row) => row[filterCol] === filterVal)
+        }
+      }
     } else if (chartFilter.type === 'date' && selectedDate) {
       result = result.filter((row) => {
         const rowDate = new Date(row[selectedDate])
@@ -697,9 +1084,9 @@ function SharedDashboard() {
         return rowDate.toDateString() === filterDate.toDateString()
       })
     }
-    
+
     return result
-  }
+  }, [chartFilter, selectedCategorical, selectedDate, columns])
 
   const handleFilterChange = (filters, filtered) => {
     const sidebarFiltered = filtered || data
@@ -707,6 +1094,27 @@ function SharedDashboard() {
     const result = applyChartFilter(sidebarFiltered)
     setFilteredData(result)
   }
+
+  const handleDateRangeFilter = (filterInfo) => {
+    if (filterInfo && filterInfo.filteredData) {
+      setSidebarFilteredData(filterInfo.filteredData)
+      const result = applyChartFilter(filterInfo.filteredData)
+      setFilteredData(result)
+    } else {
+      setSidebarFilteredData(data)
+      setFilteredData(chartFilter ? applyChartFilter(data) : data)
+    }
+  }
+
+  const samgovDateQuickOptions = useMemo(() => {
+    if (!isOpportunityDataset) return []
+    const options = [
+      { key: 'updatedDate', label: 'Updated' },
+      { key: 'responseDeadLine', label: 'Response Deadline' },
+      { key: 'postedDate', label: 'Posted' },
+    ]
+    return options.filter((opt) => (dateColumns || []).includes(opt.key))
+  }, [isOpportunityDataset, dateColumns])
 
   const handleChartFilter = (filter) => {
     setChartFilter(filter)
@@ -725,6 +1133,16 @@ function SharedDashboard() {
       setSelectedDate(value)
     }
   }
+
+  const toggleFullscreen = () => setFullScreen((f) => !f)
+
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape' && fullScreen) setFullScreen(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [fullScreen])
 
   const calculateStats = () => {
     if (!filteredData || !selectedNumeric) return null
@@ -759,11 +1177,16 @@ function SharedDashboard() {
       const result = applyChartFilter(baseData)
       setFilteredData(result)
     }
-  }, [chartFilter, selectedCategorical, selectedDate])
+  }, [chartFilter, selectedCategorical, selectedDate, applyChartFilter, sidebarFilteredData, data])
 
   const stats = calculateStats()
   const currentDate = new Date()
   const monthYear = currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+
+  // Same as Dashboard: map only when 'state' column exists
+  const showMapTab = useMemo(() => {
+    return (columns || []).some((c) => String(c).toLowerCase() === 'state')
+  }, [columns])
 
   // Render AI Visual Builder (DashboardSpec) public view
   if (dashboardSpecData && !loading) {
@@ -884,7 +1307,7 @@ function SharedDashboard() {
     return (
       <div className="min-h-screen bg-gray-50">
         <Navbar />
-        <Loader />
+        {showLoader ? <Loader /> : <div className="flex-1 min-h-[200px]" />}
       </div>
     )
   }
@@ -912,17 +1335,61 @@ function SharedDashboard() {
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
-      
-      {/* Tab Navigation */}
-      <TabNavigation 
-        activeTab={activeTab} 
-        onTabChange={setActiveTab}
-        tabs={['Overview']}
-      />
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {/* Header */}
-        <div className="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center animate-fade-in">
+      {/* Date Range Slider and Date field - top of dashboard (same as main Dashboard) */}
+      {data && (dateColumns || []).length > 0 && (
+        <div className="bg-white border-b border-gray-200 shadow-sm">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex flex-col gap-2 py-3 md:flex-row md:items-center md:justify-between">
+              <div className="flex-1">
+                {selectedDate && (dateColumns || []).includes(selectedDate) && (
+                  <DateRangeSlider
+                    data={data}
+                    selectedDate={selectedDate}
+                    onFilterChange={handleDateRangeFilter}
+                  />
+                )}
+              </div>
+              {samgovDateQuickOptions.length > 0 && (
+                <div className="flex items-center gap-2 md:ml-4">
+                  <span className="text-xs font-medium text-gray-600">Date field:</span>
+                  {samgovDateQuickOptions.map((opt) => (
+                    <button
+                      key={opt.key}
+                      type="button"
+                      onClick={() => setSelectedDate(opt.key)}
+                      className={`px-2.5 py-1.5 rounded-md text-xs font-medium border transition-colors ${
+                        selectedDate === opt.key
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className={fullScreen ? 'fixed inset-0 z-30 bg-gray-50 flex flex-col overflow-hidden' : ''}>
+        {fullScreen && (
+          <div className="flex-shrink-0 bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between">
+            <span className="text-sm font-medium text-gray-700">{dashboardTitle}</span>
+            <button
+              onClick={toggleFullscreen}
+              className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-gray-600 text-white hover:bg-gray-700"
+              title="Exit Fullscreen (ESC)"
+            >
+              Exit Fullscreen
+            </button>
+          </div>
+        )}
+      <div className={`max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 ${fullScreen ? 'flex-1 overflow-auto' : ''}`}>
+        {/* Header with Filters, Fullscreen, and view mode toolbar (same as main Dashboard) */}
+        <div className="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center animate-fade-in gap-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 mb-1">
               {dashboardTitle}
@@ -932,57 +1399,203 @@ function SharedDashboard() {
             </p>
             <p className="text-xs text-blue-600 font-medium mt-1">Shared Dashboard</p>
           </div>
-          <div className="flex items-center gap-2 mt-2 sm:mt-0">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Filters Button & Dropdown */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowFilters(!showFilters)}
+                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50 transition-colors flex items-center gap-2"
+                title="Filters"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                </svg>
+                Filters
+                {showFilters ? (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                  </svg>
+                ) : null}
+              </button>
+              {showFilters && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowFilters(false)} aria-hidden="true" />
+                  <div className="absolute right-0 top-full mt-2 w-96 bg-white rounded-lg shadow-xl border border-gray-200 z-50 max-h-[80vh] overflow-y-auto">
+                    <div className="p-4">
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-lg font-semibold text-gray-900">Filters & Columns</h3>
+                        <button type="button" onClick={() => setShowFilters(false)} className="text-gray-400 hover:text-gray-600">
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                      <Filters
+                        data={data}
+                        numericColumns={effectiveNumericColumns}
+                        categoricalColumns={categoricalColumns}
+                        dateColumns={dateColumns}
+                        onFilterChange={handleFilterChange}
+                        selectedNumeric={selectedNumeric}
+                        selectedCategorical={selectedCategorical}
+                        selectedDate={selectedDate}
+                        onColumnChange={handleColumnChange}
+                        initialFilters={sharedFilterSnapshot}
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
             <button
-              onClick={() => setDashboardView(dashboardView === 'advanced' ? 'simple' : 'advanced')}
-              className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50 transition-colors"
+              type="button"
+              onClick={toggleFullscreen}
+              className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50 transition-colors flex items-center gap-2"
+              title={fullScreen ? 'Exit Fullscreen (ESC)' : 'Enter Fullscreen'}
             >
-              {dashboardView === 'advanced' ? 'Simple View' : 'Advanced View'}
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+              </svg>
+              {fullScreen ? 'Exit Fullscreen' : 'Fullscreen'}
             </button>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setDashboardView('simple')}
+                className={`px-3 py-1.5 text-sm border rounded-lg transition-colors ${dashboardView === 'simple' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white border-gray-300 hover:bg-gray-50'}`}
+              >
+                Charts
+              </button>
+              <button
+                type="button"
+                onClick={() => setDashboardView('advanced')}
+                className={`px-3 py-1.5 text-sm border rounded-lg transition-colors ${dashboardView === 'advanced' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white border-gray-300 hover:bg-gray-50'}`}
+              >
+                Advanced
+              </button>
+              <button
+                type="button"
+                onClick={() => setDashboardView('custom')}
+                className={`px-3 py-1.5 text-sm border rounded-lg transition-colors ${dashboardView === 'custom' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white border-gray-300 hover:bg-gray-50'}`}
+              >
+                Custom
+              </button>
+              <button
+                type="button"
+                onClick={() => setDashboardView('timeseries')}
+                className={`px-3 py-1.5 text-sm border rounded-lg transition-colors ${dashboardView === 'timeseries' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white border-gray-300 hover:bg-gray-50'}`}
+              >
+                Time Series
+              </button>
+              <button
+                type="button"
+                onClick={() => setDashboardView('data')}
+                className={`px-3 py-1.5 text-sm border rounded-lg transition-colors ${dashboardView === 'data' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white border-gray-300 hover:bg-gray-50'}`}
+              >
+                Data & Metadata
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* View Metric Tabs */}
+        {/* Same order as main Dashboard: Metric/Category tabs then active filter then charts */}
         <MetricTabsBar />
         <CategoryTabsBar />
-        {renderOpportunityListPanel()}
 
-        {/* Active Filter Indicator */}
+        {/* Active Filter Indicator - same as main Dashboard */}
         {chartFilter && (
           <div className="mb-4 flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg p-3 animate-slide-up">
             <div className="flex items-center space-x-2">
-              <span className="text-sm font-medium text-blue-900">
-                Filtered by: <span className="font-semibold">
-                  {chartFilter.type === 'category' ? chartFilter.value : 
-                   chartFilter.type === 'date' ? new Date(chartFilter.value).toLocaleDateString() : ''}
+                <span className="text-sm font-medium text-blue-900">
+                  Filtered by: <span className="font-semibold">
+                    {chartFilter.type === 'category' ? (String(chartFilter.value).length === 2 && getStateAbbr(chartFilter.value) === chartFilter.value ? getStateDisplayLabel(chartFilter.value) : chartFilter.value) :
+                     chartFilter.type === 'date' ? new Date(chartFilter.value).toLocaleDateString() : ''}
+                  </span>
                 </span>
-              </span>
+              </div>
+              <button
+                onClick={clearChartFilter}
+                className="text-sm text-blue-700 hover:text-blue-900 font-medium px-3 py-1 rounded hover:bg-blue-100 transition-colors"
+              >
+                Clear Filter
+              </button>
             </div>
-            <button
-              onClick={clearChartFilter}
-              className="text-sm text-blue-700 hover:text-blue-900 font-medium px-3 py-1 rounded hover:bg-blue-100 transition-colors"
-            >
-              Clear Filter
-            </button>
-          </div>
-        )}
+          )}
 
-        {/* Charts Section */}
-        {dashboardView === 'advanced' ? (
-          <AdvancedDashboard
+        {/* Charts Section - exact same branching as main Dashboard: data | timeseries | advanced | custom | simple */}
+        {dashboardView === 'data' ? (
+          <DataMetadataEditor
             data={data}
-            filteredData={filteredData}
+            columns={columns}
+            numericColumns={effectiveNumericColumns}
+            categoricalColumns={categoricalColumns}
+            dateColumns={dateColumns}
+            onMetadataUpdate={() => {}}
+          />
+        ) : dashboardView === 'timeseries' ? (
+          <TimeSeriesReport
+            data={filteredData || data}
+            numericColumns={effectiveNumericColumns}
+            dateColumns={dateColumns}
+            selectedNumeric={selectedNumeric}
+            selectedDate={selectedDate}
+          />
+        ) : dashboardView === 'advanced' ? (
+          <>
+            <details className="mb-6 bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+              <summary className="px-4 py-3 cursor-pointer list-none flex items-center gap-2 font-medium text-gray-700 hover:bg-gray-50 select-none">
+                <span className="text-blue-600" aria-hidden>📖</span>
+                Dashboard guide – what each view and term means
+              </summary>
+              <div className="px-4 pb-4 pt-1 border-t border-gray-100 text-sm text-gray-600 space-y-3">
+                <p><strong>Views:</strong> <em>Charts</em> = line + pie + metrics. <em>Advanced</em> = more charts at once (line, donut, bar, sunburst). <em>Custom</em> = your own layout. <em>Time Series</em> = trends over time. <em>Data &amp; Metadata</em> = raw table and column types.</p>
+                <p><strong>Datasets:</strong> <em>Sales</em> = revenue by product/region. <em>Maritime AIS</em> = vessel positions and speed (SOG, COG). <em>SAM.gov</em> = federal contract opportunities. <em>USA Spending</em> = federal awards.</p>
+                <p><strong>Hover over field names</strong> (e.g. COG, SOG, base type, organization) in the chart titles above to see what they mean.</p>
+              </div>
+            </details>
+            <AdvancedDashboard
+              data={data}
+              filteredData={filteredData}
+              selectedNumeric={selectedNumeric}
+              selectedCategorical={selectedCategorical}
+              selectedDate={selectedDate}
+              onChartFilter={handleChartFilter}
+              chartFilter={chartFilter}
+              categoricalColumns={categoricalColumns}
+              numericColumns={effectiveNumericColumns}
+              dateColumns={dateColumns}
+            />
+          </>
+        ) : dashboardView === 'custom' && sharedLayouts && Object.keys(sharedLayouts).length > 0 ? (
+          <AdvancedDashboardGrid
+            data={data}
+            filteredData={filteredData || data}
             selectedNumeric={selectedNumeric}
             selectedCategorical={selectedCategorical}
             selectedDate={selectedDate}
             onChartFilter={handleChartFilter}
             chartFilter={chartFilter}
             categoricalColumns={categoricalColumns}
-            numericColumns={numericColumns}
+            numericColumns={effectiveNumericColumns}
             dateColumns={dateColumns}
+            viewMode="readonly"
+            initialLayouts={sharedLayouts}
+            initialWidgetVisibility={sharedWidgetVisibility}
           />
         ) : (
           <>
+            {showMapTab && (
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden p-4 mb-6" style={{ minHeight: '360px' }}>
+                <ContractMapWidget
+                  data={filteredData || data}
+                  selectedCategorical="state"
+                  selectedNumeric={effectiveNumericColumns?.includes('award_amount') ? 'award_amount' : effectiveNumericColumns?.includes('opportunity_count') ? 'opportunity_count' : null}
+                  chartFilter={chartFilter}
+                  onChartFilter={handleChartFilter}
+                />
+              </div>
+            )}
             <DashboardCharts
               data={data}
               filteredData={filteredData}
@@ -991,55 +1604,49 @@ function SharedDashboard() {
               selectedDate={selectedDate}
               onChartFilter={handleChartFilter}
               chartFilter={chartFilter}
-            />
-
-            {/* Metric Cards - Only in simple view */}
-            <MetricCards
-              data={filteredData}
-              numericColumns={numericColumns}
-              selectedNumeric={selectedNumeric}
-              stats={stats}
+              pieFilteredData={opportunityPieDataByOrg}
+              pieDimensionOverride={opportunityPieDataByOrg ? 'organization' : undefined}
+              pieTitleOverride={opportunityPieDataByOrg ? `By organization (${selectedOpportunityNoticeType})` : undefined}
             />
           </>
         )}
 
-        {/* Filters and AI Insights */}
+        {/* Matching opportunities - same as main Dashboard (includes All / Favorites) */}
+        {renderOpportunityListPanel()}
+
+        {/* Metric Cards - Only in simple view, same position as unshared (bottom, before AI Insights) */}
+        {dashboardView === 'simple' && (
+          <MetricCards
+            data={filteredData}
+            numericColumns={effectiveNumericColumns}
+            selectedNumeric={selectedNumeric}
+            stats={stats}
+          />
+        )}
+
+        {/* AI Insights - same section as main Dashboard (no duplicate Filters) */}
         <div className="mt-6 space-y-4">
           <details className="bg-gray-50 rounded-lg p-4 border border-gray-200">
             <summary className="cursor-pointer font-semibold text-gray-900 mb-4">
-              Filters & AI Insights
+              AI Insights & Export
             </summary>
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-4">
-              <div className="lg:col-span-1">
-                <Filters
-                  data={data}
-                  numericColumns={numericColumns}
-                  categoricalColumns={categoricalColumns}
-                  dateColumns={dateColumns}
-                  onFilterChange={handleFilterChange}
-                  selectedNumeric={selectedNumeric}
-                  selectedCategorical={selectedCategorical}
-                  selectedDate={selectedDate}
-                  onColumnChange={handleColumnChange}
-                />
-              </div>
-              <div className="lg:col-span-2">
-                <button
-                  onClick={() => navigate('/')}
-                  className="mb-4 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium text-sm"
-                >
-                  Create Your Own Dashboard
-                </button>
-                <AIInsights 
-                  data={filteredData} 
-                  columns={columns} 
-                  totalRows={data?.length || 0}
-                  stats={stats}
-                />
-              </div>
+            <div className="mt-4">
+              <button
+                onClick={() => navigate('/')}
+                className="mb-4 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium text-sm"
+              >
+                Create Your Own Dashboard
+              </button>
+              <AIInsights
+                data={filteredData}
+                columns={columns}
+                totalRows={filteredData?.length || 0}
+                stats={stats}
+              />
             </div>
           </details>
         </div>
+      </div>
       </div>
     </div>
   )

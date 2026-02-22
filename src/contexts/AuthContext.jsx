@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { getUserProfile } from '../services/profileService'
@@ -28,29 +28,30 @@ export const AuthProvider = ({ children }) => {
     return true
   }
 
+  const loadUserProfile = useCallback(async (userId) => {
+    if (!userId) {
+      setUserProfile(null)
+      return null
+    }
+    try {
+      const profile = await getUserProfile(userId)
+      setUserProfile(profile)
+      return profile
+    } catch (error) {
+      console.error('Error loading user profile:', error)
+      setUserProfile(null)
+      return null
+    }
+  }, [])
+
   // Load user profile when user changes
   useEffect(() => {
-    const loadUserProfile = async (userId) => {
-      if (!userId) {
-        setUserProfile(null)
-        return
-      }
-
-      try {
-        const profile = await getUserProfile(userId)
-        setUserProfile(profile)
-      } catch (error) {
-        console.error('Error loading user profile:', error)
-        setUserProfile(null)
-      }
-    }
-
     if (user?.id) {
       loadUserProfile(user.id)
     } else {
       setUserProfile(null)
     }
-  }, [user])
+  }, [user, loadUserProfile])
 
   useEffect(() => {
     // Check current session with error handling
@@ -199,9 +200,15 @@ export const AuthProvider = ({ children }) => {
     return data
   }
 
+  const refreshUserProfile = useCallback(() => {
+    if (user?.id) return loadUserProfile(user.id)
+    return Promise.resolve(null)
+  }, [user?.id, loadUserProfile])
+
   const value = {
     user,
     userProfile,
+    refreshUserProfile,
     signUp,
     signIn,
     signOut,

@@ -121,6 +121,27 @@ function Navbar({ onOpenSidebar }) {
                     >
                       Studio
                     </Link>
+                    <Link
+                      to="/profile"
+                      className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                      onClick={() => setUserMenuOpen(false)}
+                    >
+                      Profile
+                    </Link>
+                    <Link
+                      to="/messages"
+                      className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                      onClick={() => setUserMenuOpen(false)}
+                    >
+                      Messages
+                    </Link>
+                    <Link
+                      to="/careers"
+                      className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                      onClick={() => setUserMenuOpen(false)}
+                    >
+                      Careers
+                    </Link>
                     <button
                       type="button"
                       onClick={handleSignOut}
