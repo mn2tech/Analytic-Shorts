@@ -428,6 +428,19 @@ export default function Post() {
                 </a>
               </div>
             )}
+            {!sharedDataLoading && !sharedData && !sharedDataError && (
+              <div className="p-8 text-center text-gray-500">
+                <p>Dashboard could not be loaded.</p>
+                <a
+                  href={typeof window !== 'undefined' ? `${window.location.origin}/dashboard/shared/${post.share_id}` : `/dashboard/shared/${post.share_id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-2 inline-block text-sm text-blue-600 hover:underline"
+                >
+                  Open in new tab →
+                </a>
+              </div>
+            )}
           </section>
         </>
       ) : (
@@ -476,9 +489,12 @@ export default function Post() {
         <ul className="space-y-3">
           {comments.map((c) => (
             <li key={c.id} className="text-sm text-gray-700 border-b border-gray-100 pb-2">
-              <span className="text-gray-500">{c.user_id ? String(c.user_id).slice(0, 8) + '…' : 'Anonymous'}</span>
-              {' · '}
-              {c.comment}
+              <span className="font-medium text-gray-900">{c.author_display_name || 'Anonymous'}</span>
+              <span className="text-gray-400 mx-1">·</span>
+              <span className="text-gray-500 text-xs">
+                {c.created_at ? new Date(c.created_at).toLocaleString() : ''}
+              </span>
+              <p className="mt-0.5">{c.comment}</p>
             </li>
           ))}
         </ul>

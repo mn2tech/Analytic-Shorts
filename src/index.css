@@ -192,6 +192,12 @@ body {
   background-size: 50px 50px;
 }
 
+/* Studio sidebar: dropdown options readable on white (dark theme opens white list) */
+.studio-select-options option {
+  color: #1f2937 !important;
+  background: #fff !important;
+}
+
 
 
 

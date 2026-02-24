@@ -767,22 +767,22 @@ export default function AAIStudio() {
                 <p className="text-[11px] font-medium uppercase tracking-wider mb-2" style={{ color: sidebarMuted }}>Source</p>
                 <div className="rounded-lg p-0.5" style={{ background: inputBg }}>
                   <select
-                    className="w-full rounded-lg px-3 py-2.5 text-sm font-medium appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#58a6ff44]"
+                    className="studio-select-options w-full rounded-lg px-3 py-2.5 text-sm font-medium appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#58a6ff44]"
                     style={{ background: 'transparent', border: 'none', color: sidebarText }}
                     value={sourceType}
                     onChange={(e) => setSourceType(e.target.value)}
                     disabled={loading}
                   >
                     {sourceTypes.map((s) => (
-                      <option key={s.value} value={s.value}>{s.icon} {s.label}</option>
+                      <option key={s.value} value={s.value} style={{ color: '#1f2937', backgroundColor: '#fff' }}>{s.icon} {s.label}</option>
                     ))}
                   </select>
                 </div>
                 {sourceType === 'dataset' && (
                   <div className="mt-2">
-                    <select className="w-full rounded-lg px-3 py-2 text-sm" style={{ background: inputBg, border: `1px solid ${sidebarBorder}`, color: sidebarText }} value={datasetId} onChange={(e) => setDatasetId(e.target.value)} disabled={datasetsLoading || loading}>
-                      {(datasets || []).map((d) => <option key={d.id} value={d.id}>{d.id}</option>)}
-                      {!datasetsLoading && datasets.length === 0 && (<><option value="sales">sales</option><option value="samgov/live">samgov/live</option></>)}
+                    <select className="studio-select-options w-full rounded-lg px-3 py-2 text-sm" style={{ background: inputBg, border: `1px solid ${sidebarBorder}`, color: sidebarText }} value={datasetId} onChange={(e) => setDatasetId(e.target.value)} disabled={datasetsLoading || loading}>
+                      {(datasets || []).map((d) => <option key={d.id} value={d.id} style={{ color: '#1f2937', backgroundColor: '#fff' }}>{d.id}</option>)}
+                      {!datasetsLoading && datasets.length === 0 && (<><option value="sales" style={{ color: '#1f2937', backgroundColor: '#fff' }}>sales</option><option value="samgov/live" style={{ color: '#1f2937', backgroundColor: '#fff' }}>samgov/live</option></>)}
                     </select>
                   </div>
                 )}
@@ -805,9 +805,9 @@ export default function AAIStudio() {
                 )}
                 {sourceType === 'csv' && (
                   <div className="mt-2">
-                    <select className="w-full rounded-lg px-3 py-2 text-sm" style={{ background: inputBg, border: `1px solid ${sidebarBorder}`, color: sidebarText }} value={lakeId} onChange={(e) => setLakeId(e.target.value)} disabled={lakeLoading || loading}>
-                      <option value="">Choose a dataset or upload CSV/JSON…</option>
-                      {(lakeList || []).map((d) => <option key={d.id} value={d.id}>{d.name || d.id} · {d.rowCount ?? 0} rows</option>)}
+                    <select className="studio-select-options w-full rounded-lg px-3 py-2 text-sm" style={{ background: inputBg, border: `1px solid ${sidebarBorder}`, color: sidebarText }} value={lakeId} onChange={(e) => setLakeId(e.target.value)} disabled={lakeLoading || loading}>
+                      <option value="" style={{ color: '#1f2937', backgroundColor: '#fff' }}>Choose a dataset or upload CSV/JSON…</option>
+                      {(lakeList || []).map((d) => <option key={d.id} value={d.id} style={{ color: '#1f2937', backgroundColor: '#fff' }}>{d.name || d.id} · {d.rowCount ?? 0} rows</option>)}
                     </select>
                     <label className="inline-flex items-center gap-1.5 mt-2 cursor-pointer text-[11px]" style={{ color: accent }} title="CSV, Excel, JSON, or PDF">
                       <input type="file" accept=".csv,.xlsx,.xls,.json,.pdf,application/json,application/pdf,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="hidden" disabled={uploadLoading || loading} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; handleCsvUploadToLake(f) }} />
@@ -820,8 +820,8 @@ export default function AAIStudio() {
               {/* Template */}
               <section>
                 <p className="text-[11px] font-medium uppercase tracking-wider mb-2" style={{ color: sidebarMuted }}>Template</p>
-                <select className="w-full rounded-lg px-3 py-2.5 text-sm" style={{ background: inputBg, border: `1px solid ${sidebarBorder}`, color: sidebarText }} value={templateId} onChange={(e) => setTemplateId(e.target.value)} disabled={loading}>
-                  {TEMPLATE_IDS.map((id) => <option key={id} value={id}>{studioTemplates[id]?.name ?? id}</option>)}
+                <select className="studio-select-options w-full rounded-lg px-3 py-2.5 text-sm" style={{ background: inputBg, border: `1px solid ${sidebarBorder}`, color: sidebarText }} value={templateId} onChange={(e) => setTemplateId(e.target.value)} disabled={loading}>
+                  {TEMPLATE_IDS.map((id) => <option key={id} value={id} style={{ color: '#1f2937', backgroundColor: '#fff' }}>{studioTemplates[id]?.name ?? id}</option>)}
                 </select>
               </section>
 

@@ -242,7 +242,18 @@ async function getComments(req, res) {
       .eq('post_id', id)
       .order('created_at', { ascending: true })
     if (error) throw error
-    res.json({ comments: comments || [] })
+    const list = comments || []
+    const userIds = [...new Set(list.map((c) => c.user_id).filter(Boolean))]
+    let namesByUser = {}
+    if (userIds.length > 0) {
+      const { data: profiles } = await db.from('shorts_user_profiles').select('user_id, name').in('user_id', userIds)
+      ;(profiles || []).forEach((p) => { namesByUser[p.user_id] = p.name || null })
+    }
+    const commentsWithNames = list.map((c) => ({
+      ...c,
+      author_display_name: namesByUser[c.user_id] || null
+    }))
+    res.json({ comments: commentsWithNames })
   } catch (err) {
     console.error('getComments:', err)
     res.status(500).json({ error: err.message || 'Failed to fetch comments' })
@@ -269,7 +280,8 @@ async function addComment(req, res) {
       .select()
       .single()
     if (error) throw error
-    res.status(201).json(row)
+    const { data: profile } = await db.from('shorts_user_profiles').select('name').eq('user_id', req.user.id).maybeSingle()
+    res.status(201).json({ ...row, author_display_name: profile?.name || null })
   } catch (err) {
     console.error('addComment:', err)
     res.status(500).json({ error: err.message || 'Failed to add comment' })
