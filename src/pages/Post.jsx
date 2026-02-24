@@ -3,8 +3,11 @@ import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useNotification } from '../contexts/NotificationContext'
 import Loader from '../components/Loader'
+import PostThumbnail from '../components/PostThumbnail'
 import DashboardRenderer from '../components/aiVisualBuilder/DashboardRenderer'
 import LegacyDashboardPreview from '../components/LegacyDashboardPreview'
+import SharedStudioDashboardView from '../components/SharedStudioDashboardView'
+import SharedAAIStudioRunView from '../components/SharedAAIStudioRunView'
 import {
   getPost,
   getPostDashboard,
@@ -17,6 +20,7 @@ import {
   deletePost
 } from '../services/postsService'
 import { followUser, unfollowUser } from '../services/followService'
+import { loadSharedDashboard } from '../utils/shareUtils'
 
 const VISIBILITY_LABELS = { public: 'Public', private: 'Private', org: 'Org', unlisted: 'Unlisted' }
 
@@ -39,7 +43,10 @@ export default function Post() {
   const [filterValues, setFilterValues] = useState({})
   const [legacyChartFilter, setLegacyChartFilter] = useState(null)
   const [dashboardError, setDashboardError] = useState(null)
-  const [iframeLoaded, setIframeLoaded] = useState(false)
+  const [sharedData, setSharedData] = useState(null)
+  const [sharedDataLoading, setSharedDataLoading] = useState(false)
+  const [sharedDataError, setSharedDataError] = useState(null)
+  const [sharedFilterValues, setSharedFilterValues] = useState({})
   const [followed, setFollowed] = useState(false)
   const [followLoading, setFollowLoading] = useState(false)
 
@@ -90,7 +97,36 @@ export default function Post() {
   }, [id, user])
 
   useEffect(() => {
-    setIframeLoaded(false)
+    if (!post?.share_id) {
+      setSharedData(null)
+      setSharedDataError(null)
+      return
+    }
+    let cancelled = false
+    setSharedDataLoading(true)
+    setSharedDataError(null)
+    loadSharedDashboard(post.share_id)
+      .then((data) => {
+        if (!cancelled) {
+          if (data == null) {
+            setSharedData(null)
+            setSharedDataError('Dashboard not found')
+          } else {
+            setSharedData(data)
+            setSharedDataError(null)
+          }
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setSharedData(null)
+          setSharedDataError(err?.message || 'Failed to load shared dashboard')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setSharedDataLoading(false)
+      })
+    return () => { cancelled = true }
   }, [post?.share_id])
 
   const handleLike = async () => {
@@ -181,9 +217,9 @@ export default function Post() {
         <Link to="/feed" className="text-blue-600 hover:underline">← Feed</Link>
       </div>
       <header className="mb-6">
-        {post.thumbnail_url && (
+        {(post.thumbnail_url ?? post.thumbnailUrl) && (
           <div className="aspect-video rounded-lg overflow-hidden bg-slate-100 mb-4 max-w-2xl">
-            <img src={post.thumbnail_url} alt="" className="w-full h-full object-cover" />
+            <PostThumbnail url={post.thumbnail_url ?? post.thumbnailUrl} title={post.title} className="w-full h-full" />
           </div>
         )}
         <div className="flex items-center gap-3 mb-3">
@@ -201,14 +237,14 @@ export default function Post() {
               />
             ) : (
               (() => {
-                const n = post.author_display_name || (post.author_id ? String(post.author_id).slice(0, 8) + '…' : 'Anonymous')
+                const n = post.author_display_name || 'Anonymous'
                 const parts = String(n).trim().split(/\s+/)
                 return parts.length >= 2 ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase().slice(0, 2) : String(n).slice(0, 2).toUpperCase()
               })()
             )}
           </div>
           <div>
-            <p className="font-semibold text-gray-900">{post.author_display_name || (post.author_id ? String(post.author_id).slice(0, 8) + '…' : 'Anonymous')}</p>
+            <p className="font-semibold text-gray-900">{post.author_display_name || 'Anonymous'}</p>
             <p className="text-sm text-gray-500">
               {post.created_at ? new Date(post.created_at).toLocaleString() : ''}
               {post.visibility && post.visibility !== 'public' && ` · ${VISIBILITY_LABELS[post.visibility] || post.visibility}`}
@@ -311,7 +347,7 @@ export default function Post() {
               Full dashboard below — use filters, map, and tables interactively.
             </p>
             <a
-              href={`/dashboard/shared/${post.share_id}`}
+              href={typeof window !== 'undefined' ? `${window.location.origin}/dashboard/shared/${post.share_id}` : `/dashboard/shared/${post.share_id}`}
               target="_blank"
               rel="noopener noreferrer"
               className="shrink-0 text-sm text-blue-600 hover:underline"
@@ -319,25 +355,79 @@ export default function Post() {
               Open in new tab →
             </a>
           </div>
-          <section className="mb-8 rounded-xl border border-gray-200 bg-white overflow-hidden shadow-sm relative">
-            {!iframeLoaded && (
-              <div
-                className="absolute inset-0 flex items-center justify-center bg-slate-50 rounded-xl z-10"
-                style={{ minHeight: 400 }}
-              >
+          <section className="mb-8 rounded-xl border border-gray-200 bg-white overflow-hidden shadow-sm">
+            {sharedDataLoading && (
+              <div className="flex items-center justify-center bg-slate-50 rounded-xl" style={{ minHeight: 400 }}>
                 <div className="animate-pulse text-slate-400 text-sm">Loading dashboard…</div>
               </div>
             )}
-            <iframe
-              key={`dashboard-${post.share_id}`}
-              title="Full dashboard"
-              src={`/dashboard/shared/${post.share_id}`}
-              className="w-full border-0 rounded-xl"
-              style={{ minHeight: 'min(1200px, 85vh)' }}
-              onLoad={() => {
-                setTimeout(() => setIframeLoaded(true), 150)
-              }}
-            />
+            {!sharedDataLoading && sharedDataError && (
+              <div className="p-8 rounded-xl bg-amber-50 border border-amber-200 text-center">
+                <p className="text-amber-900 font-medium">{sharedDataError}</p>
+                <a
+                  href={typeof window !== 'undefined' ? `${window.location.origin}/dashboard/shared/${post.share_id}` : `/dashboard/shared/${post.share_id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-3 inline-block text-sm text-blue-600 hover:underline"
+                >
+                  Open full dashboard in new tab →
+                </a>
+              </div>
+            )}
+            {!sharedDataLoading && sharedData && sharedData.dashboardType === 'dashboardSpec' && sharedData.spec && Array.isArray(sharedData.data) && (
+              <DashboardRenderer
+                spec={sharedData.spec}
+                data={sharedData.data}
+                filterValues={sharedFilterValues}
+                onFilterChange={setSharedFilterValues}
+              />
+            )}
+            {!sharedDataLoading && sharedData && sharedData.dashboardType === 'aaiStudioRun' && (
+              <SharedAAIStudioRunView sharedData={sharedData} />
+            )}
+            {!sharedDataLoading && sharedData && (sharedData.dashboardType === 'studio' || (sharedData.dashboard?.metadata && sharedData.dashboard?.sections)) && (
+              <SharedStudioDashboardView sharedData={sharedData} />
+            )}
+            {!sharedDataLoading && sharedData && !(sharedData.dashboardType === 'dashboardSpec' && sharedData.spec && Array.isArray(sharedData.data)) && !(sharedData.dashboardType === 'studio' || (sharedData.dashboard?.metadata && sharedData.dashboard?.sections)) && sharedData.dashboard && (
+              <LegacyDashboardPreview dashboard={sharedData.dashboard} chartFilter={legacyChartFilter} onChartFilter={setLegacyChartFilter} title={sharedData.dashboardTitle || sharedData.name} />
+            )}
+            {!sharedDataLoading && sharedData && !(sharedData.dashboardType === 'dashboardSpec' && sharedData.spec && Array.isArray(sharedData.data)) && !(sharedData.dashboardType === 'studio' || (sharedData.dashboard?.metadata && sharedData.dashboard?.sections)) && !sharedData.dashboard && Array.isArray(sharedData.data) && sharedData.data.length > 0 && (sharedData.numericColumns?.length || sharedData.columns?.length) && (() => {
+              const legacyDashboard = {
+                data: sharedData.data,
+                numeric_columns: sharedData.numericColumns || [],
+                categorical_columns: sharedData.categoricalColumns || [],
+                date_columns: sharedData.dateColumns || [],
+                selected_numeric: sharedData.selectedNumeric || sharedData.numericColumns?.[0] || '',
+                selected_categorical: sharedData.selectedCategorical || sharedData.categoricalColumns?.[0] || '',
+                selected_date: sharedData.selectedDate || sharedData.dateColumns?.[0] || '',
+                dashboard_view: sharedData.dashboardView || 'advanced',
+                opportunity_keyword: sharedData.opportunityKeyword ?? '',
+                opportunity_date_range_days: sharedData.opportunityDateRangeDays ?? 30,
+                opportunity_view_filter: sharedData.opportunityViewFilter ?? 'all',
+                opportunity_favorites: Array.isArray(sharedData.opportunityFavorites)
+                  ? sharedData.opportunityFavorites
+                  : sharedData.opportunityFavorites
+                    ? Array.from(sharedData.opportunityFavorites)
+                    : [],
+                opportunity_favorite_rows: Array.isArray(sharedData.opportunityFavoriteRows)
+                  ? sharedData.opportunityFavoriteRows
+                  : []
+              }
+              return <LegacyDashboardPreview dashboard={legacyDashboard} chartFilter={legacyChartFilter} onChartFilter={setLegacyChartFilter} title={sharedData.dashboardTitle || sharedData.name} />
+            })()}
+            {!sharedDataLoading && sharedData && !(sharedData.dashboardType === 'dashboardSpec' && sharedData.spec && Array.isArray(sharedData.data)) && !(sharedData.dashboardType === 'studio' || (sharedData.dashboard?.metadata && sharedData.dashboard?.sections)) && !sharedData.dashboard && !(Array.isArray(sharedData.data) && sharedData.data.length > 0 && (sharedData.numericColumns?.length || sharedData.columns?.length)) && (
+              <div className="p-8 text-center text-gray-500">
+                <p>This dashboard format is best viewed in a new tab.</p>
+                <a
+                  href={typeof window !== 'undefined' ? `${window.location.origin}/dashboard/shared/${post.share_id}` : `/dashboard/shared/${post.share_id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-2 inline-block text-sm text-blue-600 hover:underline"
+                >
+                  Open in new tab →
+                </a>
+              </div>
+            )}
           </section>
         </>
       ) : (

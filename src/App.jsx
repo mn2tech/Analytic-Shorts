@@ -21,6 +21,7 @@ import AdminAnalytics from './pages/AdminAnalytics'
 import StudioDashboard from './pages/studio/StudioDashboard'
 import StudioAppView from './pages/studio/StudioAppView'
 import AiVisualBuilderStudio from './pages/AiVisualBuilderStudio'
+import AAIStudio from './pages/AAIStudio'
 import Feed from './pages/Feed'
 import Post from './pages/Post'
 import Careers from './pages/Careers'
@@ -155,7 +156,7 @@ function App() {
                   path="chat"
                   element={
                     <ProtectedRoute>
-                      <AiVisualBuilderStudio />
+                      <AAIStudio />
                     </ProtectedRoute>
                   }
                 />
@@ -163,7 +164,7 @@ function App() {
                   path="data"
                   element={
                     <ProtectedRoute>
-                      <AiVisualBuilderStudio />
+                      <AAIStudio />
                     </ProtectedRoute>
                   }
                 />
@@ -172,7 +173,7 @@ function App() {
                   path="preview"
                   element={
                     <ProtectedRoute>
-                      <AiVisualBuilderStudio />
+                      <AAIStudio />
                     </ProtectedRoute>
                   }
                 />

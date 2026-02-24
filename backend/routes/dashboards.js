@@ -123,12 +123,17 @@ router.get('/:id', getUserFromToken, async (req, res) => {
 // Create a new dashboard (with usage limit check)
 router.post('/', getUserFromToken, checkDashboardLimit, async (req, res) => {
   try {
-    // Safety check
+    if (!supabase) {
+      return res.status(503).json({
+        error: 'Database not configured',
+        message: 'SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set. Dashboard save is disabled.'
+      })
+    }
     if (!req.user || !req.user.id) {
       console.error('req.user is undefined:', req.user)
       return res.status(401).json({ error: 'User not authenticated' })
     }
-    
+
     const {
       name,
       data,
@@ -165,14 +170,12 @@ router.post('/', getUserFromToken, checkDashboardLimit, async (req, res) => {
       dashboard_view: dashboardView || 'advanced'
     }
     
-    // Add schema if provided (for Studio dashboards)
-    // Only include schema if it's provided (to avoid cache issues)
+    // Add schema if provided (for Studio dashboards). Store as object for JSONB column.
     if (schema !== undefined && schema !== null) {
       try {
-        insertData.schema = typeof schema === 'string' ? schema : JSON.stringify(schema)
+        insertData.schema = typeof schema === 'string' ? JSON.parse(schema) : schema
       } catch (err) {
-        console.error('Error stringifying schema:', err)
-        // Continue without schema if stringification fails
+        console.error('Error parsing/using schema:', err)
       }
     }
     
@@ -181,11 +184,18 @@ router.post('/', getUserFromToken, checkDashboardLimit, async (req, res) => {
       .insert(insertData)
       .select()
       .single()
-    
+
     if (error) {
       console.error('Supabase insert error:', error)
       console.error('Insert data keys:', Object.keys(insertData))
-      console.error('Schema type:', typeof insertData.schema)
+      const code = error.code || ''
+      const msg = (error.message || '').toString()
+      if (code === '42703' || /column.*"schema".*does not exist/i.test(msg)) {
+        return res.status(400).json({
+          error: 'Database schema missing',
+          message: 'Run the migration that adds the "schema" column to shorts_dashboards (see supabase/migrations/20250222100000_dashboards_schema_column.sql).'
+        })
+      }
       throw error
     }
     
@@ -258,13 +268,12 @@ router.put('/:id', getUserFromToken, async (req, res) => {
     if (dashboardView !== undefined) updateData.dashboard_view = dashboardView
     if (opportunityKeyword !== undefined) updateData.opportunity_keyword = opportunityKeyword
     if (selectedOpportunityNoticeType !== undefined) updateData.selected_opportunity_notice_type = selectedOpportunityNoticeType
-    // Only update schema if it's provided (to avoid cache issues)
+    // Only update schema if it's provided. Store as object for JSONB column.
     if (schema !== undefined && schema !== null) {
       try {
-        updateData.schema = typeof schema === 'string' ? schema : JSON.stringify(schema)
+        updateData.schema = typeof schema === 'string' ? JSON.parse(schema) : schema
       } catch (err) {
-        console.error('Error stringifying schema:', err)
-        // Continue without schema if stringification fails
+        console.error('Error parsing/using schema:', err)
       }
     }
     

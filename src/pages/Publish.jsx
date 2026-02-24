@@ -9,6 +9,7 @@ import apiClient from '../config/api'
 import html2canvas from 'html2canvas'
 import DashboardRenderer from '../components/aiVisualBuilder/DashboardRenderer'
 import LegacyDashboardPreview from '../components/LegacyDashboardPreview'
+import SharedAAIStudioRunView from '../components/SharedAAIStudioRunView'
 
 const VISIBILITY_OPTIONS = [
   { value: 'public', label: 'Public' },
@@ -73,8 +74,8 @@ export default function Publish() {
       const { data } = await apiClient.post('/api/thumbnail-upload', form)
       const url = data?.url
       if (url) {
-        const base = (apiClient.defaults?.baseURL || '').replace(/\/$/, '')
-        setThumbnailUrl(base ? `${base}${url}` : url)
+        // Store URL as returned (relative path); PostThumbnail resolves with API_BASE_URL when displaying.
+        setThumbnailUrl(url)
       }
     } catch (err) {
       setError(err.response?.data?.error || err.message || 'Failed to capture thumbnail')
@@ -104,16 +105,29 @@ export default function Publish() {
           if (typeof spec === 'string') {
             try { spec = JSON.parse(spec) } catch (_) {}
           }
-          let rows = dashboard.data || []
-          const datasetId = spec?.datasetId
-          if ((!Array.isArray(rows) || rows.length === 0) && typeof datasetId === 'string' && datasetId && datasetId !== 'upload') {
-            try {
-              const resp = await apiClient.get(`/api/ai/dataset-data?dataset=${encodeURIComponent(datasetId)}`)
-              rows = resp?.data?.data || rows
-            } catch (_) {}
-          }
-          if (Array.isArray(rows) && rows.length > 0) {
-            payload = { dashboardType: 'dashboardSpec', spec, data: rows }
+          if (spec?.type === 'aaiStudioRun') {
+            payload = {
+              dashboardType: 'aaiStudioRun',
+              runId: spec.runId,
+              templateId: spec.templateId,
+              insightBlocks: spec.insightBlocks,
+              sceneGraph: spec.sceneGraph,
+              datasetProfile: spec.datasetProfile,
+              filters: spec.filters,
+              dashboardTitle: dashboard.name,
+            }
+          } else {
+            let rows = dashboard.data || []
+            const datasetId = spec?.datasetId
+            if ((!Array.isArray(rows) || rows.length === 0) && typeof datasetId === 'string' && datasetId && datasetId !== 'upload') {
+              try {
+                const resp = await apiClient.get(`/api/ai/dataset-data?dataset=${encodeURIComponent(datasetId)}`)
+                rows = resp?.data?.data || rows
+              } catch (_) {}
+            }
+            if (Array.isArray(rows) && rows.length > 0) {
+              payload = { dashboardType: 'dashboardSpec', spec, data: rows }
+            }
           }
         } else {
           payload = {
@@ -235,13 +249,28 @@ export default function Publish() {
         {previewDashboard && (
           <div
             ref={captureRef}
-            className="fixed left-[-9999px] top-0 z-[-1] overflow-hidden rounded-lg border border-gray-200 bg-slate-50"
+            className="fixed left-[-9999px] top-0 z-[-1] overflow-auto rounded-lg border border-gray-200 bg-slate-50"
             style={{ width: 640, height: 360 }}
           >
             {previewDashboard.schema ? (
               (() => {
                 const spec = typeof previewDashboard.schema === 'string' ? (() => { try { return JSON.parse(previewDashboard.schema) } catch (_) { return null } })() : previewDashboard.schema
                 const rows = Array.isArray(previewDashboard.data) ? previewDashboard.data : []
+                if (spec?.type === 'aaiStudioRun') {
+                  const sharedData = {
+                    dashboardType: 'aaiStudioRun',
+                    templateId: spec.templateId,
+                    insightBlocks: spec.insightBlocks,
+                    sceneGraph: spec.sceneGraph,
+                    filters: spec.filters,
+                    dashboardTitle: previewDashboard.name,
+                  }
+                  return (
+                    <div style={{ transform: 'scale(0.5)', transformOrigin: 'top left', width: 1280, height: 720 }}>
+                      <SharedAAIStudioRunView sharedData={sharedData} />
+                    </div>
+                  )
+                }
                 if (spec && rows.length) {
                   return (
                     <div style={{ transform: 'scale(0.5)', transformOrigin: 'top left', width: 1280, height: 720 }}>
@@ -249,7 +278,11 @@ export default function Publish() {
                     </div>
                   )
                 }
-                return null
+                return (
+                  <div className="flex items-center justify-center h-full text-gray-500 text-sm">
+                    No preview for this dashboard. Use &quot;Or paste image URL&quot; below to add a thumbnail.
+                  </div>
+                )
               })()
             ) : (
               <div style={{ transform: 'scale(0.5)', transformOrigin: 'top left', width: 1280, height: 720 }}>

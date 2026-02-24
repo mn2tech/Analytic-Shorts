@@ -7,7 +7,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "server": "node backend/server.js",
-    "dev:all": "concurrently \"npm run dev\" \"npm run server\""
+    "dev:all": "concurrently \"npm run dev\" \"npm run server\"",
+    "test:ui": "vitest run"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.85.0",
@@ -22,6 +23,7 @@
     "react-router-dom": "^6.20.0",
     "react-simple-maps": "^3.0.0",
     "recharts": "^2.10.3",
+    "topojson-client": "^3.1.0",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
@@ -33,6 +35,9 @@
     "postcss": "^8.4.32",
     "tailwindcss": "^3.3.6",
     "vite": "^5.0.8",
-    "vite-plugin-pwa": "^0.19.0"
+    "vite-plugin-pwa": "^0.19.0",
+    "vitest": "^1.2.0",
+    "@testing-library/react": "^14.1.2",
+    "jsdom": "^23.0.1"
   }
 }

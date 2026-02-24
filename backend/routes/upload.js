@@ -9,6 +9,8 @@ const { inferNumericColumnsAndConvert } = require('../utils/numericInference')
 const { validateData } = require('../controllers/dataValidator')
 const { parseCsvWithFallback, unpackSingleColumnCsvLines } = require('../utils/uploadParsing')
 const { createClient } = require('@supabase/supabase-js')
+const pdfParseModule = require('pdf-parse')
+const pdfParse = typeof pdfParseModule === 'function' ? pdfParseModule : (pdfParseModule.default || pdfParseModule)
 const { checkUploadLimit } = require('../middleware/usageLimits')
 
 const router = express.Router()
@@ -18,6 +20,38 @@ const router = express.Router()
  * `sheet_to_json` then yields one key like "date,rooms_available,..." and each row value is a full CSV line.
  * Detect and re-parse those lines as CSV.
  */
+/**
+ * Convert PDF extracted text to array of row objects.
+ * Tries CSV-style (comma-separated) first, then tab/space-separated with first line as header.
+ */
+function pdfTextToRows(text) {
+  if (!text || !String(text).trim()) return []
+  const trimmed = String(text).trim()
+  const lines = trimmed.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
+  if (lines.length < 2) return []
+
+  const firstLine = lines[0]
+  if (firstLine.includes(',') && firstLine.split(',').length >= 2) {
+    const asCsv = lines.join('\n')
+    const parsed = parseCsvWithFallback(asCsv)
+    const data = unpackSingleColumnCsvLines(parsed.data) || parsed.data
+    return data
+  }
+
+  const sep = firstLine.includes('\t') ? /\t+/ : /\s{2,}/
+  const headers = firstLine.split(sep).map((h, j) => String(h || '').trim() || `Col${j + 1}`)
+  const out = []
+  for (let i = 1; i < lines.length; i++) {
+    const cells = lines[i].split(sep).map((c) => String(c || '').trim())
+    const row = {}
+    headers.forEach((h, j) => {
+      row[h] = cells[j] !== undefined ? cells[j] : ''
+    })
+    out.push(row)
+  }
+  return out
+}
+
 function maybeReparseSingleColumnCsvFromXlsx(rawData) {
   if (!Array.isArray(rawData) || rawData.length === 0) return rawData
   const cols = Object.keys(rawData[0] || {})
@@ -193,16 +227,21 @@ const upload = multer({
   storage: storage,
   limits: { fileSize: FILE_SIZE_LIMIT_MB * 1024 * 1024 }, // 500MB (actual limit may be enforced by usageLimits per plan)
   fileFilter: (req, file, cb) => {
-    const allowedTypes = [
+    const allowedMimes = [
       'text/csv',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/json',
+      'application/pdf',
+      'application/octet-stream', // browser may send this for .json/.pdf
     ]
-    const ext = path.extname(file.originalname).toLowerCase()
-    
-    if (allowedTypes.includes(file.mimetype) || ext === '.csv' || ext === '.xlsx') {
+    const ext = (path.extname(file.originalname) || '').toLowerCase()
+    const allowedExt = ['.csv', '.xlsx', '.xls', '.json', '.pdf']
+    const mimeOk = allowedMimes.includes(file.mimetype)
+    const extOk = allowedExt.includes(ext)
+    if (mimeOk || extOk) {
       cb(null, true)
     } else {
-      cb(new Error('Only CSV and .xlsx Excel files are allowed'))
+      cb(new Error('Allowed: CSV, Excel (.xlsx), JSON, or PDF'))
     }
   },
 })
@@ -278,7 +317,7 @@ router.post('/', getUserFromToken, upload.single('file'), checkUploadLimitWithTi
     const fileExt = path.extname(req.file.originalname).toLowerCase()
     let rawData = []
 
-    // Parse file based on extension
+    // Parse file based on extension (engine accepts any tabular data)
     if (fileExt === '.csv') {
       const fileContent = fs.readFileSync(filePath, 'utf-8')
       const parsed = parseCsvWithFallback(fileContent)
@@ -287,6 +326,55 @@ router.post('/', getUserFromToken, upload.single('file'), checkUploadLimitWithTi
       rawData = await parseXlsxWithExcelJS(filePath)
       rawData = maybeReparseSingleColumnCsvFromXlsx(rawData)
       rawData = unpackSingleColumnCsvLines(rawData) || rawData
+    } else if (fileExt === '.json') {
+      const fileContent = fs.readFileSync(filePath, 'utf-8')
+      let parsed
+      try {
+        parsed = JSON.parse(fileContent)
+      } catch (err) {
+        fs.unlinkSync(filePath)
+        return res.status(400).json({ error: 'Invalid JSON', message: err.message })
+      }
+      if (Array.isArray(parsed)) {
+        rawData = parsed
+      } else if (parsed && Array.isArray(parsed.data)) {
+        rawData = parsed.data
+      } else if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        rawData = [parsed]
+      } else {
+        fs.unlinkSync(filePath)
+        return res.status(400).json({ error: 'JSON must be an array of objects or { data: [...] }' })
+      }
+      rawData = rawData.filter((row) => row && typeof row === 'object' && !Array.isArray(row))
+    } else if (fileExt === '.pdf') {
+      try {
+        const dataBuffer = fs.readFileSync(filePath)
+        if (typeof pdfParse !== 'function') {
+          fs.unlinkSync(filePath)
+          return res.status(500).json({
+            error: 'PDF parsing not available',
+            message: 'Server configuration error: pdf-parse is not loaded. Please contact support.'
+          })
+        }
+        const pdfData = await pdfParse(dataBuffer)
+        const text = (pdfData && pdfData.text) ? String(pdfData.text) : ''
+        rawData = pdfTextToRows(text)
+        if (rawData.length === 0) {
+          fs.unlinkSync(filePath)
+          return res.status(400).json({
+            error: 'No tabular data in PDF',
+            message: 'Could not find a table in the PDF. PDFs with text tables (e.g. exported from Excel as PDF) work best.'
+          })
+        }
+      } catch (pdfErr) {
+        if (req.file && fs.existsSync(filePath)) fs.unlinkSync(filePath)
+        const msg = pdfErr && (pdfErr.message || String(pdfErr))
+        console.error('PDF upload error:', msg)
+        return res.status(400).json({
+          error: 'PDF could not be read',
+          message: msg && msg.length < 200 ? msg : 'The PDF may be encrypted, image-only, or corrupted. Try a PDF that contains selectable text (e.g. exported from Excel).'
+        })
+      }
     } else if (fileExt === '.xls') {
       fs.unlinkSync(filePath) // Clean up
       return res.status(400).json({
@@ -295,7 +383,7 @@ router.post('/', getUserFromToken, upload.single('file'), checkUploadLimitWithTi
       })
     } else {
       fs.unlinkSync(filePath) // Clean up
-      return res.status(400).json({ error: 'Unsupported file format' })
+      return res.status(400).json({ error: 'Unsupported file format. Use CSV, Excel (.xlsx), JSON, or PDF.' })
     }
 
     if (rawData.length === 0) {

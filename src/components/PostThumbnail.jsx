@@ -1,13 +1,28 @@
+import { useState } from 'react'
+import { API_BASE_URL } from '../config/api'
+
+/** Resolve relative thumbnail URL (e.g. /api/uploads/...) to full URL in prod when API is on another origin. */
+function resolveThumbnailUrl(url) {
+  if (!url || !String(url).trim()) return ''
+  const u = String(url).trim()
+  if (u.startsWith('http://') || u.startsWith('https://')) return u
+  const base = (typeof API_BASE_URL === 'string' && API_BASE_URL.trim()) ? API_BASE_URL.replace(/\/$/, '') : ''
+  return base ? `${base}${u.startsWith('/') ? u : `/${u}`}` : u
+}
+
 /**
  * Thumbnail area for feed/post cards. Shows image when url provided, otherwise a styled placeholder.
  */
 export default function PostThumbnail({ url, title = 'Analytics Short', className = '' }) {
-  if (url && url.trim()) {
+  const [failed, setFailed] = useState(false)
+  const resolved = resolveThumbnailUrl(url)
+  if (resolved && !failed) {
     return (
       <img
-        src={url}
+        src={resolved}
         alt=""
         className={`w-full h-full object-cover ${className}`}
+        onError={() => setFailed(true)}
       />
     )
   }

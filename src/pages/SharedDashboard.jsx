@@ -15,6 +15,7 @@ import TimeSeriesReport from '../components/TimeSeriesReport'
 import { parseNumericValue } from '../utils/numberUtils'
 import { loadSharedDashboard } from '../utils/shareUtils'
 import SharedStudioDashboardView from '../components/SharedStudioDashboardView'
+import SharedAAIStudioRunView from '../components/SharedAAIStudioRunView'
 
 const SHARED_DASHBOARD_CACHE = new Map()
 const CACHE_MAX = 5
@@ -90,6 +91,7 @@ function SharedDashboard() {
   const [dashboardTitle, setDashboardTitle] = useState('Analytics Dashboard')
   const [isTitleCustomized, setIsTitleCustomized] = useState(false)
   const [studioDashboardData, setStudioDashboardData] = useState(null)
+  const [aaiStudioRunData, setAaiStudioRunData] = useState(null)
   const [dashboardSpecData, setDashboardSpecData] = useState(null)
   const [dashboardSpecViewSpec, setDashboardSpecViewSpec] = useState(null)
   const [filterValues, setFilterValues] = useState({})
@@ -391,6 +393,14 @@ function SharedDashboard() {
         }
         setDashboardSpecData({ spec: sharedData.spec, data: rows })
         setDashboardSpecViewSpec(sharedData.spec)
+        setLoading(false)
+        setShowLoader(false)
+        return
+      }
+
+      // Check if this is an AAI Studio run (upload → build → share)
+      if (sharedData.dashboardType === 'aaiStudioRun') {
+        setAaiStudioRunData(sharedData)
         setLoading(false)
         setShowLoader(false)
         return
@@ -1298,6 +1308,11 @@ function SharedDashboard() {
     )
   }
 
+  // Render AAI Studio run (upload → build → share)
+  if (aaiStudioRunData && !loading) {
+    return <SharedAAIStudioRunView sharedData={aaiStudioRunData} />
+  }
+
   // Render Studio dashboard if it's a Studio dashboard (legacy)
   if (studioDashboardData && !loading) {
     return <SharedStudioDashboardView sharedData={studioDashboardData} />
@@ -1313,6 +1328,9 @@ function SharedDashboard() {
   }
 
   if (error) {
+    const prodBase = import.meta.env.VITE_APP_URL || 'https://analytics-shorts.nm2tech-sas.com'
+    const openOnProdUrl = shareId ? `${prodBase.replace(/\/$/, '')}/dashboard/shared/${shareId}` : null
+    const isDev = import.meta.env.DEV
     return (
       <div className="min-h-screen bg-white">
         <Navbar />
@@ -1320,12 +1338,24 @@ function SharedDashboard() {
           <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
             <h2 className="text-xl font-semibold text-red-900 mb-2">Dashboard Not Found</h2>
             <p className="text-red-700 mb-4">{error}</p>
-            <button
-              onClick={() => navigate('/')}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              Go to Home
-            </button>
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              <button
+                onClick={() => navigate('/')}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Go to Home
+              </button>
+              {isDev && openOnProdUrl && (
+                <a
+                  href={openOnProdUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors inline-block"
+                >
+                  Open on production →
+                </a>
+              )}
+            </div>
           </div>
         </div>
       </div>

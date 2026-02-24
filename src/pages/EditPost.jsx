@@ -70,7 +70,9 @@ export default function EditPost() {
       })
       navigate(`/post/${id}`)
     } catch (err) {
-      setError(err.response?.data?.error || err.message || 'Failed to update post')
+      const msg = err.response?.data?.error || err.message || 'Failed to update post'
+      const isNetworkError = !err.response && err.message === 'Network Error'
+      setError(isNetworkError ? `${msg}. Check that the backend is running and reachable.` : msg)
     } finally {
       setSubmitting(false)
     }

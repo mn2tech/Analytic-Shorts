@@ -2,6 +2,15 @@ const express = require('express')
 const axios = require('axios')
 const OpenAI = require('openai')
 const { getExampleDatasetData } = require('./examples')
+const { connectorFactory } = require('../studio-ai/data-connectors/connectorFactory')
+const { stableRowSample } = require('../studio-ai/data-connectors/normalizer')
+const { profileDataset } = require('../studio-ai/engine/profileDataset')
+const { buildSemanticGraph } = require('../studio-ai/engine/buildSemanticGraph')
+const { orchestrateAnalysis } = require('../studio-ai/engine/orchestrateAnalysis')
+const { executePlan } = require('../studio-ai/engine/executePlan')
+const { buildSceneGraph } = require('../studio-ai/engine/buildSceneGraph')
+const { persistStudioRun } = require('../studio-ai/persistence/runs')
+const { getTemplate } = require('../studio-ai/templates/templates')
 const router = express.Router()
 
 const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null
@@ -568,13 +577,20 @@ router.post('/query', async (req, res) => {
 
 // GET /api/studio/datasets - List all registered datasets
 router.get('/datasets', (req, res) => {
-  res.json({
-    datasets: Object.keys(datasetRegistry).map(id => ({
-      id,
-      type: datasetRegistry[id].type,
-      endpoint: datasetRegistry[id].endpoint
-    }))
-  })
+  try {
+    const datasets = Object.keys(datasetRegistry || {}).map(id => {
+      const entry = datasetRegistry[id]
+      return {
+        id,
+        type: entry && entry.type != null ? entry.type : 'api',
+        endpoint: entry && entry.endpoint != null ? entry.endpoint : ''
+      }
+    })
+    res.json({ datasets })
+  } catch (err) {
+    console.error('Error in GET /api/studio/datasets:', err)
+    res.status(200).json({ datasets: [] })
+  }
 })
 
 // GET /api/studio/fetch?url=<customEndpoint> - Proxy fetch for custom API (for report/dashboard views that need full dataset)
@@ -688,6 +704,141 @@ const aiSchemaHandler = async (req, res) => {
   }
 }
 router.post(['/ai-schema', '/ai-schema/'], aiSchemaHandler)
+
+function computeNumericSummary(rows, numericColumns, { maxRows = 4000 } = {}) {
+  const sampled = stableRowSample(Array.isArray(rows) ? rows : [], { maxRows })
+  const out = {}
+  for (const col of numericColumns || []) {
+    let n = 0
+    let sum = 0
+    let min = Infinity
+    let max = -Infinity
+    for (const r of sampled) {
+      const v = r?.[col]
+      if (v === null || v === undefined || v === '') continue
+      const num = typeof v === 'number' ? v : Number(String(v).replace(/[$,\s]/g, ''))
+      if (!Number.isFinite(num)) continue
+      n++
+      sum += num
+      if (num < min) min = num
+      if (num > max) max = num
+    }
+    out[col] = {
+      count: n,
+      min: n ? min : null,
+      max: n ? max : null,
+      mean: n ? sum / n : null,
+      sampledRowCount: sampled.length,
+    }
+  }
+  return out
+}
+
+// POST /api/studio/build
+// Universal Studio build: resolve any data source -> CanonicalDataset -> pipeline stages.
+router.post(['/build', '/build/'], async (req, res) => {
+  try {
+    const body = req.body || {}
+    const sourceConfig = body.sourceConfig || body.source || body.connector || body.input || body
+    const filters = body.filters && typeof body.filters === 'object' ? body.filters : null
+    const overrides = body.overrides && typeof body.overrides === 'object' ? body.overrides : {}
+    const templateId = (overrides.templateId != null && overrides.templateId !== '') ? overrides.templateId : (body.templateId == null || body.templateId === '' ? 'general' : body.templateId)
+    const template = getTemplate(templateId)
+
+    const canonical = await connectorFactory(sourceConfig, {
+      req,
+      timeoutMs: 15000,
+      cacheTtlMs: 5 * 60 * 1000,
+      sampleRowLimit: 2000,
+    })
+
+    // Optional server-side filtering (used by cross-filter UI).
+    const applyFilters = (rows, f) => {
+      if (!f || typeof f !== 'object') return rows
+      let out = Array.isArray(rows) ? rows : []
+      // timeRange: { column, start, end }
+      if (f.timeRange && typeof f.timeRange === 'object') {
+        const col = String(f.timeRange.column || '').trim()
+        const start = f.timeRange.start ? new Date(f.timeRange.start) : null
+        const end = f.timeRange.end ? new Date(f.timeRange.end) : null
+        if (col && (start || end)) {
+          out = out.filter((r) => {
+            const v = r?.[col]
+            if (v == null || v === '') return false
+            const d = new Date(v)
+            if (Number.isNaN(d.getTime())) return false
+            if (start && d < start) return false
+            if (end && d > end) return false
+            return true
+          })
+        }
+      }
+      // equals filters: { eq: { col: value } }
+      if (f.eq && typeof f.eq === 'object') {
+        for (const [k, v] of Object.entries(f.eq)) {
+          const col = String(k || '').trim()
+          if (!col) continue
+          out = out.filter((r) => String(r?.[col] ?? '') === String(v ?? ''))
+        }
+      }
+      // search: simple contains across common text columns (notice_id, solicitation, title, etc.)
+      const searchTerm = typeof f.search === 'string' ? f.search.trim() : ''
+      if (searchTerm) {
+        const lower = searchTerm.toLowerCase()
+        const searchCols = out.length ? Object.keys(out[0] || {}).filter((k) => typeof (out[0]?.[k]) === 'string') : []
+        if (searchCols.length) {
+          out = out.filter((r) =>
+            searchCols.some((col) => String(r?.[col] ?? '').toLowerCase().includes(lower))
+          )
+        }
+      }
+      return out
+    }
+
+    const filteredRows = applyFilters(canonical.rows || [], filters)
+    const canonicalForRun = {
+      schema: canonical.schema || [],
+      rows: filteredRows,
+      metadata: {
+        ...(canonical.metadata || {}),
+        rowCount: filteredRows.length,
+      },
+    }
+
+    const datasetProfile = profileDataset(canonicalForRun, { maxProfileRows: 5000, sampleValuesLimit: 8 })
+    const buildOptions = { template, overrides }
+    const semanticGraph = buildSemanticGraph(datasetProfile, canonicalForRun, buildOptions)
+    const analysisPlan = orchestrateAnalysis(datasetProfile, semanticGraph, canonicalForRun, buildOptions)
+    const insightBlocks = executePlan(canonicalForRun, semanticGraph, analysisPlan, { maxComputeRows: 20000, templateId })
+    const sceneGraph = buildSceneGraph({ insightBlocks, datasetProfile, templateId, overrides })
+
+    const persisted = await persistStudioRun({
+      sourceConfig,
+      canonicalDataset: canonicalForRun,
+      datasetProfile,
+      semanticGraph,
+      analysisPlan,
+      insightBlocks,
+      sceneGraph,
+    })
+
+    return res.json({
+      runId: persisted.runId,
+      persisted: persisted.persisted,
+      datasetProfile,
+      semanticGraph,
+      insightBlocks,
+      sceneGraph,
+      template: { id: template.id, name: template.name },
+    })
+  } catch (error) {
+    console.error('Error in /api/studio/build:', error)
+    res.status(500).json({
+      error: 'Studio build failed',
+      message: error.message || 'Failed to build Studio dataset',
+    })
+  }
+})
 
 module.exports = router
 module.exports.aiSchemaHandler = aiSchemaHandler

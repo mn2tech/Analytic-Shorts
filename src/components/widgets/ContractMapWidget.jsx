@@ -55,19 +55,31 @@ const STATE_CENTROIDS = {
 }
 
 function normalizeState(value) {
-  if (value == null || value === '') return null
-  const s = String(value).trim()
-  if (!s) return null
-  // Already a FIPS code (numeric or zero-padded string)?
-  const asNum = Number(s)
-  if (!Number.isNaN(asNum) && asNum >= 1 && asNum <= 56) {
-    const two = asNum <= 9 ? `0${asNum}` : String(asNum)
-    if (FIPS_TO_ABBR[two]) return two
+  try {
+    if (value == null || value === '') return null
+    // SAM.gov can return state as { code: "MI", name: "Michigan" }
+    let s =
+      typeof value === 'object' && value !== null && (value.code != null || value.name != null)
+        ? String(value.code ?? value.name ?? '').trim()
+        : String(value).trim()
+    // Strip "US-XX" or "USA-XX" prefix (some APIs use this format)
+    if (typeof s === 'string' && s.length > 2 && (s.startsWith('US-') || s.startsWith('USA-'))) {
+      s = s.replace(/^(?:US|USA)-/, '').trim()
+    }
+    if (!s) return null
+    // Already a FIPS code (numeric or zero-padded string)?
+    const asNum = Number(s)
+    if (!Number.isNaN(asNum) && asNum >= 1 && asNum <= 56) {
+      const two = asNum <= 9 ? `0${asNum}` : String(asNum)
+      if (FIPS_TO_ABBR[two]) return two
+    }
+    const twoDigit = s.length === 1 ? s.padStart(2, '0') : s
+    if (s.length <= 2 && FIPS_TO_ABBR[twoDigit]) return twoDigit
+    const fips = STATE_TO_FIPS[s] || STATE_TO_FIPS[s.toUpperCase()]
+    return fips || null
+  } catch (_) {
+    return null
   }
-  const twoDigit = s.length === 1 ? s.padStart(2, '0') : s
-  if (s.length <= 2 && FIPS_TO_ABBR[twoDigit]) return twoDigit
-  const fips = STATE_TO_FIPS[s] || STATE_TO_FIPS[s.toUpperCase()]
-  return fips || null
 }
 
 /** Canonical 2-letter state code for filtering (e.g. "PA"). Export for Dashboard state filter. */
@@ -124,14 +136,36 @@ function ContractMapWidget({
   }, [])
 
   const { byFips, maxVal, total } = useMemo(() => {
-    const norm = (str) => String(str || '').toLowerCase().replace(/\s+/g, '_').trim()
+    try {
+      const norm = (str) => (typeof str === 'string' ? str : String(str || '')).toLowerCase().replace(/\s+/g, '_').trim()
+      const normNoUnderscore = (str) => norm(str).replace(/_/g, '')
+    const findKey = (obj, k) => {
+      if (obj == null || k == null) return undefined
+      if (typeof obj !== 'object') return undefined
+      try {
+        if (Object.prototype.hasOwnProperty.call(obj, k)) return obj[k]
+        const keyNorm = norm(k)
+        const keys = Object.keys(obj)
+        let found = keys.find((c) => norm(c) === keyNorm)
+        if (found != null) return obj[found]
+        const keyNormNoUnderscore = normNoUnderscore(k)
+        found = keys.find((c) => normNoUnderscore(c) === keyNormNoUnderscore)
+        return found != null ? obj[found] : undefined
+      } catch (_) {
+        return undefined
+      }
+    }
     const getRowVal = (row, key) => {
       if (row == null || key == null) return undefined
-      if (Object.prototype.hasOwnProperty.call(row, key)) return row[key]
-      const keyNorm = norm(key)
-      if (!keyNorm) return undefined
-      const found = Object.keys(row).find((c) => norm(c) === keyNorm)
-      return found != null ? row[found] : undefined
+      if (typeof key === 'string' && key.includes('.')) {
+        const parts = key.split('.')
+        let obj = row
+        for (let i = 0; i < parts.length && obj != null; i++) {
+          obj = findKey(obj, parts[i])
+        }
+        return obj
+      }
+      return findKey(row, key)
     }
     const map = new Map()
     let totalCount = 0
@@ -168,6 +202,9 @@ function ContractMapWidget({
       byFips: map,
       maxVal: maxVal || 1,
       total: numCol ? sumNumeric : totalCount
+    }
+    } catch (_) {
+      return { byFips: new Map(), maxVal: 1, total: 0 }
     }
   }, [data, selectedCategorical, selectedNumeric])
 

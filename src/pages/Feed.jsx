@@ -149,7 +149,7 @@ function PostCard({ post, onLike, onSave, onGoLive, onDelete, onFollow, isAuthen
     }
   }
 
-  const authorLabel = post.author_display_name || (post.author_id ? String(post.author_id).slice(0, 8) + '…' : 'Anonymous')
+  const authorLabel = post.author_display_name || 'Anonymous'
   const relativeTime = getRelativeTime(post.created_at)
   const initials = getInitials(post.author_display_name || authorLabel)
   const avatarUrl = post.author_avatar_url
@@ -241,23 +241,13 @@ function PostCard({ post, onLike, onSave, onGoLive, onDelete, onFollow, isAuthen
         </div>
       </div>
 
-      {/* Content - thumbnail + title/caption */}
-      <Link to={`/post/${post.id}`} className="block px-4 pb-3">
-        <div className="rounded-lg overflow-hidden border border-gray-100 aspect-video bg-slate-100">
-          <PostThumbnail url={post.thumbnail_url} title={post.title} className="w-full h-full" />
-        </div>
-        <h3 className="font-semibold text-gray-900 mt-3 line-clamp-2">{post.title}</h3>
-        {post.caption && <p className="text-sm text-gray-600 mt-1 line-clamp-2">{post.caption}</p>}
-        {Array.isArray(post.tags) && post.tags.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 mt-2">
-            {post.tags.slice(0, 5).map((t) => (
-              <span key={t} className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">
-                {t}
-              </span>
-            ))}
-          </div>
-        )}
-      </Link>
+      {/* Content - thumbnail only; click goes to main report */}
+      <div className="px-4 pb-3">
+        <Link to={`/post/${post.id}`} className="block rounded-lg overflow-hidden border border-gray-100 aspect-video bg-slate-100 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:outline-none">
+          <PostThumbnail url={post.thumbnail_url ?? post.thumbnailUrl} title={post.title} className="w-full h-full" />
+        </Link>
+        <p className="font-semibold text-gray-900 mt-2 line-clamp-1 text-sm">{post.title}</p>
+      </div>
 
       {/* Action bar - like LinkedIn */}
       <div className="flex items-center border-t border-gray-100 px-2">
@@ -286,13 +276,6 @@ function PostCard({ post, onLike, onSave, onGoLive, onDelete, onFollow, isAuthen
           <span className="text-lg">{saved ? '🔖' : '📑'}</span>
           <span>Save</span>
         </button>
-        <Link
-          to={`/post/${post.id}`}
-          className="flex-1 flex items-center justify-center gap-1.5 py-3 text-sm text-gray-500 hover:bg-gray-50 hover:text-gray-700 rounded-lg transition-colors"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
-          <span>View</span>
-        </Link>
         <button
           type="button"
           onClick={handleGoLive}
@@ -389,10 +372,6 @@ export default function Feed() {
       .then((list) => setDashboards(Array.isArray(list) ? list : []))
       .catch(() => setDashboards([]))
       .finally(() => setDashboardsLoading(false))
-  }
-
-  const goToCreatePost = () => {
-    navigate('/?from=feed')
   }
 
   const handleSelectDashboard = (dashboardId) => {
@@ -494,8 +473,8 @@ export default function Feed() {
                     <>
                       <div className="fixed inset-0 z-10" aria-hidden="true" onClick={() => setCreateMenuOpen(false)} />
                       <div className="absolute right-0 top-full mt-1 z-20 w-52 py-1 bg-white border border-gray-200 rounded-xl shadow-lg">
-                        <button type="button" onClick={() => { setCreateMenuOpen(false); goToCreatePost() }} className="flex items-center gap-2 w-full px-3 py-2.5 text-left text-sm text-gray-900 hover:bg-blue-50 rounded-t-xl">Upload data & create</button>
-                        <button type="button" onClick={() => { setCreateMenuOpen(false); openCompose() }} className="flex items-center gap-2 w-full px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 border-t border-gray-100">Post existing dashboard</button>
+                        <Link to="/studio/chat" onClick={() => setCreateMenuOpen(false)} className="flex items-center gap-2 w-full px-3 py-2.5 text-left text-sm text-gray-900 hover:bg-blue-50 rounded-t-xl">Upload data & create dashboard</Link>
+                        <button type="button" onClick={() => { setCreateMenuOpen(false); openCompose() }} className="flex items-center gap-2 w-full px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 border-t border-gray-100">Share existing dashboard</button>
                       </div>
                     </>
                   )}
@@ -560,17 +539,16 @@ export default function Feed() {
             <h2 className="text-xl font-semibold text-gray-900 mb-2">No posts yet</h2>
             <p className="text-gray-500 mb-8 max-w-sm mx-auto">
               {user
-                ? 'Share a dashboard to the feed. Use Create above to upload data or publish an existing dashboard.'
+                ? 'Upload your data in Studio, create a dashboard, then share it here or save it private.'
                 : 'You\'re part of AI Analytics. Be the first to share a dashboard — join free to post your analytics shorts and connect with the community.'}
             </p>
             {user ? (
-              <button
-                type="button"
-                onClick={goToCreatePost}
+              <Link
+                to="/studio/chat"
                 className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
               >
-                Upload data to create a post
-              </button>
+                Create dashboard in Studio
+              </Link>
             ) : (
               <div className="flex flex-wrap justify-center gap-3">
                 <Link

@@ -5,44 +5,91 @@
 - **Node.js** (v18+ recommended)
 - **npm** (comes with Node)
 
-## One-time setup
+---
+
+## Linux / macOS (bash)
+
+### One-time setup
+
+```bash
+cd /path/to/NM2-Analytics-Shorts
+npm install
+```
+
+### Run the app (two terminals)
+
+**Terminal 1 – Backend:**
+```bash
+cd /path/to/NM2-Analytics-Shorts
+npm run server
+```
+→ Backend at **http://localhost:5000**
+
+**Terminal 2 – Frontend:**
+```bash
+cd /path/to/NM2-Analytics-Shorts
+npm run dev
+```
+→ Frontend at **http://localhost:5173**
+
+### Or run both in one terminal
+
+```bash
+cd /path/to/NM2-Analytics-Shorts
+npm run dev:all
+```
+
+### Git push (Linux)
+
+```bash
+cd /path/to/NM2-Analytics-Shorts
+git push origin main
+```
+
+---
+
+## Windows (PowerShell)
+
+### One-time setup
 
 ```powershell
 cd c:\Users\kolaw\Projects\NM2-Analytics-Shorts
 npm install
 ```
 
-## Run the app
+### Run the app (two terminals)
 
-You need **two processes**: backend (API) and frontend (Vite).
-
-### Option A: Two terminals (recommended on Windows)
-
-**Terminal 1 – Backend (API):**
+**Terminal 1 – Backend:**
 ```powershell
 cd c:\Users\kolaw\Projects\NM2-Analytics-Shorts
 npm run server
 ```
-- Backend runs at **http://localhost:5000** (or the port in `backend/server.js`).
+→ Backend at **http://localhost:5000**
 
-**Terminal 2 – Frontend (Vite):**
+**Terminal 2 – Frontend:**
 ```powershell
 cd c:\Users\kolaw\Projects\NM2-Analytics-Shorts
 npm run dev
 ```
-- Frontend runs at **http://localhost:5173** (Vite default). Open this URL in the browser.
+→ Frontend at **http://localhost:5173**
 
-### Option B: Single command (both together)
+### Or run both in one terminal
 
 ```powershell
 cd c:\Users\kolaw\Projects\NM2-Analytics-Shorts
 npm run dev:all
 ```
-- Starts both backend and frontend with `concurrently`. If this fails on your machine, use Option A.
+
+### Git push (Windows)
+
+```powershell
+cd c:\Users\kolaw\Projects\NM2-Analytics-Shorts
+git push origin main
+```
 
 ---
 
-## Other useful commands
+## All platforms – npm scripts
 
 | Command | Description |
 |--------|-------------|
@@ -52,15 +99,4 @@ npm run dev:all
 | `npm run preview` | Serve production build locally (run after `npm run build`) |
 | `npm run dev:all` | Start both frontend and backend |
 
----
-
-## Git push (run locally with your credentials)
-
-After the commit already made, push from your machine:
-
-```powershell
-cd c:\Users\kolaw\Projects\NM2-Analytics-Shorts
-git push origin main
-```
-
-If you use SSH or a different remote/branch, adjust the command (e.g. `git push origin your-branch`).
+Replace `/path/to/NM2-Analytics-Shorts` with your actual project path (e.g. `~/Projects/NM2-Analytics-Shorts` on Linux).
