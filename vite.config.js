@@ -95,7 +95,8 @@ export default defineConfig({
     host: '0.0.0.0', // Listen on all interfaces to allow external access
     proxy: {
       '/api': {
-        target: 'http://localhost:5000',
+        // Use API_PROXY_TARGET if backend runs on a different port (e.g. set API_PROXY_TARGET=http://localhost:5001)
+        target: process.env.API_PROXY_TARGET || 'http://localhost:5000',
         changeOrigin: true
       }
     }

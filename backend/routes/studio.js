@@ -1,4 +1,6 @@
 const express = require('express')
+const fs = require('fs')
+const path = require('path')
 const axios = require('axios')
 const OpenAI = require('openai')
 const { getExampleDatasetData } = require('./examples')
@@ -11,7 +13,57 @@ const { executePlan } = require('../studio-ai/engine/executePlan')
 const { buildSceneGraph } = require('../studio-ai/engine/buildSceneGraph')
 const { persistStudioRun } = require('../studio-ai/persistence/runs')
 const { getTemplate } = require('../studio-ai/templates/templates')
+const { detectDatasetIntent, deriveFields, selectPrimaryMetric, assembleEvidence } = require('../studio-ai/evidence')
+const { buildPdfModel } = require('../studio-ai/evidence/evidenceToPdfModel')
+const { buildAgencyReportModel } = require('../studio-ai/evidence/evidenceToAgencyModel')
+const { renderAgencyReportHtml, renderAgencyModeReportHtml } = require('../utils/renderTemplate')
 const router = express.Router()
+
+const MAX_PDF_PAYLOAD_BYTES = 1024 * 1024 // 1MB for evidence + narrative + branding
+const VALID_LOGO_PROTOCOL = /^https?:\/\//i
+const DATA_URL_PREFIX = /^data:image\/[a-z+]+;base64,/i
+
+/** Resolve Chrome/Chromium/Edge path for Puppeteer (avoids "Could not find Chrome" on Windows). */
+function getChromeExecutablePath() {
+  if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+    const p = process.env.PUPPETEER_EXECUTABLE_PATH.trim()
+    if (p && fs.existsSync(p)) return p
+  }
+  if (process.platform === 'win32') {
+    const programFiles = process.env.PROGRAMFILES || 'C:\\Program Files'
+    const programFilesX86 = process.env['PROGRAMFILES(X86)'] || 'C:\\Program Files (x86)'
+    const localAppData = process.env.LOCALAPPDATA
+    const candidates = [
+      path.join(programFiles, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+      path.join(programFilesX86, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+      path.join(programFiles, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+      path.join(programFilesX86, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+    ]
+    if (localAppData) {
+      candidates.push(path.join(localAppData, 'Google', 'Chrome', 'Application', 'chrome.exe'))
+    }
+    for (const exe of candidates) {
+      if (exe && fs.existsSync(exe)) return exe
+    }
+  }
+  return null
+}
+
+async function resolveLogoToDataUrl(logoUrl) {
+  if (!logoUrl || typeof logoUrl !== 'string') return null
+  const u = logoUrl.trim()
+  if (DATA_URL_PREFIX.test(u)) return u
+  if (!VALID_LOGO_PROTOCOL.test(u)) return null
+  try {
+    const resp = await axios.get(u, { responseType: 'arraybuffer', timeout: 8000, maxContentLength: 512 * 1024 })
+    const contentType = resp.headers['content-type'] || 'image/png'
+    const base64 = Buffer.from(resp.data).toString('base64')
+    return `data:${contentType};base64,${base64}`
+  } catch (err) {
+    console.warn('[studio/pdf] Failed to fetch logo:', err.message)
+    return null
+  }
+}
 
 const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null
 
@@ -796,7 +848,7 @@ router.post(['/build', '/build/'], async (req, res) => {
     }
 
     const filteredRows = applyFilters(canonical.rows || [], filters)
-    const canonicalForRun = {
+    let canonicalForRun = {
       schema: canonical.schema || [],
       rows: filteredRows,
       metadata: {
@@ -805,12 +857,88 @@ router.post(['/build', '/build/'], async (req, res) => {
       },
     }
 
+    const initialProfile = profileDataset(canonicalForRun, { maxProfileRows: 5000, sampleValuesLimit: 8 })
+    let { rows: derivedRows, addedColumns } = deriveFields(canonicalForRun.rows, initialProfile)
+    const hasRevenueFromDerive = addedColumns.some((c) => String(c.name).toLowerCase() === 'revenue')
+    if (!hasRevenueFromDerive && derivedRows.length > 0) {
+      const norm = (s) => String(s || '').toLowerCase().trim().replace(/\s+/g, '_')
+      const priceKeys = ['unit_price', 'price', 'unit_price_amount', 'unit_cost', 'selling_price', 'list_price', 'amount', 'total', 'amt']
+      let priceKey = null
+      let discountKey = null
+      const sample = derivedRows.slice(0, 100)
+      const first = derivedRows[0]
+      if (first && typeof first === 'object') {
+        for (const k of Object.keys(first)) {
+          const nk = norm(k)
+          if (priceKeys.some((pk) => nk === pk || nk.includes(pk))) {
+            const hasNumeric = sample.some((r) => {
+              const v = r[k]
+              return v !== null && v !== undefined && v !== '' && !Number.isNaN(Number(String(v).replace(/[$,\s]/g, '')))
+            })
+            if (hasNumeric) {
+              priceKey = k
+              break
+            }
+          }
+          if (discountKey == null && (nk === 'discount' || nk === 'discount_amount')) discountKey = k
+        }
+      }
+      if (priceKey) {
+        for (const r of derivedRows) {
+          const p = r[priceKey]
+          const pNum = p !== null && p !== undefined && p !== '' ? Number(String(p).replace(/[$,\s]/g, '')) : NaN
+          if (Number.isFinite(pNum)) {
+            let rev = pNum
+            if (discountKey != null) {
+              const d = r[discountKey]
+              const dNum = d !== null && d !== undefined && d !== '' ? Number(String(d).replace(/[$,\s]/g, '')) : NaN
+              if (Number.isFinite(dNum)) rev -= dNum
+            }
+            r.revenue = rev
+          }
+        }
+        addedColumns = [...addedColumns, { name: 'revenue', inferredType: 'number' }]
+      }
+    }
+    if (addedColumns.length > 0) {
+      canonicalForRun = {
+        ...canonicalForRun,
+        rows: derivedRows,
+        schema: [...(canonicalForRun.schema || []), ...addedColumns],
+      }
+    }
+
     const datasetProfile = profileDataset(canonicalForRun, { maxProfileRows: 5000, sampleValuesLimit: 8 })
-    const buildOptions = { template, overrides }
+    const intent = detectDatasetIntent(datasetProfile)
+    let primaryMetric = selectPrimaryMetric(datasetProfile, intent, canonicalForRun.rows)
+    const firstRowKeys = derivedRows.length && derivedRows[0] ? Object.keys(derivedRows[0]).slice(0, 20) : []
+    console.log('[studio/build] columns:', firstRowKeys.join(', '), '| addedColumns:', addedColumns.map((c) => c.name).join(', '), '| primaryMetric:', primaryMetric, '| intent:', intent)
+    const derivedRevenue = addedColumns.some((c) => String(c.name).toLowerCase() === 'revenue')
+    const profileHasRevenue = (datasetProfile?.columns || []).some((c) => String(c.name).toLowerCase() === 'revenue')
+    if (derivedRevenue || profileHasRevenue) {
+      const revenueCol = (datasetProfile?.columns || []).find((c) => String(c.name).toLowerCase() === 'revenue')
+      primaryMetric = revenueCol ? revenueCol.name : 'revenue'
+    }
+    const buildOptions = {
+      template,
+      overrides: { ...overrides, primaryMeasure: primaryMetric || overrides.primaryMeasure },
+    }
     const semanticGraph = buildSemanticGraph(datasetProfile, canonicalForRun, buildOptions)
     const analysisPlan = orchestrateAnalysis(datasetProfile, semanticGraph, canonicalForRun, buildOptions)
-    const insightBlocks = executePlan(canonicalForRun, semanticGraph, analysisPlan, { maxComputeRows: 20000, templateId })
+    let insightBlocks = executePlan(canonicalForRun, semanticGraph, analysisPlan, { maxComputeRows: 20000, templateId })
+    const useRevenue = (derivedRevenue || profileHasRevenue) && primaryMetric && String(primaryMetric).toLowerCase() === 'revenue'
+    if (useRevenue) {
+      insightBlocks = insightBlocks.map((b) => {
+        if (!b || !b.payload) return b
+        const payload = { ...b.payload }
+        if (b.type === 'KPIBlock') payload.primaryMeasure = primaryMetric
+        if (b.type === 'TrendBlock' || b.type === 'DriverBlock' || b.type === 'GeoLikeBlock') payload.measure = primaryMetric
+        if (payload.executiveKpis) payload.executiveKpis = { ...payload.executiveKpis, measure: primaryMetric }
+        return { ...b, payload }
+      })
+    }
     const sceneGraph = buildSceneGraph({ insightBlocks, datasetProfile, templateId, overrides })
+    const evidence = assembleEvidence({ profile: datasetProfile, intent, primaryMetric, blocks: insightBlocks })
 
     const persisted = await persistStudioRun({
       sourceConfig,
@@ -825,6 +953,7 @@ router.post(['/build', '/build/'], async (req, res) => {
     return res.json({
       runId: persisted.runId,
       persisted: persisted.persisted,
+      evidence,
       datasetProfile,
       semanticGraph,
       insightBlocks,
@@ -840,5 +969,110 @@ router.post(['/build', '/build/'], async (req, res) => {
   }
 })
 
+// POST /api/studio/pdf — Agency branded PDF export (evidence + narrative only). ?format=html returns HTML only (no Puppeteer).
+async function handlePdfExport(req, res) {
+  const wantHtml = req.query && req.query.format === 'html'
+  try {
+    const contentLength = req.headers['content-length']
+    if (contentLength && parseInt(contentLength, 10) > MAX_PDF_PAYLOAD_BYTES) {
+      return res.status(413).json({ error: 'Payload too large', message: 'Request body must be under 1MB.' })
+    }
+    const { evidence, narrative, branding = {}, reportMeta = {}, mode } = req.body || {}
+    if (!evidence || typeof evidence !== 'object') {
+      return res.status(400).json({ error: 'evidence is required', message: 'Send the Evidence DTO from the Studio build.' })
+    }
+    const isAgencyMode = mode === 'agency'
+    let logoUrl = branding.agencyLogoUrl
+    if (logoUrl && typeof logoUrl === 'string' && VALID_LOGO_PROTOCOL.test(logoUrl.trim())) {
+      const dataUrl = await resolveLogoToDataUrl(logoUrl)
+      if (dataUrl) branding.agencyLogoUrl = dataUrl
+    } else if (logoUrl && typeof logoUrl === 'string' && !DATA_URL_PREFIX.test(logoUrl.trim())) {
+      branding.agencyLogoUrl = undefined
+    }
+    const html = isAgencyMode
+      ? renderAgencyModeReportHtml(await buildAgencyReportModel({ evidence, narrative, reportMeta, branding }))
+      : renderAgencyReportHtml(await buildPdfModel({ evidence, narrative, branding, reportMeta }))
+
+    if (wantHtml) {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8')
+      res.setHeader('Content-Disposition', 'attachment; filename="agency-report.html"')
+      return res.send(html)
+    }
+
+    let puppeteer
+    try {
+      puppeteer = require('puppeteer')
+    } catch (e) {
+      console.error('Puppeteer not available:', e.message)
+      return res.status(503).json({
+        error: 'PDF export unavailable',
+        message: 'Puppeteer is not installed or failed to load. Use ?format=html to download the report as HTML, then open in a browser and use Print → Save as PDF.',
+      })
+    }
+    const launchOptions = {
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-software-rasterizer'],
+    }
+    const executablePath = getChromeExecutablePath()
+    if (executablePath) {
+      launchOptions.executablePath = executablePath
+    } else if (process.platform === 'win32') {
+      // Let Puppeteer resolve system Chrome (Program Files) via channel so PDF export can work without env.
+      launchOptions.channel = 'chrome'
+    }
+
+    let browser
+    try {
+      browser = await puppeteer.launch(launchOptions)
+    } catch (launchErr) {
+      console.error('Puppeteer launch failed:', launchErr)
+      const hint = process.platform === 'win32'
+        ? ' Set PUPPETEER_EXECUTABLE_PATH to your Chrome or Edge path, or use ?format=html and Print → Save as PDF.'
+        : ' Set PUPPETEER_EXECUTABLE_PATH if Chrome/Chromium is installed elsewhere, or use ?format=html and Print → Save as PDF.'
+      return res.status(503).json({
+        error: 'PDF export unavailable',
+        message: `Could not launch browser: ${launchErr.message}.${hint}`,
+      })
+    }
+    try {
+      const page = await browser.newPage()
+      await page.setContent(html, { waitUntil: 'networkidle0', timeout: 15000 })
+      const pdfBuf = await page.pdf({
+        format: 'Letter',
+        printBackground: true,
+        margin: { top: '0.6in', right: '0.6in', bottom: '0.6in', left: '0.6in' },
+      })
+      const pdfMagic = Buffer.from('%PDF-', 'ascii')
+      const valid = pdfBuf && pdfBuf.length >= 5 && pdfBuf[0] === pdfMagic[0] && pdfBuf[1] === pdfMagic[1] && pdfBuf[2] === pdfMagic[2] && pdfBuf[3] === pdfMagic[3] && pdfBuf[4] === pdfMagic[4]
+      if (!valid) {
+        return res.status(500).json({
+          error: 'PDF export failed',
+          message: 'Generated PDF was invalid or empty. Try downloading as HTML and use Print → Save as PDF.',
+        })
+      }
+      res.setHeader('Content-Type', 'application/pdf')
+      res.setHeader('Content-Disposition', 'attachment; filename="agency-report.pdf"')
+      res.setHeader('Content-Length', String(pdfBuf.length))
+      res.send(pdfBuf)
+    } finally {
+      await browser.close()
+    }
+  } catch (error) {
+    console.error('Error in /api/studio/pdf:', error)
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: 'PDF export failed',
+        message: error.message || 'Failed to generate PDF.',
+      })
+    }
+  }
+}
+
+router.post(['/pdf', '/pdf/'], (req, res) => handlePdfExport(req, res).catch((err) => {
+  console.error('Error in /api/studio/pdf:', err)
+  if (!res.headersSent) res.status(500).json({ error: 'PDF export failed', message: err.message })
+}))
+
 module.exports = router
 module.exports.aiSchemaHandler = aiSchemaHandler
+module.exports.handlePdfExport = handlePdfExport

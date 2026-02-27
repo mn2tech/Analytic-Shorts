@@ -99,8 +99,14 @@ function buildSemanticGraph(datasetProfile, canonicalDataset, options = {}) {
     ? selectPrimaryMeasure({ datasetProfile, canonicalDataset, template })
     : null
   const overrideMeasure = overrides.primaryMeasure && String(overrides.primaryMeasure).trim()
-  if (overrideMeasure && columns[overrideMeasure]) {
-    primaryMeasure = overrideMeasure
+  if (overrideMeasure) {
+    if (columns[overrideMeasure]) {
+      primaryMeasure = overrideMeasure
+    } else {
+      const lower = (s) => String(s || '').toLowerCase()
+      const match = Object.keys(columns).find((k) => lower(k) === lower(overrideMeasure))
+      if (match) primaryMeasure = match
+    }
   }
   return {
     version: '1.0',

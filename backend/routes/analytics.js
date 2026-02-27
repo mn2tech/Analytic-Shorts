@@ -159,6 +159,62 @@ router.get('/visitors', getUserFromToken, isAdmin, async (req, res) => {
   }
 })
 
+// Community stats for Feed sidebar: public so all visitors (incl. non-admin) see member count and who joined
+router.get('/community', async (req, res) => {
+  try {
+    if (!supabase) return res.json({ new_signups_7d: 0, new_signups_30d: 0, total_users: 0, recent_signups: [] })
+    const now = new Date()
+    const sevenDaysAgo = new Date(now)
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+    const thirtyDaysAgo = new Date(now)
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+    const [r7, r30, totalUsersResult, recentProfiles] = await Promise.all([
+      supabase.from('shorts_user_profiles').select('id', { count: 'exact', head: true }).gte('created_at', sevenDaysAgo.toISOString()),
+      supabase.from('shorts_user_profiles').select('id', { count: 'exact', head: true }).gte('created_at', thirtyDaysAgo.toISOString()),
+      supabase.from('shorts_user_profiles').select('*', { count: 'exact', head: true }),
+      supabase.from('shorts_user_profiles').select('user_id, name, created_at, avatar_url').order('created_at', { ascending: false }).limit(10)
+    ])
+    const total_users = totalUsersResult?.count ?? 0
+    return res.json({
+      new_signups_7d: r7?.count ?? 0,
+      new_signups_30d: r30?.count ?? 0,
+      total_users: total_users,
+      recent_signups: (recentProfiles?.data || []).map((p) => ({ name: p.name || 'Anonymous', created_at: p.created_at, user_id: p.user_id, avatar_url: p.avatar_url || null }))
+    })
+  } catch (e) {
+    console.error('community:', e)
+    return res.json({ new_signups_7d: 0, new_signups_30d: 0, total_users: 0, recent_signups: [] })
+  }
+})
+
+// Lightweight "new members" summary for admin Feed banner (no full usage payload)
+router.get('/new-members', getUserFromToken, isAdmin, async (req, res) => {
+  try {
+    if (!supabase) return res.json({ new_signups_7d: 0, new_signups_30d: 0, total_users: 0, recent_signups: [] })
+    const now = new Date()
+    const sevenDaysAgo = new Date(now)
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+    const thirtyDaysAgo = new Date(now)
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+    const [r7, r30, totalUsersResult, recentProfiles] = await Promise.all([
+      supabase.from('shorts_user_profiles').select('id', { count: 'exact', head: true }).gte('created_at', sevenDaysAgo.toISOString()),
+      supabase.from('shorts_user_profiles').select('id', { count: 'exact', head: true }).gte('created_at', thirtyDaysAgo.toISOString()),
+      supabase.from('shorts_user_profiles').select('*', { count: 'exact', head: true }),
+      supabase.from('shorts_user_profiles').select('user_id, name, created_at, avatar_url').order('created_at', { ascending: false }).limit(10)
+    ])
+    const total_users = totalUsersResult?.count ?? 0
+    return res.json({
+      new_signups_7d: r7?.count ?? 0,
+      new_signups_30d: r30?.count ?? 0,
+      total_users: total_users,
+      recent_signups: (recentProfiles?.data || []).map((p) => ({ name: p.name || 'Anonymous', created_at: p.created_at, user_id: p.user_id, avatar_url: p.avatar_url || null }))
+    })
+  } catch (e) {
+    console.error('new-members:', e)
+    return res.json({ new_signups_7d: 0, new_signups_30d: 0, total_users: 0, recent_signups: [] })
+  }
+})
+
 // Get usage statistics (uploads, insights, etc.)
 router.get('/usage', getUserFromToken, isAdmin, async (req, res) => {
   try {
@@ -170,10 +226,23 @@ router.get('/usage', getUserFromToken, isAdmin, async (req, res) => {
     startOfMonth.setDate(1)
     startOfMonth.setHours(0, 0, 0, 0)
     
+    const now = new Date()
+    const sevenDaysAgo = new Date(now)
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+    const thirtyDaysAgo = new Date(now)
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+    
     // Get total users
     const { count: totalUsers } = await supabase
       .from('shorts_user_profiles')
       .select('*', { count: 'exact', head: true })
+    
+    // New signups (profiles created in last 7 and 30 days)
+    const [r7, r30, recentProfiles] = await Promise.all([
+      supabase.from('shorts_user_profiles').select('id', { count: 'exact', head: true }).gte('created_at', sevenDaysAgo.toISOString()),
+      supabase.from('shorts_user_profiles').select('id', { count: 'exact', head: true }).gte('created_at', thirtyDaysAgo.toISOString()),
+      supabase.from('shorts_user_profiles').select('user_id, name, created_at').order('created_at', { ascending: false }).limit(10)
+    ])
     
     // Get active users this month (users who uploaded files)
     const { count: activeUsers } = await supabase
@@ -213,6 +282,9 @@ router.get('/usage', getUserFromToken, isAdmin, async (req, res) => {
     
     res.json({
       total_users: totalUsers || 0,
+      new_signups_7d: r7?.count ?? 0,
+      new_signups_30d: r30?.count ?? 0,
+      recent_signups: (recentProfiles?.data || []).map((p) => ({ name: p.name || 'Anonymous', created_at: p.created_at, user_id: p.user_id })),
       active_users_this_month: activeUsers || 0,
       total_uploads_this_month: totalUploads || 0,
       total_insights_this_month: totalInsights || 0,

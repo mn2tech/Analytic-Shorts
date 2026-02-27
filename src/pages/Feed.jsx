@@ -7,6 +7,7 @@ import { getFeed, toggleLike, toggleSave, createOrGetLiveSession, deletePost } f
 import { getDashboards } from '../services/dashboardService'
 import { followUser, unfollowUser } from '../services/followService'
 import { useNotification } from '../contexts/NotificationContext'
+import apiClient from '../config/api'
 
 const FEED_TITLE = 'Analytics Shorts Feed'
 const FEED_DESCRIPTION = 'Your analytics social feed — share dashboards, discover insights, and connect with the community.'
@@ -303,6 +304,61 @@ export default function Feed() {
   const [createMenuOpen, setCreateMenuOpen] = useState(false)
   const [dashboards, setDashboards] = useState([])
   const [dashboardsLoading, setDashboardsLoading] = useState(false)
+  const [isAdminFeed, setIsAdminFeed] = useState(false)
+  const [newMembersSummary, setNewMembersSummary] = useState(null)
+  const [communitySummary, setCommunitySummary] = useState(null)
+  const [communityLoading, setCommunityLoading] = useState(true)
+  const [communityError, setCommunityError] = useState(false)
+  const [communityAvatarErrors, setCommunityAvatarErrors] = useState(() => new Set())
+
+  // Community stats: public endpoint, fetch for everyone so sidebar shows for all (incl. non-admin and guests)
+  useEffect(() => {
+    let cancelled = false
+    setCommunityLoading(true)
+    setCommunityError(false)
+    apiClient.get('/api/analytics/community', { timeout: 5000 })
+      .then((res) => {
+        if (cancelled) return
+        setCommunitySummary(res?.data ?? null)
+        setCommunityError(false)
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCommunityError(true)
+          setCommunitySummary(null)
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setCommunityLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [])
+
+  // When user logs out or session is missing, reset scope to public so we don't request scope=all|mine|following|saved
+  useEffect(() => {
+    if (!user && (scope === 'all' || scope === 'mine' || scope === 'following' || scope === 'saved')) {
+      setScope('public')
+    }
+  }, [user, scope])
+
+  useEffect(() => {
+    if (!user) {
+      setIsAdminFeed(false)
+      setNewMembersSummary(null)
+      return
+    }
+    let cancelled = false
+    // Admin check and new-members for admin-only banner
+    apiClient.get('/api/analytics/admin-check', { timeout: 8000 }).then((res) => {
+      if (cancelled || !res?.data?.isAdmin) return
+      setIsAdminFeed(true)
+      return apiClient.get('/api/analytics/new-members', { timeout: 5000 })
+    }).then((res) => {
+      if (cancelled || !res?.data) return
+      setNewMembersSummary(res.data)
+    }).catch(() => { if (!cancelled) setIsAdminFeed(false) })
+    return () => { cancelled = true }
+  }, [user?.id])
 
   const loadFeed = async () => {
     setLoading(true)
@@ -311,7 +367,14 @@ export default function Feed() {
       const data = await getFeed(scope)
       setPosts(data.posts || [])
     } catch (err) {
-      setError(err.response?.data?.error || err.message || 'Failed to load feed')
+      const msg = err.response?.data?.error || err.message || ''
+      const authRequired = /authentication required for scope=/i.test(msg)
+      if (authRequired && scope !== 'public') {
+        setScope('public')
+        setError(null)
+      } else {
+        setError(msg || 'Failed to load feed')
+      }
       setPosts([])
     } finally {
       setLoading(false)
@@ -507,6 +570,21 @@ export default function Feed() {
         </div>
       </header>
 
+      {/* Admin: new members summary on Feed */}
+      {isAdminFeed && newMembersSummary && (newMembersSummary.new_signups_7d > 0 || newMembersSummary.new_signups_30d > 0) && (
+        <div className="bg-indigo-50 border-b border-indigo-100">
+          <div className="max-w-5xl mx-auto px-4 py-2 flex items-center justify-between gap-4">
+            <span className="text-sm text-indigo-800">
+              <strong>{newMembersSummary.new_signups_7d}</strong> new member{newMembersSummary.new_signups_7d !== 1 ? 's' : ''} this week
+              {newMembersSummary.new_signups_30d > 0 && (
+                <span className="text-indigo-600 ml-1">({newMembersSummary.new_signups_30d} in 30 days)</span>
+              )}
+            </span>
+            <Link to="/admin/analytics" className="text-sm font-medium text-indigo-700 hover:text-indigo-900 whitespace-nowrap">View in Admin →</Link>
+          </div>
+        </div>
+      )}
+
       {/* Feed content: main column + right sidebar */}
       <div className="max-w-5xl mx-auto px-4 py-5 flex flex-col lg:flex-row gap-6">
         <main className="flex-1 min-w-0 max-w-2xl">
@@ -588,7 +666,82 @@ export default function Feed() {
         )}
         </main>
 
-        <aside className="w-full lg:w-64 flex-shrink-0 lg:sticky lg:top-20 self-start space-y-3">
+        <aside className="w-full lg:w-64 flex-shrink-0 lg:sticky lg:top-20 self-start space-y-3" data-testid="feed-sidebar">
+          <div className="rounded-lg bg-white border border-gray-200/80 overflow-hidden" data-testid="community-block">
+            <div className="px-3 py-2.5 border-b border-gray-100">
+              <h3 className="text-sm font-semibold text-gray-900">Community</h3>
+            </div>
+            <div className="p-3 space-y-3">
+              {communityLoading ? (
+                <p className="text-sm text-gray-500">Loading…</p>
+              ) : communityError ? (
+                <p className="text-xs text-gray-500">Couldn&apos;t load community stats.</p>
+              ) : null}
+              {!communityLoading && (
+                <>
+                  <div className="flex items-baseline gap-2 flex-wrap">
+                    <span className="text-2xl font-bold text-gray-900">{communitySummary?.total_users ?? '—'}</span>
+                    <span className="text-sm text-gray-500">members</span>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    {communitySummary ? (
+                      <>{communitySummary.new_signups_7d ?? 0} new this week · {communitySummary.new_signups_30d ?? 0} in 30 days</>
+                    ) : (
+                      '— new this week · — in 30 days'
+                    )}
+                  </p>
+                  {Array.isArray(communitySummary?.recent_signups) && communitySummary.recent_signups.length > 0 && (
+                    <div>
+                      <p className="text-xs font-medium text-gray-600 mb-2">Who joined (recent)</p>
+                      <ul className="space-y-1.5 max-h-48 overflow-y-auto">
+                        {communitySummary.recent_signups.map((u, i) => {
+                          const displayName = u.name || 'Anonymous'
+                          const initials = getInitials(displayName)
+                          const avatarUrl = u.avatar_url
+                          const avatarFailed = communityAvatarErrors.has(u.user_id)
+                          const showImg = avatarUrl && !avatarFailed
+                          return (
+                            <li key={u.user_id || i} className="flex items-center gap-2 text-sm">
+                              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex flex-col items-center justify-center text-white overflow-hidden" title={displayName}>
+                                {showImg ? (
+                                  <img
+                                    src={avatarUrl}
+                                    alt=""
+                                    className="w-full h-full object-cover"
+                                    onError={() => setCommunityAvatarErrors((prev) => new Set(prev).add(u.user_id))}
+                                  />
+                                ) : (
+                                  <>
+                                    <span className="text-[10px] font-semibold leading-none">{initials}</span>
+                                    <span className="text-[8px] opacity-90 leading-none">Click</span>
+                                  </>
+                                )}
+                              </div>
+                              <div className="min-w-0 flex-1 flex items-center justify-between gap-2">
+                                {u.user_id ? (
+                                  <Link
+                                    to={`/profile/${u.user_id}`}
+                                    className="truncate text-gray-900 font-medium hover:text-blue-600 hover:underline"
+                                  >
+                                    {displayName}
+                                  </Link>
+                                ) : (
+                                  <span className="truncate text-gray-900">{displayName}</span>
+                                )}
+                                <span className="text-xs text-gray-500 flex-shrink-0">
+                                  {u.created_at ? new Date(u.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : ''}
+                                </span>
+                              </div>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
           <div className="rounded-lg bg-white border border-gray-200/80 overflow-hidden">
             <div className="px-3 py-2.5 flex items-center justify-between border-b border-gray-100">
               <span className="text-xs font-medium text-amber-600">Careers</span>

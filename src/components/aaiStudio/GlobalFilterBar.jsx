@@ -66,6 +66,17 @@ function PillDropdown({ label, value, options, onChange, placeholder = 'All', di
   )
 }
 
+function dateToDayIndex(dateStr, minTs, dayMs) {
+  if (!dateStr) return 0
+  const d = new Date(String(dateStr).slice(0, 10))
+  const t = d.getTime()
+  return Math.round((t - minTs) / dayMs)
+}
+function dayIndexToDate(index, minTs, dayMs) {
+  const d = new Date(minTs + index * dayMs)
+  return d.toISOString().slice(0, 10)
+}
+
 export default function GlobalFilterBar({
   timeRangeColumn = null,
   timeRange = null,
@@ -75,30 +86,79 @@ export default function GlobalFilterBar({
   onSearchChange,
   onClear,
   loading = false,
+  dateExtent = null,
 }) {
+  const defaultMin = new Date()
+  defaultMin.setFullYear(defaultMin.getFullYear() - 2)
+  const defaultMax = new Date()
+  defaultMax.setMonth(defaultMax.getMonth() + 1)
+  const minStr = dateExtent?.min ?? defaultMin.toISOString().slice(0, 10)
+  const maxStr = dateExtent?.max ?? defaultMax.toISOString().slice(0, 10)
+  const minTs = new Date(minStr).getTime()
+  const maxTs = new Date(maxStr).getTime()
+  const dayMs = 24 * 60 * 60 * 1000
+  const numDays = Math.max(0, Math.round((maxTs - minTs) / dayMs))
+  const startIndex = timeRange?.start ? Math.min(numDays, Math.max(0, dateToDayIndex(timeRange.start, minTs, dayMs))) : 0
+  const endIndex = timeRange?.end ? Math.min(numDays, Math.max(0, dateToDayIndex(timeRange.end, minTs, dayMs))) : numDays
+  const safeStart = Math.min(startIndex, endIndex)
+  const safeEnd = Math.max(startIndex, endIndex)
+  const handleStartChange = (e) => {
+    const v = Math.min(numDays, Math.max(0, Number(e.target.value)))
+    const start = dayIndexToDate(v, minTs, dayMs)
+    const end = timeRange?.end ? String(timeRange.end).slice(0, 10) : dayIndexToDate(numDays, minTs, dayMs)
+    const endTs = new Date(end).getTime()
+    const startTs = new Date(start).getTime()
+    onTimeRangeChange?.({ column: timeRangeColumn, start, end: endTs >= startTs ? end : start })
+  }
+  const handleEndChange = (e) => {
+    const v = Math.min(numDays, Math.max(0, Number(e.target.value)))
+    const end = dayIndexToDate(v, minTs, dayMs)
+    const start = timeRange?.start ? String(timeRange.start).slice(0, 10) : dayIndexToDate(0, minTs, dayMs)
+    const startTs = new Date(start).getTime()
+    const endTs = new Date(end).getTime()
+    onTimeRangeChange?.({ column: timeRangeColumn, start: endTs >= startTs ? start : end, end })
+  }
+
   return (
     <div className="rounded-xl border px-4 py-3 mb-4" style={{ background: 'var(--card)', borderColor: 'var(--border)' }}>
       <div className="max-w-7xl mx-auto flex flex-wrap items-center gap-3">
         {timeRangeColumn && (
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs" style={{ color: 'var(--muted)' }}>{timeRangeColumn}</span>
-            <input
-              type="date"
-              className="rounded-full px-3 py-1.5 text-sm w-36"
-              style={{ border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text)' }}
-              value={timeRange?.start ? String(timeRange.start).slice(0, 10) : ''}
-              onChange={(e) => onTimeRangeChange?.({ ...timeRange, column: timeRangeColumn, start: e.target.value || null, end: timeRange?.end || null })}
-              disabled={loading}
-            />
-            <span style={{ color: 'var(--muted)' }}>→</span>
-            <input
-              type="date"
-              className="rounded-full px-3 py-1.5 text-sm w-36"
-              style={{ border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text)' }}
-              value={timeRange?.end ? String(timeRange.end).slice(0, 10) : ''}
-              onChange={(e) => onTimeRangeChange?.({ ...timeRange, column: timeRangeColumn, start: timeRange?.start || null, end: e.target.value || null })}
-              disabled={loading}
-            />
+          <div className="flex flex-col gap-2 min-w-[200px] flex-1 max-w-md">
+            <span className="text-xs font-medium" style={{ color: 'var(--muted)' }}>{timeRangeColumn}</span>
+            <div className="flex items-center gap-3">
+              <div className="flex-1 min-w-0">
+                <div className="flex justify-between text-[10px] mb-0.5" style={{ color: 'var(--muted)' }}>
+                  <span>Start</span>
+                  <span>{timeRange?.start ? String(timeRange.start).slice(0, 10) : minStr}</span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={numDays}
+                  value={safeStart}
+                  onChange={handleStartChange}
+                  disabled={loading}
+                  className="w-full h-2 rounded-full cursor-pointer accent-[var(--primary)]"
+                  style={{ background: 'var(--border)' }}
+                />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex justify-between text-[10px] mb-0.5" style={{ color: 'var(--muted)' }}>
+                  <span>End</span>
+                  <span>{timeRange?.end ? String(timeRange.end).slice(0, 10) : maxStr}</span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={numDays}
+                  value={safeEnd}
+                  onChange={handleEndChange}
+                  disabled={loading}
+                  className="w-full h-2 rounded-full cursor-pointer accent-[var(--primary)]"
+                  style={{ background: 'var(--border)' }}
+                />
+              </div>
+            </div>
           </div>
         )}
         {dimensionFilters.slice(0, 6).map((d) => (

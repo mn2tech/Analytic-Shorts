@@ -187,8 +187,19 @@ export const AuthProvider = ({ children }) => {
   }
 
   const signOut = async () => {
-    const { error } = await supabase.auth.signOut()
-    if (error) throw error
+    setUser(null)
+    setUserProfile(null)
+    setDidRecoverInvalidRefresh(false)
+    try {
+      const { error } = await supabase.auth.signOut()
+      if (error) throw error
+    } catch (e) {
+      try {
+        await supabase.auth.signOut({ scope: 'local' })
+      } catch (_) {
+        // ignore
+      }
+    }
     navigate('/login')
   }
 

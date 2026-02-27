@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList } from 'recharts'
 import { CHART_HEIGHT, FONT_SIZE_AXIS, BAR_RADIUS } from './chartTheme'
+import { formatValueForChart, isCurrencyMeasure } from './formatUtils'
 
 const MAX_PIE_CATEGORIES = 6
 const THEME_CHART_COLORS = ['var(--chart-primary)', 'var(--chart-selected)', 'var(--chart-positive)', 'var(--chart-negative)']
@@ -8,8 +9,11 @@ const THEME_CHART_COLORS = ['var(--chart-primary)', 'var(--chart-selected)', 'va
 export default function BreakdownBlockView({ block, filterState, onFilterChange }) {
   const rows = Array.isArray(block?.payload?.rows) ? block.payload.rows : []
   const dimension = block?.payload?.dimension || ''
+  const measure = block?.payload?.measure || ''
   const selectedKey = dimension ? filterState?.eq?.[dimension] : null
   const setEq = onFilterChange?.setEq
+  const useCurrency = isCurrencyMeasure(measure)
+  const formatValue = (v) => formatValueForChart(Number(v), useCurrency)
 
   const chartData = useMemo(() => {
     return rows.map((r, i) => ({
@@ -62,7 +66,7 @@ export default function BreakdownBlockView({ block, filterState, onFilterChange 
           </Pie>
           <Tooltip
             contentStyle={{ background: 'var(--chart-tooltip-bg)', color: 'var(--chart-tooltip-text)', border: '1px solid var(--border)', borderRadius: 6 }}
-            formatter={(value, name) => [Number(value).toLocaleString(), name]}
+            formatter={(value) => [formatValue(value), dimension || 'Value']}
           />
         </PieChart>
       </ResponsiveContainer>
@@ -77,7 +81,7 @@ export default function BreakdownBlockView({ block, filterState, onFilterChange 
         <YAxis type="category" dataKey="name" width={100} stroke="var(--border)" style={{ fontSize: FONT_SIZE_AXIS }} tick={{ fontSize: 11, fill: 'var(--chart-axis)' }} />
         <Tooltip
           contentStyle={{ background: 'var(--chart-tooltip-bg)', color: 'var(--chart-tooltip-text)', border: '1px solid var(--border)', borderRadius: 6 }}
-          formatter={[(v) => [Number(v).toLocaleString(), dimension || 'Value']]}
+          formatter={[(v) => [formatValue(v), dimension || 'Value']]}
         />
         <Bar
           dataKey="value"
@@ -88,7 +92,7 @@ export default function BreakdownBlockView({ block, filterState, onFilterChange 
           {chartData.map((entry, index) => (
             <Cell key={`cell-${index}`} fill={selectedKey === entry.name ? 'var(--chart-selected)' : entry.color} />
           ))}
-          <LabelList dataKey="value" position="right" formatter={(v) => Number(v).toLocaleString()} style={{ fill: 'var(--text)', fontSize: 11 }} />
+          <LabelList dataKey="value" position="right" formatter={(v) => formatValue(v)} style={{ fill: 'var(--text)', fontSize: 11 }} />
         </Bar>
       </BarChart>
     </ResponsiveContainer>

@@ -7,8 +7,10 @@ import StudioThemeProvider from '../components/aaiStudio/StudioThemeProvider'
 import AAIStudioBlockRenderer from '../components/aaiStudio/AAIStudioBlockRenderer'
 import GlobalFilterBar from '../components/aaiStudio/GlobalFilterBar'
 import AnalystInsightsPanel from '../components/aaiStudio/AnalystInsightsPanel'
+import AgencyReportView from '../components/aaiStudio/AgencyReportView'
 import { KPIRowSkeleton } from '../components/aaiStudio/CardSkeleton'
 import { parseCommand, applyCommand, HELP_LINES } from '../lib/studioCommands'
+import { evidenceToBlocks } from '../utils/evidenceToBlocks'
 
 /** Catches any render error in Studio so the page never goes completely white. */
 class StudioPageErrorBoundary extends Component {
@@ -230,6 +232,8 @@ export default function AAIStudio() {
   const [datasetProfile, setDatasetProfile] = useState(null)
   const [semanticGraph, setSemanticGraph] = useState(null)
   const [insightBlocks, setInsightBlocks] = useState([])
+  const [evidence, setEvidence] = useState(null)
+  const [narrative, setNarrative] = useState(null)
   const [sceneGraph, setSceneGraph] = useState(null)
   const [templateFromRun, setTemplateFromRun] = useState(null)
 
@@ -246,6 +250,13 @@ export default function AAIStudio() {
   const [saveLoading, setSaveLoading] = useState(false)
   const [saveError, setSaveError] = useState(null)
   const [dashboardName, setDashboardName] = useState('')
+  const [showPdfModal, setShowPdfModal] = useState(false)
+  const [pdfForm, setPdfForm] = useState({ clientName: '', reportTitle: 'Analytics Report', dateRange: '', agencyName: 'NM2TECH', agencyLogoUrl: '' })
+  const [pdfLoading, setPdfLoading] = useState(false)
+  const [pdfError, setPdfError] = useState(null)
+  const [reportMode, setReportMode] = useState('analyst') // 'analyst' | 'agency'
+  const [narrativeMode, setNarrativeMode] = useState(null) // 'analyst' | 'agency' when narrative was fetched for that mode
+  const [narrativeLoading, setNarrativeLoading] = useState(false)
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const openDashboardId = searchParams.get('open')
@@ -278,8 +289,10 @@ export default function AAIStudio() {
         setRunId(schema.runId ?? null)
         setRunDate(schema.runId ? new Date() : null)
         setInsightBlocks(Array.isArray(schema.insightBlocks) ? schema.insightBlocks : [])
+        setEvidence(schema.evidence ?? null)
         setSceneGraph(schema.sceneGraph ?? null)
         setTemplateId(schema.templateId || 'general')
+        setReportMode(schema.reportMode === 'agency' ? 'agency' : 'analyst')
         setTemplateFromRun(schema.templateId ? { id: schema.templateId, name: studioTemplates[schema.templateId]?.name ?? schema.templateId } : null)
         setDatasetProfile(schema.datasetProfile ?? null)
         setFilters(schema.filters && typeof schema.filters === 'object' ? { eq: schema.filters.eq || {}, timeRange: schema.filters.timeRange ?? null, search: schema.filters.search ?? '' } : { eq: {}, timeRange: null, search: '' })
@@ -359,11 +372,13 @@ export default function AAIStudio() {
       sourceConfig,
       templateId,
       insightBlocks: trimmedBlocks,
+      evidence: evidence || null,
       sceneGraph,
       datasetProfile: datasetProfile ? { schema: datasetProfile.schema } : null,
       filters,
+      reportMode: reportMode || 'analyst',
     }
-  }, [runId, insightBlocks, sceneGraph, sourceConfig, templateId, datasetProfile, filters])
+  }, [runId, insightBlocks, evidence, sceneGraph, sourceConfig, templateId, datasetProfile, filters, reportMode])
 
   const doBuild = useCallback(
     async (nextFilters = filters, nextOverrides = runConfigOverrides) => {
@@ -382,6 +397,8 @@ export default function AAIStudio() {
         setDatasetProfile(res.data?.datasetProfile || null)
         setSemanticGraph(res.data?.semanticGraph || null)
         setInsightBlocks(Array.isArray(res.data?.insightBlocks) ? res.data.insightBlocks : [])
+        setEvidence(res.data?.evidence ?? null)
+        setNarrative(null)
         setSceneGraph(res.data?.sceneGraph || null)
         const template = res.data?.template
         setTemplateFromRun(template ? { id: template.id, name: template.name } : null)
@@ -399,6 +416,10 @@ export default function AAIStudio() {
     const raw = String(commandInput || '').trim()
     setCommandMessage(null)
     if (!raw) return
+    if (loading) {
+      setCommandMessage({ type: 'error', text: 'Please wait for the current build to finish.' })
+      return
+    }
     const ast = parseCommand(raw)
     const result = applyCommand(runConfigOverrides, ast)
     if (result.error) {
@@ -418,12 +439,39 @@ export default function AAIStudio() {
       doBuild(filters, result.overrides)
       setTimeout(() => setCommandMessage(null), 3000)
     }
-  }, [commandInput, runConfigOverrides, filters, doBuild])
+  }, [commandInput, runConfigOverrides, filters, doBuild, loading])
 
   // Clear saved state when run changes (new build)
   useEffect(() => {
     setSavedDashboardId(null)
   }, [runId])
+
+  // Reset narrative mode when evidence changes so agency narrative refetches for new data
+  useEffect(() => {
+    setNarrativeMode(null)
+  }, [evidence])
+
+  // When agency mode and evidence exists, ensure narrative is fetched for agency tone
+  useEffect(() => {
+    if (reportMode !== 'agency' || !evidence || typeof evidence !== 'object') return
+    if (narrative && narrativeMode === 'agency') return
+    let cancelled = false
+    setNarrativeLoading(true)
+    apiClient
+      .post('/api/insights', { evidence, mode: 'agency' })
+      .then((res) => {
+        if (cancelled || !res?.data) return
+        setNarrative({
+          executiveSummary: res.data.executiveSummary ?? '',
+          topInsights: Array.isArray(res.data.topInsights) ? res.data.topInsights : [],
+          suggestedQuestions: Array.isArray(res.data.suggestedQuestions) ? res.data.suggestedQuestions : [],
+        })
+        setNarrativeMode('agency')
+      })
+      .catch(() => { if (!cancelled) setNarrativeMode(null) })
+      .finally(() => { if (!cancelled) setNarrativeLoading(false) })
+    return () => { cancelled = true }
+  }, [reportMode, evidence, narrativeMode])
 
   const saveDashboardPrivate = useCallback(async () => {
     if (!runId || !insightBlocks?.length) {
@@ -464,6 +512,192 @@ export default function AAIStudio() {
       setSaveLoading(false)
     }
   }, [runId, insightBlocks, templateId, templateFromRun, studioTemplates, buildSaveSchema, dashboardName])
+
+  const openPdfModal = useCallback(() => {
+    let dateRange = ''
+    if (filters?.timeRange?.start && filters?.timeRange?.end) {
+      dateRange = `${String(filters.timeRange.start).slice(0, 10)} – ${String(filters.timeRange.end).slice(0, 10)}`
+    } else if (evidence?.trends?.[0]?.series?.length) {
+      const s = evidence.trends[0].series
+      const first = s[0]?.t ?? s[0]?.period
+      const last = s[s.length - 1]?.t ?? s[s.length - 1]?.period
+      if (first && last) dateRange = `${String(first).slice(0, 10)} – ${String(last).slice(0, 10)}`
+    }
+    setPdfForm((prev) => ({ ...prev, dateRange, reportTitle: prev.reportTitle || templateFromRun?.name || 'Analytics Report' }))
+    setPdfError(null)
+    setPdfLoading(false)
+    setShowPdfModal(true)
+  }, [filters, evidence, templateFromRun])
+
+  const generatePdf = useCallback(async () => {
+    if (!evidence || typeof evidence !== 'object') {
+      setPdfError('Build a report first (evidence is required).')
+      return
+    }
+    setPdfLoading(true)
+    setPdfError(null)
+    try {
+      let narrative = { executiveSummary: '', topInsights: [], suggestedQuestions: [] }
+      try {
+        const insightRes = await apiClient.post('/api/insights', { evidence, mode: reportMode })
+        if (insightRes.data && typeof insightRes.data === 'object') {
+          narrative = {
+            executiveSummary: insightRes.data.executiveSummary ?? narrative.executiveSummary,
+            topInsights: Array.isArray(insightRes.data.topInsights) ? insightRes.data.topInsights : narrative.topInsights,
+            suggestedQuestions: Array.isArray(insightRes.data.suggestedQuestions) ? insightRes.data.suggestedQuestions : narrative.suggestedQuestions,
+          }
+        }
+      } catch (_) {
+        // use defaults
+      }
+      const branding = {
+        agencyName: pdfForm.agencyName?.trim() || 'NM2TECH',
+        agencyTagline: undefined,
+        agencyLogoUrl: pdfForm.agencyLogoUrl?.trim() || undefined,
+      }
+      const reportMeta = {
+        clientName: pdfForm.clientName?.trim() || undefined,
+        reportTitle: pdfForm.reportTitle?.trim() || 'Analytics Report',
+        dateRange: pdfForm.dateRange?.trim() || undefined,
+      }
+      const res = await apiClient.post('/api/studio/pdf', { mode: reportMode, evidence, narrative, branding, reportMeta }, { responseType: 'blob', timeout: 120000 })
+      const blob = res.data
+      if (res.status !== 200 || !(blob instanceof Blob)) {
+        const text = typeof blob?.text === 'function' ? await blob.text() : String(blob)
+        let msg = 'PDF export failed'
+        try {
+          const j = JSON.parse(text)
+          msg = j.message || j.error || msg
+        } catch (_) {}
+        setPdfError(msg)
+        return
+      }
+      // Avoid saving a non-PDF (e.g. JSON error) as .pdf so the viewer doesn't show "Failed to load PDF document"
+      if (blob.size === 0) {
+        setPdfError('The server returned an empty file. Try "Download HTML" then Print → Save as PDF.')
+        return
+      }
+      const contentType = (res.headers && res.headers['content-type']) || ''
+      if (blob.type === 'application/json' || (contentType && contentType.toLowerCase().includes('application/json'))) {
+        try {
+          const text = await blob.text()
+          const j = JSON.parse(text)
+          setPdfError(j.message || j.error || 'PDF export failed.')
+          return
+        } catch (_) {}
+      }
+      // Ensure the file is actually a PDF (magic bytes) so we never save a corrupt/non-PDF file
+      const pdfMagic = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d]) // %PDF-
+      const head = await blob.slice(0, 5).arrayBuffer().then(ab => new Uint8Array(ab))
+      const isPdf = head.length >= 5 && pdfMagic.every((b, i) => head[i] === b)
+      if (!isPdf) {
+        try {
+          const text = await blob.text()
+          const j = JSON.parse(text)
+          setPdfError(j.message || j.error || 'The server did not return a valid PDF.')
+        } catch (_) {
+          setPdfError('The server returned an invalid or corrupt file. Use "Download HTML" then Print → Save as PDF.')
+        }
+        return
+      }
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'agency-report.pdf'
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      setShowPdfModal(false)
+    } catch (err) {
+      let msg = 'PDF export failed'
+      const data = err.response?.data
+      if (data && typeof data.text === 'function') {
+        try {
+          const text = await data.text()
+          const j = JSON.parse(text)
+          msg = j.message || j.error || msg
+        } catch (_) {}
+      }
+      if (!msg || msg === 'PDF export failed') {
+        msg = err.response?.data?.message || err.response?.data?.error || err.message || msg
+      }
+      if (err.response?.status === 503) {
+        msg = `${msg} Use "Download HTML" below, then open the file and choose Print → Save as PDF.`
+      }
+      console.error('[PDF export]', err)
+      setPdfError(msg)
+    } finally {
+      setPdfLoading(false)
+    }
+  }, [evidence, pdfForm, reportMode])
+
+  const generateHtmlExport = useCallback(async () => {
+    if (!evidence || typeof evidence !== 'object') {
+      setPdfError('Build a report first (evidence is required).')
+      return
+    }
+    setPdfLoading(true)
+    setPdfError(null)
+    try {
+      let narrative = { executiveSummary: '', topInsights: [], suggestedQuestions: [] }
+      try {
+        const insightRes = await apiClient.post('/api/insights', { evidence, mode: reportMode })
+        if (insightRes.data && typeof insightRes.data === 'object') {
+          narrative = {
+            executiveSummary: insightRes.data.executiveSummary ?? narrative.executiveSummary,
+            topInsights: Array.isArray(insightRes.data.topInsights) ? insightRes.data.topInsights : narrative.topInsights,
+            suggestedQuestions: Array.isArray(insightRes.data.suggestedQuestions) ? insightRes.data.suggestedQuestions : narrative.suggestedQuestions,
+          }
+        }
+      } catch (_) {
+        // use defaults
+      }
+      const branding = {
+        agencyName: pdfForm.agencyName?.trim() || 'NM2TECH',
+        agencyTagline: undefined,
+        agencyLogoUrl: pdfForm.agencyLogoUrl?.trim() || undefined,
+      }
+      const reportMeta = {
+        clientName: pdfForm.clientName?.trim() || undefined,
+        reportTitle: pdfForm.reportTitle?.trim() || 'Analytics Report',
+        dateRange: pdfForm.dateRange?.trim() || undefined,
+      }
+      const res = await apiClient.post('/api/studio/pdf?format=html', { mode: reportMode, evidence, narrative, branding, reportMeta }, { responseType: 'blob', timeout: 60000 })
+      const blob = res.data
+      if (res.status !== 200 || !(blob instanceof Blob)) {
+        const text = typeof blob?.text === 'function' ? await blob.text() : String(blob)
+        let msg = 'HTML export failed'
+        try {
+          const j = JSON.parse(text)
+          msg = j.message || j.error || msg
+        } catch (_) {}
+        setPdfError(msg)
+        return
+      }
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'agency-report.html'
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      setShowPdfModal(false)
+    } catch (err) {
+      let msg = err.response?.data?.message || err.response?.data?.error || err.message || 'HTML export failed'
+      if (err.response?.data && typeof err.response.data.text === 'function') {
+        try {
+          const text = await err.response.data.text()
+          const j = JSON.parse(text)
+          msg = j.message || j.error || msg
+        } catch (_) {}
+      }
+      setPdfError(msg)
+    } finally {
+      setPdfLoading(false)
+    }
+  }, [evidence, pdfForm, reportMode])
 
   const shareToFeed = useCallback(async () => {
     if (!runId || !insightBlocks?.length) return
@@ -539,11 +773,19 @@ export default function AAIStudio() {
     [setSourceType]
   )
 
+  const displayBlocks = useMemo(() => {
+    const raw = insightBlocks || []
+    if (!evidence) return raw
+    const fromEvidence = evidenceToBlocks(evidence)
+    const evidenceIds = new Set(fromEvidence.map((b) => b.id))
+    const rest = raw.filter((b) => b && !evidenceIds.has(b.id))
+    return [...fromEvidence, ...rest]
+  }, [evidence, insightBlocks])
+
   const orderedBlocks = useMemo(() => {
-    const byId = new Map((insightBlocks || []).map((b) => [b.id, b]))
+    const byId = new Map((displayBlocks || []).map((b) => [b.id, b]))
     const nodes = Array.isArray(sceneGraph?.nodes) ? sceneGraph.nodes : []
     const pages = Array.isArray(sceneGraph?.pages) ? sceneGraph.pages : null
-    const activePage = pages?.[0]?.id || null
     const nodeOrder = (nodeIds) =>
       (nodeIds || [])
         .map((id) => nodes.find((n) => n.id === id))
@@ -552,15 +794,14 @@ export default function AAIStudio() {
         .filter(Boolean)
 
     if (nodes.length && pages && pages.length) {
-      // Default to Overview tab if present
       const overview = pages.find((p) => p.id === 'overview') || pages[0]
       return nodeOrder(overview.nodeIds)
     }
     if (nodes.length) {
       return nodes.slice().sort((a, b) => (a.layout?.order ?? 0) - (b.layout?.order ?? 0)).map((n) => byId.get(n.blockId)).filter(Boolean)
     }
-    return (insightBlocks || []).slice()
-  }, [insightBlocks, sceneGraph])
+    return (displayBlocks || []).slice()
+  }, [displayBlocks, sceneGraph])
 
   const pages = useMemo(() => (Array.isArray(sceneGraph?.pages) ? sceneGraph.pages : null), [sceneGraph])
   const [activePageId, setActivePageId] = useState('overview')
@@ -575,7 +816,7 @@ export default function AAIStudio() {
 
   const blocksForActivePage = useMemo(() => {
     if (!pages || pages.length === 0) return orderedBlocks
-    const byId = new Map((insightBlocks || []).map((b) => [b.id, b]))
+    const byId = new Map((displayBlocks || []).map((b) => [b.id, b]))
     const nodes = Array.isArray(sceneGraph?.nodes) ? sceneGraph.nodes : []
     const page = pages.find((p) => p.id === activePageId) || pages[0]
     const out = []
@@ -585,17 +826,26 @@ export default function AAIStudio() {
       if (block) out.push(block)
     }
     return out
-  }, [pages, activePageId, insightBlocks, sceneGraph, orderedBlocks])
+  }, [pages, activePageId, displayBlocks, sceneGraph, orderedBlocks])
 
   const topNDimension = useMemo(() => {
-    const topn = (insightBlocks || []).find((b) => b.type === 'TopNBlock')
+    const topn = (displayBlocks || []).find((b) => b.type === 'TopNBlock')
     return topn?.payload?.dimension || null
-  }, [insightBlocks])
+  }, [displayBlocks])
 
   const timeRangeColumn = useMemo(() => {
     const f = Array.isArray(sceneGraph?.filters) ? sceneGraph.filters.find((x) => x.id === 'time_range') : null
     return f?.column || null
   }, [sceneGraph])
+
+  const dateExtent = useMemo(() => {
+    const trend = (displayBlocks || []).find((b) => b?.type === 'TrendBlock')
+    const series = trend?.payload?.series ?? []
+    const periods = series.map((s) => s?.t).filter(Boolean)
+    if (periods.length < 2) return null
+    const sorted = [...periods].sort()
+    return { min: sorted[0], max: sorted[sorted.length - 1] }
+  }, [displayBlocks])
 
   const setEqFilter = useCallback(
     (col, value) => {
@@ -623,7 +873,7 @@ export default function AAIStudio() {
   }, [doBuild])
 
   const dimensionFilters = useMemo(() => {
-    const blocks = insightBlocks || []
+    const blocks = displayBlocks || []
     const dims = []
     const seen = new Set()
     for (const b of blocks) {
@@ -641,7 +891,7 @@ export default function AAIStudio() {
       })
     }
     return dims
-  }, [insightBlocks, filters.eq, setEqFilter])
+  }, [displayBlocks, filters.eq, setEqFilter])
 
   const setTimeRangeFilter = useCallback(
     (timeRange) => {
@@ -678,7 +928,7 @@ export default function AAIStudio() {
     return 'Medium'
   }, [insightBlocks])
 
-  const hasOverview = blocksForActivePage.length > 0
+  const hasOverview = reportMode === 'agency' ? !!evidence : blocksForActivePage.length > 0
   const kpiBlocks = blocksForActivePage.filter((b) => b?.type === 'KPIBlock')
   const trendBlock = blocksForActivePage.find((b) => b?.type === 'TrendBlock')
   const insightBlocksForPanel = blocksForActivePage.filter((b) =>
@@ -873,8 +1123,14 @@ export default function AAIStudio() {
                 )}
                 {runId && (
                   <>
+                    <span className="text-xs font-medium" style={{ color: sidebarMuted }}>Report mode:</span>
+                    <select value={reportMode} onChange={(e) => setReportMode(e.target.value)} className="text-sm px-2 py-1.5 rounded-lg border bg-transparent" style={{ color: sidebarText, borderColor: sidebarBorder }}>
+                      <option value="analyst">Analyst</option>
+                      <option value="agency">Agency</option>
+                    </select>
                     <button type="button" onClick={saveDashboardPrivate} disabled={loading || saveLoading} className="text-sm px-3 py-2 rounded-lg font-medium transition-colors disabled:opacity-50 hover:bg-white/8" style={{ color: sidebarText }}>{saveLoading ? 'Saving…' : savedDashboardId ? '✓ Saved' : 'Save'}</button>
                     <button type="button" onClick={shareToFeed} disabled={loading || saveLoading} className="text-sm px-3 py-2 rounded-lg font-medium transition-colors disabled:opacity-50 hover:bg-white/8" style={{ color: success }}>Share to feed</button>
+                    <button type="button" onClick={openPdfModal} disabled={loading || !evidence} className="text-sm px-3 py-2 rounded-lg font-medium transition-colors disabled:opacity-50 hover:bg-white/8" style={{ color: sidebarText }} title={!evidence ? 'Build a report first' : ''}>Export Branded PDF</button>
                     <button type="button" onClick={() => doBuild(filters)} disabled={loading} className="text-sm px-3 py-2 rounded-lg font-medium transition-colors disabled:opacity-50 hover:bg-white/8" style={{ color: sidebarText }}>Regenerate</button>
                     {saveError && <span className="text-xs max-w-[200px] truncate" style={{ color: danger }} title={saveError}>{saveError}</span>}
                   </>
@@ -907,6 +1163,7 @@ export default function AAIStudio() {
             onSearchChange={onSearchChange}
             onClear={clearFilters}
             loading={loading}
+            dateExtent={dateExtent}
           />
           {pages && pages.length > 1 && (
             <div className="flex gap-1 border-b mb-4" style={{ borderColor: sidebarBorder }}>
@@ -928,54 +1185,27 @@ export default function AAIStudio() {
               {savedDashboardId && <Link to="/dashboards" className="font-medium" style={{ color: success }}>View in My Dashboards →</Link>}
             </div>
           )}
-          <div
-            key={activePageId}
-            className="px-5 py-5 space-y-5 rounded-2xl border transition-shadow duration-200"
-            style={{ background: 'var(--card)', borderColor: 'var(--border)' }}
-          >
-            {loading && <KPIRowSkeleton />}
-            {!loading && kpiBlocks.length > 0 && (
-              <div className="space-y-2">
-                {kpiBlocks.map((b) => (
-                  <AAIStudioBlockRenderer
-                    key={b.id}
-                    block={b}
-                    filterState={filters}
-                    onFilterChange={{ setEq: setEqFilter, setTimeRange: setTimeRangeFilter }}
-                    templateId={templateId}
-                    isSelected={selectedBlockId === b.id}
-                    onSelect={() => setSelectedBlockId((prev) => (prev === b.id ? null : b.id))}
-                  />
-                ))}
-              </div>
-            )}
-
-            {!loading && (trendBlock || insightBlocksForPanel.length > 0) && (
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                <div className="lg:col-span-2 space-y-4">
-                  {trendBlock && (
-                    <AAIStudioBlockRenderer
-                      key={trendBlock.id}
-                      block={trendBlock}
-                      filterState={filters}
-                      onFilterChange={{ setEq: setEqFilter, setTimeRange: setTimeRangeFilter }}
-                      templateId={templateId}
-                      isSelected={selectedBlockId === trendBlock.id}
-                      onSelect={() => setSelectedBlockId((prev) => (prev === trendBlock.id ? null : trendBlock.id))}
-                    />
-                  )}
-                </div>
-                <div className="lg:col-span-1">
-                  <AnalystInsightsPanel blocks={insightBlocksForPanel} confidence={executiveConfidence} maxBullets={5} />
-                </div>
-              </div>
-            )}
-
-            {!loading && otherBlocks.filter((b) => b.type !== 'TrendBlock').length > 0 && (
-              <div className="space-y-4">
-                {otherBlocks
-                  .filter((b) => b.type !== 'TrendBlock')
-                  .map((b) => (
+          {reportMode === 'agency' ? (
+            <div className="px-5 py-5 rounded-2xl border transition-shadow duration-200" style={{ background: 'var(--card)', borderColor: 'var(--border)' }}>
+              <AgencyReportView
+                evidence={evidence}
+                narrative={narrative || {}}
+                reportMeta={{}}
+                branding={{}}
+                narrativeLoading={narrativeLoading}
+                loading={loading}
+              />
+            </div>
+          ) : (
+            <div
+              key={activePageId}
+              className="px-5 py-5 space-y-5 rounded-2xl border transition-shadow duration-200"
+              style={{ background: 'var(--card)', borderColor: 'var(--border)' }}
+            >
+              {loading && <KPIRowSkeleton />}
+              {!loading && kpiBlocks.length > 0 && (
+                <div className="space-y-2">
+                  {kpiBlocks.map((b) => (
                     <AAIStudioBlockRenderer
                       key={b.id}
                       block={b}
@@ -986,9 +1216,49 @@ export default function AAIStudio() {
                       onSelect={() => setSelectedBlockId((prev) => (prev === b.id ? null : b.id))}
                     />
                   ))}
-              </div>
-            )}
-          </div>
+                </div>
+              )}
+
+              {!loading && (trendBlock || insightBlocksForPanel.length > 0) && (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                  <div className="lg:col-span-2 space-y-4">
+                    {trendBlock && (
+                      <AAIStudioBlockRenderer
+                        key={trendBlock.id}
+                        block={trendBlock}
+                        filterState={filters}
+                        onFilterChange={{ setEq: setEqFilter, setTimeRange: setTimeRangeFilter }}
+                        templateId={templateId}
+                        isSelected={selectedBlockId === trendBlock.id}
+                        onSelect={() => setSelectedBlockId((prev) => (prev === trendBlock.id ? null : trendBlock.id))}
+                      />
+                    )}
+                  </div>
+                  <div className="lg:col-span-1">
+                    <AnalystInsightsPanel blocks={insightBlocksForPanel} confidence={executiveConfidence} maxBullets={5} narrative={narrative} />
+                  </div>
+                </div>
+              )}
+
+              {!loading && otherBlocks.filter((b) => b.type !== 'TrendBlock').length > 0 && (
+                <div className="space-y-4">
+                  {otherBlocks
+                    .filter((b) => b.type !== 'TrendBlock')
+                    .map((b) => (
+                      <AAIStudioBlockRenderer
+                        key={b.id}
+                        block={b}
+                        filterState={filters}
+                        onFilterChange={{ setEq: setEqFilter, setTimeRange: setTimeRangeFilter }}
+                        templateId={templateId}
+                        isSelected={selectedBlockId === b.id}
+                        onSelect={() => setSelectedBlockId((prev) => (prev === b.id ? null : b.id))}
+                      />
+                    ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
         )}
 
@@ -1010,8 +1280,9 @@ export default function AAIStudio() {
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleCommandSubmit() } }}
               className="flex-1 min-w-0 px-4 py-2.5 rounded-xl text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#58a6ff44]"
               style={{ background: inputBg, border: `1px solid ${sidebarBorder}`, color: sidebarText }}
-              disabled={loading}
+              aria-label="Command input: type a command and press Enter"
             />
+            <button type="button" onClick={handleCommandSubmit} disabled={loading} className="shrink-0 px-3 py-2 rounded-lg text-xs font-medium transition-colors disabled:opacity-50" style={{ color: '#e6edf3', background: accent }} title="Run command (or press Enter)">Run</button>
             <button type="button" onClick={() => setShowCommandHelp((v) => !v)} className="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center text-sm font-medium transition-colors hover:bg-white/8" style={{ color: sidebarMuted, background: inputBg }} title="All commands">?</button>
             {commandMessage && (
               <span className="text-sm shrink-0" style={{ color: commandMessage.type === 'error' ? danger : commandMessage.type === 'success' ? success : sidebarMuted }}>{commandMessage.text}</span>
@@ -1029,6 +1300,86 @@ export default function AAIStudio() {
         )}
           </main>
         </div>
+
+        {showPdfModal && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)' }} onClick={() => !pdfLoading && setShowPdfModal(false)}>
+            <div className="rounded-xl border shadow-xl max-w-md w-full max-h-[90vh] overflow-auto" style={{ background: 'var(--card)', borderColor: 'var(--border)' }} onClick={(e) => e.stopPropagation()}>
+              <div className="p-5 border-b" style={{ borderColor: 'var(--border)' }}>
+                <h3 className="text-lg font-semibold" style={{ color: 'var(--text)' }}>Export Branded PDF</h3>
+                <p className="text-sm mt-1" style={{ color: 'var(--muted)' }}>Generate a client-ready report with your branding.</p>
+              </div>
+              <div className="p-5 space-y-4">
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color: 'var(--muted)' }}>Client name</label>
+                  <input type="text" value={pdfForm.clientName} onChange={(e) => setPdfForm((f) => ({ ...f, clientName: e.target.value }))} placeholder="Optional" className="w-full px-3 py-2 rounded-lg text-sm" style={{ background: 'var(--card-2)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color: 'var(--muted)' }}>Report title</label>
+                  <input type="text" value={pdfForm.reportTitle} onChange={(e) => setPdfForm((f) => ({ ...f, reportTitle: e.target.value }))} placeholder="Analytics Report" className="w-full px-3 py-2 rounded-lg text-sm" style={{ background: 'var(--card-2)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color: 'var(--muted)' }}>Date range</label>
+                  <input type="text" value={pdfForm.dateRange} onChange={(e) => setPdfForm((f) => ({ ...f, dateRange: e.target.value }))} placeholder="e.g. 2026-01-01 – 2026-02-20" className="w-full px-3 py-2 rounded-lg text-sm" style={{ background: 'var(--card-2)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color: 'var(--muted)' }}>Agency name</label>
+                  <input type="text" value={pdfForm.agencyName} onChange={(e) => setPdfForm((f) => ({ ...f, agencyName: e.target.value }))} placeholder="NM2TECH" className="w-full px-3 py-2 rounded-lg text-sm" style={{ background: 'var(--card-2)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color: 'var(--muted)' }}>Agency logo URL</label>
+                  <input type="url" value={pdfForm.agencyLogoUrl} onChange={(e) => setPdfForm((f) => ({ ...f, agencyLogoUrl: e.target.value }))} placeholder="https://… or leave blank" className="w-full px-3 py-2 rounded-lg text-sm" style={{ background: 'var(--card-2)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+                </div>
+                {pdfError && (
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium p-2 rounded" style={{ color: '#fff', background: 'var(--negative)' }} role="alert">{pdfError}</p>
+                    <p className="text-xs" style={{ color: 'var(--muted)' }}>Tip: Use &quot;Download HTML&quot; then open in a browser and choose Print → Save as PDF if PDF is unavailable.</p>
+                  </div>
+                )}
+              </div>
+              <div className="p-5 pt-0 flex flex-wrap gap-2 justify-end">
+                <button type="button" onClick={() => !pdfLoading && setShowPdfModal(false)} disabled={pdfLoading} className="px-4 py-2 rounded-lg text-sm font-medium" style={{ color: 'var(--text)', background: 'var(--card-2)' }}>Cancel</button>
+                <button
+                  type="button"
+                  disabled={pdfLoading}
+                  className="px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50"
+                  style={{ color: 'var(--text)', background: 'var(--card-2)', border: '1px solid var(--border)' }}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    if (pdfLoading) return
+                    setPdfError(null)
+                    setPdfLoading(true)
+                    Promise.resolve().then(() => generateHtmlExport()).catch((err) => { setPdfError(err?.message || 'HTML export failed'); setPdfLoading(false) })
+                  }}
+                >
+                  Download HTML
+                </button>
+                <button
+                  type="button"
+                  disabled={pdfLoading}
+                  className="px-4 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50"
+                  style={{ background: accent }}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    if (pdfLoading) return
+                    setPdfError(null)
+                    setPdfLoading(true)
+                    Promise.resolve()
+                      .then(() => generatePdf())
+                      .catch((err) => {
+                        console.error('[PDF export] sync', err)
+                        setPdfError(err?.message || 'PDF export failed')
+                      })
+                      .finally(() => setPdfLoading(false))
+                  }}
+                >
+                  {pdfLoading ? 'Generating…' : 'Generate PDF'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </StudioThemeProvider>
     </StudioPageErrorBoundary>
   )

@@ -12,12 +12,14 @@ import {
   ReferenceDot,
 } from 'recharts'
 import { CHART_HEIGHT, TREND_CHART_HEIGHT, FONT_SIZE_AXIS } from './chartTheme'
+import { formatValueForChart, isCurrencyMeasure } from './formatUtils'
 
 export default function TrendBlockView({ block, filterState, onFilterChange }) {
   const series = Array.isArray(block?.payload?.series) ? block.payload.series : []
   const timeColumn = block?.payload?.timeColumn || 't'
   const measure = block?.payload?.measure
   const grain = block?.payload?.grain || 'day'
+  const useCurrency = isCurrencyMeasure(measure)
 
   const { chartData, droppedCount, droppedInvalidValueCount } = useMemo(() => {
     const list = Array.isArray(series) ? series : []
@@ -40,12 +42,26 @@ export default function TrendBlockView({ block, filterState, onFilterChange }) {
   }, [series])
 
   const selectedPeriod = filterState?.eq?.[timeColumn] ?? null
+  const selectedIndex = selectedPeriod != null ? chartData.findIndex((d) => d.period === selectedPeriod) : -1
+  const sliderIndex = selectedIndex >= 0 ? selectedIndex : Math.max(0, chartData.length - 1)
   const handlePointClick = (payload) => {
     if (!payload?.period || !onFilterChange?.setEq) return
     const col = block?.payload?.timeColumn
     if (!col) return
     const current = filterState?.eq?.[col]
     onFilterChange.setEq(col, current === payload.period ? null : payload.period)
+  }
+  const handleSliderChange = (e) => {
+    const col = block?.payload?.timeColumn
+    if (!col || !onFilterChange?.setEq) return
+    const idx = Number(e.target.value)
+    if (!Number.isFinite(idx) || idx < 0 || idx >= chartData.length) return
+    onFilterChange.setEq(col, chartData[idx].period)
+  }
+  const handleClearPeriod = () => {
+    const col = block?.payload?.timeColumn
+    if (!col || !onFilterChange?.setEq) return
+    onFilterChange.setEq(col, null)
   }
 
   if (chartData.length === 0) {
@@ -100,7 +116,7 @@ export default function TrendBlockView({ block, filterState, onFilterChange }) {
       <ChartComponent data={chartData} margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" vertical={false} />
         <XAxis dataKey="period" stroke="var(--border)" style={{ fontSize: FONT_SIZE_AXIS }} tick={{ fontSize: 11, fill: 'var(--chart-axis)' }} />
-        <YAxis stroke="var(--border)" style={{ fontSize: FONT_SIZE_AXIS }} tick={{ fontSize: 11, fill: 'var(--chart-axis)' }} />
+        <YAxis stroke="var(--border)" style={{ fontSize: FONT_SIZE_AXIS }} tick={{ fontSize: 11, fill: 'var(--chart-axis)' }} tickFormatter={(v) => (useCurrency ? formatValueForChart(v, true) : Number(v).toLocaleString())} />
         <Tooltip
           contentStyle={{ background: 'var(--chart-tooltip-bg)', color: 'var(--chart-tooltip-text)', border: '1px solid var(--border)', borderRadius: 6 }}
           content={({ active, payload, label }) => {
@@ -109,7 +125,7 @@ export default function TrendBlockView({ block, filterState, onFilterChange }) {
             const value = p?.value
             const period = label ?? p?.period
             const labelStr = measure || 'Value'
-            const valueStr = typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString() : String(value ?? '—')
+            const valueStr = typeof value === 'number' && Number.isFinite(value) ? formatValueForChart(value, useCurrency) : String(value ?? '—')
             return (
               <div className="rounded border px-3 py-2 shadow-sm" style={{ background: 'var(--chart-tooltip-bg)', color: 'var(--chart-tooltip-text)', borderColor: 'var(--border)' }}>
                 <div className="text-xs" style={{ opacity: 0.9 }}>{period}</div>
@@ -166,23 +182,29 @@ export default function TrendBlockView({ block, filterState, onFilterChange }) {
         ))}
       </ChartComponent>
     </ResponsiveContainer>
-      <div className="flex flex-wrap gap-1 mt-2" role="group" aria-label="Select period to filter">
-        {chartData.map((d) => (
-          <button
-            key={d._key}
-            type="button"
-            data-testid={`period-${d.period}`}
-            onClick={() => handlePointClick(d)}
-            className="text-xs px-2 py-1 rounded border"
-            style={
-              selectedPeriod === d.period
-                ? { background: 'var(--primary)', borderColor: 'var(--primary)', color: '#fff' }
-                : { background: 'var(--card-2)', borderColor: 'var(--border)', color: 'var(--text)' }
-            }
-          >
-            {d.period}
-          </button>
-        ))}
+      <div className="mt-3 space-y-1.5" role="group" aria-label="Select period">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs font-medium" style={{ color: 'var(--muted)' }}>
+            {selectedPeriod != null ? chartData[sliderIndex]?.period ?? selectedPeriod : 'All periods'}
+          </span>
+          {selectedPeriod != null && (
+            <button type="button" onClick={handleClearPeriod} className="text-xs underline" style={{ color: 'var(--primary)' }}>Clear</button>
+          )}
+        </div>
+        <input
+          type="range"
+          min={0}
+          max={Math.max(0, chartData.length - 1)}
+          value={sliderIndex}
+          onChange={handleSliderChange}
+          data-testid="trend-period-slider"
+          className="w-full h-2 rounded-full cursor-pointer accent-[var(--primary)]"
+          style={{ background: 'var(--border)', color: 'var(--primary)' }}
+        />
+        <div className="flex justify-between text-[10px]" style={{ color: 'var(--muted)' }}>
+          <span>{chartData[0]?.period ?? ''}</span>
+          <span>{chartData[chartData.length - 1]?.period ?? ''}</span>
+        </div>
       </div>
     </div>
   )

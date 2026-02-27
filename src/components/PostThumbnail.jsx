@@ -26,13 +26,28 @@ export default function PostThumbnail({ url, title = 'Analytics Short', classNam
       />
     )
   }
+  const displayTitle = title || 'Dashboard'
   return (
     <div
-      className={`flex flex-col items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200 text-slate-500 ${className}`}
+      className={`flex flex-col items-center justify-center p-2 text-center overflow-hidden relative ${className}`}
       aria-hidden
+      style={{
+        background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 35%, #a855f7 65%, #7c3aed 100%)',
+        boxShadow: 'inset 0 1px 0 0 rgba(255,255,255,0.12)',
+      }}
     >
+      {/* Subtle pattern overlay */}
+      <div
+        className="absolute inset-0 opacity-[0.08]"
+        style={{
+          backgroundImage: `radial-gradient(circle at 20% 80%, white 1px, transparent 1px),
+            radial-gradient(circle at 80% 20%, white 1px, transparent 1px),
+            radial-gradient(circle at 40% 40%, white 1px, transparent 1px)`,
+          backgroundSize: '32px 32px',
+        }}
+      />
       <svg
-        className="w-12 h-12 mb-1 opacity-70"
+        className="w-10 h-10 mb-1.5 flex-shrink-0 relative z-10 text-white/90"
         fill="none"
         stroke="currentColor"
         viewBox="0 0 24 24"
@@ -44,7 +59,8 @@ export default function PostThumbnail({ url, title = 'Analytics Short', classNam
           d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
         />
       </svg>
-      <span className="text-xs font-medium">{title || 'Dashboard'}</span>
+      <span className="text-xs font-semibold text-white line-clamp-2 break-words w-full relative z-10 drop-shadow-sm">{displayTitle}</span>
+      <span className="text-[10px] text-white/80 mt-0.5 relative z-10">Click here</span>
     </div>
   )
 }

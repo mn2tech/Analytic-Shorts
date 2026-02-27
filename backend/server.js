@@ -19,6 +19,7 @@ const dashboardRoutes = require('./routes/dashboards')
 const subscriptionRoutes = require('./routes/subscription')
 const webhookRoutes = require('./routes/webhook')
 const analyticsRoutes = require('./routes/analytics')
+const profilesRoutes = require('./routes/profiles')
 const studioRoutes = require('./routes/studio')
 const studioAiSchemaHandler = require('./routes/studioAiSchema')
 const aiDashboardSpecRoutes = require('./routes/aiDashboardSpec')
@@ -155,7 +156,7 @@ const thumbnailRoutes = require('./routes/thumbnail')
 app.use('/api/uploads', express.static(path.join(__dirname, 'uploads')))
 app.use('/api/thumbnail-upload', thumbnailRoutes)
 
-// Routes - register /api/studio/ai-schema FIRST so it always matches
+// Routes - register /api/studio/ai-schema and /api/studio/pdf FIRST so they always match
 app.post('/api/studio/ai-schema', (req, res, next) => {
   console.log('[server] POST /api/studio/ai-schema hit')
   studioAiSchemaHandler(req, res).catch(next)
@@ -164,6 +165,15 @@ app.post('/api/studio/ai-schema/', (req, res, next) => {
   console.log('[server] POST /api/studio/ai-schema/ hit')
   studioAiSchemaHandler(req, res).catch(next)
 })
+const { handlePdfExport } = require('./routes/studio')
+app.post('/api/studio/pdf', (req, res, next) => {
+  console.log('[server] POST /api/studio/pdf hit')
+  handlePdfExport(req, res).catch(next)
+})
+app.post('/api/studio/pdf/', (req, res, next) => {
+  console.log('[server] POST /api/studio/pdf/ hit')
+  handlePdfExport(req, res).catch(next)
+})
 app.use('/api/upload', uploadRoutes)
 app.use('/api/insights', insightsRoutes)
 app.use('/api/example', exampleRoutes)
@@ -171,6 +181,7 @@ app.use('/api/datasets', datasetsRoutes)
 app.use('/api/dashboards', dashboardRoutes)
 app.use('/api/subscription', subscriptionRoutes)
 app.use('/api/analytics', analyticsRoutes)
+app.use('/api/profiles', profilesRoutes)
 app.use('/api/studio', studioRoutes)
 // POST /api/ai/dashboard-spec — register first so it always matches (avoids 404)
 const handleDashboardSpec = aiDashboardSpecRoutes.handleDashboardSpec
@@ -253,6 +264,9 @@ app.use((req, res) => {
       'GET /api/example/samgov/live',
       'GET /api/datasets/maritime-ais',
       'GET /api/feed',
+      'GET /api/analytics/community',
+      'GET /api/analytics/admin-check',
+      'GET /api/analytics/new-members',
       'POST /api/posts',
       'GET /api/posts/:id',
       'POST /api/posts/:id/like',

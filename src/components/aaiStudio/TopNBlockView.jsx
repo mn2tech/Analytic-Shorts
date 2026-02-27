@@ -1,12 +1,16 @@
 import { useMemo } from 'react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell, ResponsiveContainer, LabelList } from 'recharts'
 import { CHART_HEIGHT, FONT_SIZE_AXIS, BAR_RADIUS } from './chartTheme'
+import { formatValueForChart, isCurrencyMeasure } from './formatUtils'
 
 export default function TopNBlockView({ block, filterState, onFilterChange }) {
   const rows = Array.isArray(block?.payload?.rows) ? block.payload.rows : []
   const dimension = block?.payload?.dimension || ''
+  const measure = block?.payload?.measure || ''
   const selectedKey = dimension ? filterState?.eq?.[dimension] : null
   const setEq = onFilterChange?.setEq
+  const useCurrency = isCurrencyMeasure(measure)
+  const formatValue = (v) => formatValueForChart(Number(v), useCurrency)
 
   const chartData = useMemo(() => {
     return rows.slice(0, 11).map((r) => ({ name: String(r.key ?? ''), value: Number(r.value) || 0 }))
@@ -49,7 +53,7 @@ export default function TopNBlockView({ block, filterState, onFilterChange }) {
               fill={selectedKey === entry.name ? 'var(--chart-selected)' : 'var(--chart-primary)'}
             />
           ))}
-          <LabelList dataKey="value" position="right" formatter={(v) => Number(v).toLocaleString()} style={{ fill: 'var(--text)', fontSize: 11 }} />
+          <LabelList dataKey="value" position="right" formatter={(v) => formatValue(v)} style={{ fill: 'var(--text)', fontSize: 11 }} />
         </Bar>
       </BarChart>
     </ResponsiveContainer>

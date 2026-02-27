@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{reportTitle}}</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; margin: 0; padding: 0.6in; color: #1a1a1a; font-size: 11pt; line-height: 1.4; }
+    .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 2px solid #e5e7eb; }
+    .agency { display: flex; align-items: center; gap: 12px; }
+    .agency-logo { max-height: 48px; max-width: 160px; object-fit: contain; }
+    .agency-name { font-size: 18pt; font-weight: 700; color: #111; }
+    .report-meta { text-align: right; }
+    .report-title { font-size: 16pt; font-weight: 600; margin-bottom: 4px; }
+    .client-name { font-size: 11pt; color: #374151; }
+    .date-range, .generated-at { font-size: 9pt; color: #6b7280; margin-top: 2px; }
+    .section { margin-bottom: 24px; }
+    .section-title { font-size: 12pt; font-weight: 600; margin-bottom: 12px; color: #111; }
+    .executive-summary { background: #f9fafb; padding: 16px; border-radius: 8px; margin-bottom: 20px; }
+    .bullets { margin: 0; padding-left: 20px; }
+    .bullets li { margin-bottom: 6px; }
+    .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+    .kpi-card { background: #f3f4f6; border-radius: 8px; padding: 12px; text-align: center; }
+    .kpi-label { font-size: 9pt; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+    .kpi-value { font-size: 16pt; font-weight: 700; color: #111; }
+    .kpi-change { font-size: 9pt; margin-top: 4px; }
+    .kpi-change.positive { color: #059669; }
+    .kpi-change.negative { color: #dc2626; }
+    .trend-section { margin-bottom: 20px; }
+    .trend-chart { max-width: 100%; height: auto; border-radius: 8px; border: 1px solid #e5e7eb; }
+    .trend-title { font-size: 12pt; font-weight: 600; margin-bottom: 4px; }
+    .trend-subtitle { font-size: 9pt; color: #6b7280; margin-bottom: 12px; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 10pt; }
+    th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
+    th { background: #f9fafb; font-weight: 600; color: #374151; }
+    .table-section { margin-bottom: 24px; }
+    .suggested-questions { background: #f0f9ff; padding: 16px; border-radius: 8px; }
+    .suggested-questions ul { margin: 0; padding-left: 20px; }
+    .suggested-questions li { margin-bottom: 4px; }
+    .footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #e5e7eb; font-size: 9pt; color: #6b7280; text-align: center; }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="agency">
+      {{#agencyLogoUrl}}
+      <img src="{{agencyLogoUrl}}" alt="{{agencyName}}" class="agency-logo" />
+      {{/agencyLogoUrl}}
+      <div>
+        <div class="agency-name">{{agencyName}}</div>
+      </div>
+    </div>
+    <div class="report-meta">
+      <div class="report-title">{{reportTitle}}</div>
+      {{#clientName}}<div class="client-name">{{clientName}}</div>{{/clientName}}
+      {{#dateRange}}<div class="date-range">{{dateRange}}</div>{{/dateRange}}
+      <div class="generated-at">Generated {{generatedAt}}</div>
+    </div>
+  </header>
+
+  <section class="section executive-summary">
+    <div class="section-title">Executive Summary</div>
+    <p>{{executiveSummary}}</p>
+    {{#hasBullets}}
+    <ul class="bullets">
+      {{#bullets}}
+      <li>{{.}}</li>
+      {{/bullets}}
+    </ul>
+    {{/hasBullets}}
+  </section>
+
+  {{#hasKpis}}
+  <section class="section">
+    <div class="section-title">Key Metrics</div>
+    <div class="kpi-grid">
+      {{#kpis}}
+      <div class="kpi-card">
+        <div class="kpi-label">{{label}}</div>
+        <div class="kpi-value">{{value}}</div>
+        {{#changePct}}<div class="kpi-change {{changeClass}}">{{changePct}}</div>{{/changePct}}
+      </div>
+      {{/kpis}}
+    </div>
+  </section>
+  {{/hasKpis}}
+
+  {{#trendChartImageUrl}}
+  <section class="section trend-section">
+    <div class="trend-title">{{trendTitle}}</div>
+    {{#trendSubtitle}}<div class="trend-subtitle">{{trendSubtitle}}</div>{{/trendSubtitle}}
+    <img src="{{trendChartImageUrl}}" alt="Trend chart" class="trend-chart" />
+  </section>
+  {{/trendChartImageUrl}}
+
+  {{#tables}}
+  <section class="section table-section">
+    <div class="section-title">{{title}}</div>
+    <table>
+      <thead><tr><th>Name</th><th>Value</th><th>Share</th></tr></thead>
+      <tbody>
+        {{#rows}}
+        <tr><td>{{name}}</td><td>{{value}}</td><td>{{share}}</td></tr>
+        {{/rows}}
+      </tbody>
+    </table>
+  </section>
+  {{/tables}}
+
+  {{#hasSuggestedQuestions}}
+  <section class="section suggested-questions">
+    <div class="section-title">Suggested Questions</div>
+    <ul>
+      {{#suggestedQuestions}}
+      <li>{{.}}</li>
+      {{/suggestedQuestions}}
+    </ul>
+  </section>
+  {{/hasSuggestedQuestions}}
+
+  <footer class="footer">
+    {{agencyName}} · Client report · {{generatedAt}}
+  </footer>
+</body>
+</html>

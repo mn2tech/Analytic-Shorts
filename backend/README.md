@@ -126,6 +126,14 @@ app.use(cors({
 }))
 ```
 
+## PDF Export (Puppeteer)
+
+The Agency Branded PDF export (`POST /api/studio/pdf`) uses Puppeteer to render HTML to PDF. In **containers or serverless** environments:
+
+- Use Chromium flags already set in the route: `--no-sandbox`, `--disable-setuid-sandbox`, `--disable-dev-shm-usage`, `--disable-gpu`.
+- If running in Docker, you may need to install Chromium in the image (e.g. use `puppeteer` with `PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=false` and install deps, or use `puppeteer-core` with a custom `executablePath` to a pre-installed Chromium).
+- On serverless (e.g. Lambda), use a layer or package that provides a headless Chromium binary and set `executablePath` in `puppeteer.launch()`.
+
 ## After Deployment
 
 1. Get your backend API URL (e.g., `https://api.example.com`)

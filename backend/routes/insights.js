@@ -83,7 +83,13 @@ router.post('/', getUserFromToken, async (req, res, next) => {
   if (next) next()
 }, async (req, res) => {
   try {
-    const { data, columns, isFiltered, totalRows, filteredRows, analyzedRows, stats, chartContext, chartType, forecastData, historicalData, trend, selectedNumeric } = req.body
+    const { data, columns, isFiltered, totalRows, filteredRows, analyzedRows, stats, chartContext, chartType, forecastData, historicalData, trend, selectedNumeric, evidence, mode } = req.body
+
+    // Evidence-only path (Studio): narration from Evidence DTO only, no numeric invention
+    if (evidence && typeof evidence === 'object') {
+      const evidenceResult = await generateEvidenceNarration(evidence, mode)
+      return res.json(evidenceResult)
+    }
 
     if (!data || !Array.isArray(data) || data.length === 0) {
       return res.status(400).json({ error: 'Invalid data provided' })
@@ -347,6 +353,75 @@ function generateRuleBasedInsights(data, columns, isFiltered, totalRows, filtere
   }
 
   return insights.slice(0, 5) // Limit to 5 insights
+}
+
+const EVIDENCE_SYSTEM_ANALYST = `You are a data analyst. You will receive a JSON object called "evidence" containing KPIs, trends, breakdowns, and drivers. Your task is to write a short narrative using ONLY the numbers and facts present in that evidence. Do not invent any metrics, percentages, or figures. If the evidence does not support a claim, do not make it. If you are unsure, say "not enough information." Be concise and factual.`
+
+const EVIDENCE_SYSTEM_AGENCY = `You are writing for a client-facing monthly performance report. You will receive a JSON object called "evidence" containing KPIs, trends, breakdowns, and drivers. Write a short narrative using ONLY the numbers and facts present in that evidence. Do not invent any metrics or figures. Tone: professional, client-ready, executive summary style. Be concise and factual.`
+
+async function generateEvidenceNarration(evidence, mode) {
+  const executiveSummary = ''
+  const topInsights = []
+  const suggestedQuestions = []
+  const isAgency = mode === 'agency'
+  const systemContent = isAgency ? EVIDENCE_SYSTEM_AGENCY : EVIDENCE_SYSTEM_ANALYST
+
+  const prompt = `Use only the numbers in the evidence JSON below; do not invent metrics. If unsure, say "not enough information."
+${isAgency ? ' Write for a client-facing monthly performance report.' : ''}
+
+Evidence:
+${JSON.stringify(evidence, null, 2)}
+
+Respond with valid JSON only, no markdown, with exactly these keys:
+- "executiveSummary": string (2-3 sentences summarizing the evidence).
+- "topInsights": array of exactly 3 strings (bullet points).
+- "suggestedQuestions": array of exactly 3 strings (questions the user could explore).`
+
+  if (openai) {
+    try {
+      const completion = await openai.chat.completions.create({
+        model: 'gpt-3.5-turbo',
+        messages: [
+          { role: 'system', content: systemContent },
+          { role: 'user', content: prompt },
+        ],
+        max_tokens: 400,
+        temperature: 0.3,
+      })
+      const raw = completion.choices[0].message.content
+      const parsed = (() => {
+        const trimmed = raw.replace(/^```json\s*/i, '').replace(/\s*```\s*$/i, '').trim()
+        try {
+          return JSON.parse(trimmed)
+        } catch {
+          return null
+        }
+      })()
+      if (parsed && typeof parsed === 'object') {
+        return {
+          executiveSummary: typeof parsed.executiveSummary === 'string' ? parsed.executiveSummary : executiveSummary,
+          topInsights: Array.isArray(parsed.topInsights) ? parsed.topInsights.slice(0, 3) : topInsights,
+          suggestedQuestions: Array.isArray(parsed.suggestedQuestions) ? parsed.suggestedQuestions.slice(0, 3) : suggestedQuestions,
+        }
+      }
+    } catch (err) {
+      console.error('Evidence narration OpenAI error:', err)
+    }
+  }
+
+  return {
+    executiveSummary: 'Summary could not be generated. Review the metrics and charts above.',
+    topInsights: [
+      'Review the key metrics and trend for the primary measure.',
+      'Check top drivers and breakdowns for contributing factors.',
+      'Use filters to explore specific segments.',
+    ],
+    suggestedQuestions: [
+      'Which dimension contributes most to the primary metric?',
+      'How does the trend compare across time periods?',
+      'What would you like to filter or drill into?',
+    ],
+  }
 }
 
 module.exports = router

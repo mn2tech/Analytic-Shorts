@@ -1,10 +1,12 @@
 import { useMemo } from 'react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell, ResponsiveContainer, LabelList } from 'recharts'
 import { CHART_HEIGHT, FONT_SIZE_AXIS, BAR_RADIUS } from './chartTheme'
+import { formatValueForChart, isCurrencyMeasure } from './formatUtils'
 
 export default function DriverBlockView({ block }) {
   const topDrivers = Array.isArray(block?.payload?.topDrivers) ? block.payload.topDrivers : []
   const measure = block?.payload?.measure || ''
+  const useCurrency = isCurrencyMeasure(measure)
 
   const chartData = useMemo(() => {
     return topDrivers.slice(0, 12).map((d) => ({
@@ -18,13 +20,14 @@ export default function DriverBlockView({ block }) {
     }))
   }, [topDrivers])
 
+  const formatTotal = (v) => formatValueForChart(Number(v), useCurrency)
   const CustomTooltip = ({ active, payload }) => {
     if (!active || !payload?.[0]?.payload) return null
     const p = payload[0].payload
     return (
       <div className="rounded-lg shadow-lg p-3 text-xs border" style={{ background: 'var(--chart-tooltip-bg)', color: 'var(--chart-tooltip-text)', borderColor: 'var(--border)' }}>
         <div className="font-medium">{p.label}</div>
-        <div className="mt-1" style={{ opacity: 0.9 }}>Total: {Number(p.total).toLocaleString()}</div>
+        <div className="mt-1" style={{ opacity: 0.9 }}>Total: {formatTotal(p.total)}</div>
         <div style={{ opacity: 0.9 }}>Share: {(p.share * 100).toFixed(1)}%</div>
         <div style={{ opacity: 0.9 }}>Lift: {(p.lift * 100).toFixed(1)}%</div>
       </div>
@@ -51,7 +54,7 @@ export default function DriverBlockView({ block }) {
             {chartData.map((_, i) => (
               <Cell key={i} fill="var(--chart-primary)" />
             ))}
-            <LabelList dataKey="total" position="right" formatter={(v) => Number(v).toLocaleString()} style={{ fill: 'var(--text)', fontSize: 12, fontWeight: 500 }} offset={8} />
+            <LabelList dataKey="total" position="right" formatter={(v) => formatTotal(v)} style={{ fill: 'var(--text)', fontSize: 12, fontWeight: 500 }} offset={8} />
           </Bar>
         </BarChart>
       </ResponsiveContainer>
@@ -71,7 +74,7 @@ export default function DriverBlockView({ block }) {
               <tr key={`${r.dimension}-${r.group}-${idx}`} className="border-t" style={{ borderColor: 'var(--border)' }}>
                 <td className="py-2 pr-3" style={{ color: 'var(--text)' }}>{r.dimension}</td>
                 <td className="py-2 pr-3 font-medium" style={{ color: 'var(--text)' }}>{String(r.group)}</td>
-                <td className="py-2 pr-3" style={{ color: 'var(--text)' }}>{Math.round((r.total || 0) * 100) / 100}</td>
+                <td className="py-2 pr-3" style={{ color: 'var(--text)' }}>{formatTotal(r.total)}</td>
                 <td className="py-2 pr-3" style={{ color: 'var(--text)' }}>{Math.round((r.share || 0) * 1000) / 10}%</td>
                 <td className="py-2 pr-3" style={{ color: 'var(--text)' }}>{Math.round((r.lift || 0) * 1000) / 10}%</td>
               </tr>

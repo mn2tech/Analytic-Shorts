@@ -46,8 +46,9 @@ describe('TrendBlockView', () => {
     const containers = screen.getAllByTestId('recharts-responsive-container')
     expect(containers[containers.length - 1]).toBeTruthy()
     expect(screen.queryByText(/No trend data/i)).toBeNull()
-    const buttons = screen.getAllByTestId('period-2026-01-02')
-    fireEvent.click(buttons[buttons.length - 1])
+    const slider = screen.getByTestId('trend-period-slider')
+    expect(slider).toBeTruthy()
+    fireEvent.change(slider, { target: { value: '1' } })
     expect(setEq).toHaveBeenCalled()
     const last = setEq.mock.calls.at(-1)
     expect(last[0]).toBe('Date')
@@ -66,25 +67,25 @@ describe('TrendBlockView', () => {
     expect(wrapper.getAttribute('data-measure')).toBe('Sales')
   })
 
-  it('calls onFilterChange.setEq with correct filter payload when a period button is clicked', () => {
+  it('calls onFilterChange.setEq with correct filter payload when slider is moved', () => {
     const setEq = vi.fn()
     render(
       <TrendBlockView block={blockWithSeries} filterState={{ eq: {} }} onFilterChange={{ setEq }} />
     )
-    const buttons = screen.getAllByTestId('period-2026-01-02')
-    fireEvent.click(buttons[buttons.length - 1])
+    const slider = screen.getByTestId('trend-period-slider')
+    fireEvent.change(slider, { target: { value: '1' } })
     expect(setEq).toHaveBeenCalled()
     const last = setEq.mock.calls.at(-1)
     expect(last).toEqual(['Date', '2026-01-02'])
   })
 
-  it('calls setEq with null when clicking the same period again (clear filter)', () => {
+  it('calls setEq with null when Clear is clicked', () => {
     const setEq = vi.fn()
     render(
       <TrendBlockView block={blockWithSeries} filterState={{ eq: { Date: '2026-01-02' } }} onFilterChange={{ setEq }} />
     )
-    const buttons = screen.getAllByTestId('period-2026-01-02')
-    fireEvent.click(buttons[buttons.length - 1])
+    const clearBtn = screen.getByText('Clear')
+    fireEvent.click(clearBtn)
     expect(setEq).toHaveBeenCalled()
     const last = setEq.mock.calls.at(-1)
     expect(last).toEqual(['Date', null])

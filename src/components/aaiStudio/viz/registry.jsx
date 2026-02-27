@@ -14,6 +14,7 @@ import TreemapShare from './TreemapShare'
 import DistributionHistogram from './DistributionHistogram'
 import { aggregateByState, isUSStateKey } from './usStateCodes'
 import { GovConKpiRow, GovConTrendHero, GovConDriverBars, GovConDetailsTable, TopStatesList } from './govcon'
+import { formatNum as formatNumBase, isCurrencyMeasure } from '../formatUtils'
 
 /**
  * Get the premium renderer component for a block, or null to use default.
@@ -138,20 +139,16 @@ function KPIStatCardRow({ block }) {
   const rowCount = payload.rowCount
   const cards = []
 
-  const formatNum = (v) => {
-    if (v == null || !Number.isFinite(v)) return '—'
-    const n = Number(v)
-    if (Math.abs(n) >= 1e9) return `${(n / 1e9).toFixed(2)}B`
-    if (Math.abs(n) >= 1e6) return `${(n / 1e6).toFixed(2)}M`
-    if (Math.abs(n) >= 1e3) return `${(n / 1e3).toFixed(2)}K`
-    return `${Math.round(n * 100) / 100}`
-  }
+  const formatNum = (v, currency) => formatNumBase(v, { currency: !!currency })
+  const anyMetricIsCurrency = metricSummaries.some((m) => isCurrencyMeasure(m?.name))
+  const useCurrency = isCurrencyMeasure(payload.primaryMeasure) || anyMetricIsCurrency
 
   const totalValue = executiveKpis?.latest?.value != null
-    ? formatNum(executiveKpis.latest.value)
+    ? formatNum(executiveKpis.latest.value, useCurrency)
     : (rowCount != null ? Number(rowCount).toLocaleString() : '—')
+  const primaryLabel = payload.primaryMeasure ? String(payload.primaryMeasure).replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : 'Total'
   cards.push({
-    label: 'Total',
+    label: primaryLabel,
     value: totalValue,
     subtitle: executiveKpis?.latest?.period ? `Period: ${executiveKpis.latest.period}` : null,
     delta: null,
@@ -161,7 +158,7 @@ function KPIStatCardRow({ block }) {
   if (executiveKpis?.change) {
     cards.push({
       label: 'Change vs Prior',
-      value: formatNum(executiveKpis.change.abs),
+      value: formatNum(executiveKpis.change.abs, useCurrency),
       subtitle: null,
       delta: executiveKpis.change.pct,
       sparklineData: null,
@@ -181,10 +178,11 @@ function KPIStatCardRow({ block }) {
 
   metricSummaries.slice(0, 4).forEach((m) => {
     if (cards.length >= 6) return
+    const mCurrency = isCurrencyMeasure(m?.name)
     cards.push({
       label: m.name || 'Metric',
-      value: formatNum(m.summary?.mean),
-      subtitle: m.summary != null ? `min ${formatNum(m.summary.min)} · max ${formatNum(m.summary.max)}` : null,
+      value: formatNum(m.summary?.mean, mCurrency),
+      subtitle: m.summary != null ? `min ${formatNum(m.summary.min, mCurrency)} · max ${formatNum(m.summary.max, mCurrency)}` : null,
       delta: null,
       sparklineData: null,
     })

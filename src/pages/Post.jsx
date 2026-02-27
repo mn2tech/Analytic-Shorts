@@ -217,11 +217,9 @@ export default function Post() {
         <Link to="/feed" className="text-blue-600 hover:underline">← Feed</Link>
       </div>
       <header className="mb-6">
-        {(post.thumbnail_url ?? post.thumbnailUrl) && (
-          <div className="aspect-video rounded-lg overflow-hidden bg-slate-100 mb-4 max-w-2xl">
-            <PostThumbnail url={post.thumbnail_url ?? post.thumbnailUrl} title={post.title} className="w-full h-full" />
-          </div>
-        )}
+        <div className="aspect-video rounded-lg overflow-hidden bg-slate-100 mb-4 max-w-2xl">
+          <PostThumbnail url={post.thumbnail_url ?? post.thumbnailUrl} title={post.title} className="w-full h-full" />
+        </div>
         <div className="flex items-center gap-3 mb-3">
           <div className="flex-shrink-0 w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-semibold text-sm overflow-hidden">
             {post.author_avatar_url ? (

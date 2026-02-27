@@ -159,6 +159,14 @@ function AdminAnalytics() {
               <p className="text-3xl font-bold text-gray-900">{usageStats.total_users}</p>
             </div>
             <div className="bg-white rounded-lg shadow p-6">
+              <h3 className="text-sm font-medium text-gray-500 mb-2">New signups (7 days)</h3>
+              <p className="text-3xl font-bold text-gray-900">{usageStats.new_signups_7d ?? 0}</p>
+            </div>
+            <div className="bg-white rounded-lg shadow p-6">
+              <h3 className="text-sm font-medium text-gray-500 mb-2">New signups (30 days)</h3>
+              <p className="text-3xl font-bold text-gray-900">{usageStats.new_signups_30d ?? 0}</p>
+            </div>
+            <div className="bg-white rounded-lg shadow p-6">
               <h3 className="text-sm font-medium text-gray-500 mb-2">Active This Month</h3>
               <p className="text-3xl font-bold text-gray-900">{usageStats.active_users_this_month}</p>
             </div>
@@ -169,6 +177,31 @@ function AdminAnalytics() {
             <div className="bg-white rounded-lg shadow p-6">
               <h3 className="text-sm font-medium text-gray-500 mb-2">AI Insights This Month</h3>
               <p className="text-3xl font-bold text-gray-900">{usageStats.total_insights_this_month}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Recent signups (who joined) */}
+        {usageStats?.recent_signups && usageStats.recent_signups.length > 0 && (
+          <div className="bg-white rounded-lg shadow p-6 mb-6">
+            <h2 className="text-xl font-semibold text-gray-900 mb-4">Recent signups (who joined)</h2>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Joined</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {usageStats.recent_signups.map((u, i) => (
+                    <tr key={i}>
+                      <td className="px-4 py-3 text-sm text-gray-900">{u.name}</td>
+                      <td className="px-4 py-3 text-sm text-gray-600">{u.created_at ? new Date(u.created_at).toLocaleString() : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         )}

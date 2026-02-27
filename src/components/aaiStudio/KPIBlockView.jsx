@@ -1,10 +1,7 @@
-function formatNum(v) {
-  if (v == null || !Number.isFinite(v)) return '—'
-  const n = Number(v)
-  if (Math.abs(n) >= 1e9) return `${(n / 1e9).toFixed(2)}B`
-  if (Math.abs(n) >= 1e6) return `${(n / 1e6).toFixed(2)}M`
-  if (Math.abs(n) >= 1e3) return `${(n / 1e3).toFixed(2)}K`
-  return `${Math.round(n * 100) / 100}`
+import { formatNum as formatNumBase, isCurrencyMeasure } from './formatUtils'
+
+function formatNum(v, currency) {
+  return formatNumBase(v, { currency: !!currency })
 }
 
 function DeltaArrow({ value }) {
@@ -42,12 +39,20 @@ export default function KPIBlockView({ block }) {
   const avgDays = payload.avgDays ?? payload.averageDays
 
   const cards = []
+  const primaryMeasureLabel =
+    payload.primaryMeasure && String(payload.primaryMeasure).trim()
+      ? String(payload.primaryMeasure)
+          .replace(/_/g, ' ')
+          .replace(/\b\w/g, (c) => c.toUpperCase())
+      : 'Total'
+  const anyMetricIsCurrency = metricSummaries.some((m) => isCurrencyMeasure(m?.name))
+  const useCurrency = isCurrencyMeasure(payload.primaryMeasure) || anyMetricIsCurrency
 
-  // Total: row count or latest value
+  // Total / primary measure: row count or latest value
   const totalValue = executiveKpis?.latest?.value != null
-    ? formatNum(executiveKpis.latest.value)
+    ? formatNum(executiveKpis.latest.value, useCurrency)
     : (rowCount != null ? Number(rowCount).toLocaleString() : '—')
-  cards.push({ key: 'total', label: 'Total', value: totalValue, delta: null, subLabel: executiveKpis?.latest?.period ? `Period: ${executiveKpis.latest.period}` : null })
+  cards.push({ key: 'total', label: primaryMeasureLabel, value: totalValue, delta: null, subLabel: executiveKpis?.latest?.period ? `Period: ${executiveKpis.latest.period}` : null })
 
   // Due Soon (if applicable)
   if (dueSoon != null && (typeof dueSoon === 'number' || (typeof dueSoon === 'object' && dueSoon.value != null))) {
@@ -79,7 +84,7 @@ export default function KPIBlockView({ block }) {
     cards.push({
       key: 'change',
       label: 'Change vs Prior',
-      value: formatNum(ch.abs),
+      value: formatNum(ch.abs, useCurrency),
       delta: ch.pct,
       subLabel: null,
     })
@@ -89,12 +94,13 @@ export default function KPIBlockView({ block }) {
   for (const m of metricSummaries) {
     if (cards.length >= 6) break
     const mean = m.summary?.mean
+    const mCurrency = isCurrencyMeasure(m.name)
     cards.push({
       key: `metric-${m.name}`,
       label: m.name || 'Metric',
-      value: formatNum(mean),
+      value: formatNum(mean, mCurrency),
       delta: null,
-      subLabel: m.summary != null ? `min ${formatNum(m.summary.min)} · max ${formatNum(m.summary.max)}` : null,
+      subLabel: m.summary != null ? `min ${formatNum(m.summary.min, mCurrency)} · max ${formatNum(m.summary.max, mCurrency)}` : null,
     })
   }
 

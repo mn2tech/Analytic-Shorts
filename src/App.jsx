@@ -26,6 +26,7 @@ import Feed from './pages/Feed'
 import Post from './pages/Post'
 import Careers from './pages/Careers'
 import Profile from './pages/Profile'
+import UserProfile from './pages/UserProfile'
 import Messages from './pages/Messages'
 import EditPost from './pages/EditPost'
 import Publish from './pages/Publish'
@@ -102,6 +103,7 @@ function App() {
                   </ProtectedRoute>
                 }
               />
+              <Route path="/profile/:userId" element={<UserProfile />} />
               <Route
                 path="/messages"
                 element={
