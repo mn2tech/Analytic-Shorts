@@ -1,4 +1,5 @@
 const { getSupabaseAdmin } = require('../utils/supabaseAdmin')
+const { sendNewMessageNotification } = require('../utils/emailNotifications')
 
 function getAdmin() {
   const admin = getSupabaseAdmin()
@@ -159,6 +160,12 @@ async function sendMessage(req, res) {
       .single()
 
     if (error) throw error
+
+    // Notify recipient by email (fire-and-forget)
+    const { data: senderProfile } = await db.from('shorts_user_profiles').select('name').eq('user_id', userId).maybeSingle()
+    const senderName = senderProfile?.name || null
+    sendNewMessageNotification(to_user_id, senderName, String(body).trim()).catch((e) => console.warn('Message email notification failed:', e?.message || e))
+
     res.status(201).json(msg)
   } catch (err) {
     console.error('sendMessage:', err)

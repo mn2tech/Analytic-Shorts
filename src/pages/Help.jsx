@@ -10,11 +10,11 @@ function Help() {
       questions: [
         {
           q: 'How do I upload my data?',
-          a: 'Simply drag and drop your CSV or Excel file onto the upload area on the home page, or click "Browse Files" to select a file. Supported formats include .csv and .xlsx files up to 50MB (Pro plan) or 5MB (Free plan).'
+          a: 'Simply drag and drop your file onto the upload area on the home page, or click "Browse Files" to select a file. Supported formats include CSV (.csv), Excel (.xlsx, .xls), JSON, PDF, and SAS XPORT (.xpt), or SAS dataset (.sas7bdat) up to 50MB (Pro plan) or 5MB (Free plan).'
         },
         {
           q: 'What file formats are supported?',
-          a: 'We support CSV (.csv) and Excel (.xlsx, .xls) files. Your file should have headers in the first row and at least one numeric column for chart generation.'
+          a: 'We support CSV (.csv), Excel (.xlsx, .xls), JSON, PDF, and SAS XPORT (.xpt), or SAS dataset (.sas7bdat) files. Your file should have headers in the first row and at least one numeric column for chart generation.'
         },
         {
           q: 'Do I need to create an account?',
@@ -47,7 +47,7 @@ function Help() {
         },
         {
           q: 'What is the Data tab for?',
-          a: 'The Data tab lets you pick a dataset (example datasets or your uploaded file), upload a new file (CSV/Excel), and view the schema. Data Lake (save and reuse datasets) is coming soon.'
+          a: 'The Data tab lets you pick a dataset (example datasets or your uploaded file), upload a new file (CSV, Excel, JSON, PDF, or SAS XPORT .xpt), and view the schema. Data Lake (save and reuse datasets) is coming soon.'
         },
         {
           q: 'What is the Preview tab?',
@@ -110,7 +110,7 @@ function Help() {
       questions: [
         {
           q: 'My file upload failed. What should I do?',
-          a: 'Check that your file is under the size limit (5MB for Free, 50MB for Pro). Ensure it\'s a valid CSV or Excel file with headers. Try refreshing the page and uploading again.'
+          a: 'Check that your file is under the size limit (5MB for Free, 50MB for Pro). Ensure it\'s a valid CSV, Excel, JSON, PDF, or SAS XPORT (.xpt), or SAS dataset (.sas7bdat) file with headers. Try refreshing the page and uploading again.'
         },
         {
           q: 'Charts are not displaying correctly.',
@@ -122,7 +122,7 @@ function Help() {
         },
         {
           q: 'How do I delete my account?',
-          a: 'Contact support at support@nm2tech.com to request account deletion. We\'ll process your request within 7 business days.'
+          a: 'Contact support at support@nm2tech-sas.com to request account deletion. We\'ll process your request within 7 business days.'
         }
       ]
     },
@@ -211,7 +211,7 @@ function Help() {
               </svg>
             </div>
             <h3 className="font-semibold text-gray-900 mb-2">Contact Support</h3>
-            <p className="text-sm text-gray-600">support@nm2tech.com</p>
+            <p className="text-sm text-gray-600">support@nm2tech-sas.com</p>
           </div>
         </div>
 
@@ -257,7 +257,7 @@ function Help() {
             Can't find what you're looking for? Our support team is here to help.
           </p>
           <a
-            href="mailto:support@nm2tech.com"
+            href="mailto:support@nm2tech-sas.com"
             className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

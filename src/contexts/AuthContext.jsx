@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback } from 'rea
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { getUserProfile } from '../services/profileService'
+import apiClient from '../config/api'
 
 const AuthContext = createContext()
 
@@ -44,14 +45,43 @@ export const AuthProvider = ({ children }) => {
     }
   }, [])
 
-  // Load user profile when user changes
+  // Load user profile when user changes. If no profile exists (e.g. trigger didn't run on signup), ensure one is created.
   useEffect(() => {
-    if (user?.id) {
-      loadUserProfile(user.id)
-    } else {
+    if (!user?.id) {
       setUserProfile(null)
+      return
     }
+    let cancelled = false
+    const load = async () => {
+      let profile = await loadUserProfile(user.id)
+      if (cancelled) return
+      if (!profile) {
+        try {
+          await apiClient.post('/api/profiles/ensure', {}, { timeout: 5000 })
+          if (!cancelled) profile = await loadUserProfile(user.id)
+        } catch (_) {
+          // ignore; profile stays null
+        }
+      }
+    }
+    load()
+    return () => { cancelled = true }
   }, [user, loadUserProfile])
+
+  // Presence heartbeat: update last_seen_at every 30s when user is logged in
+  useEffect(() => {
+    if (!user?.id) return
+    const tick = () => {
+      apiClient.post('/api/profiles/me/seen', {}, { timeout: 5000 }).catch((err) => {
+        if (import.meta.env.DEV) {
+          console.warn('[Shorts] Presence heartbeat failed — run database/migration_add_last_seen.sql in Supabase if the online indicator does not show.', err?.response?.data || err?.message)
+        }
+      })
+    }
+    tick() // fire once soon
+    const id = setInterval(tick, 30 * 1000)
+    return () => clearInterval(id)
+  }, [user?.id])
 
   useEffect(() => {
     // Check current session with error handling

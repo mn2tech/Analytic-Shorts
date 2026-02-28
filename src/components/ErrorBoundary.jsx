@@ -33,16 +33,19 @@ class ErrorBoundary extends React.Component {
               An error occurred while rendering this component. Please try refreshing the page.
             </p>
             {this.state.error && (
-              <details className="mt-4">
+              <details className="mt-4" open>
                 <summary className="cursor-pointer text-sm font-medium text-gray-700 mb-2">
                   Error Details (click to expand)
                 </summary>
-                <pre className="bg-gray-100 p-3 rounded text-xs overflow-auto max-h-64">
+                <pre className="bg-gray-100 p-3 rounded text-xs overflow-auto max-h-64 whitespace-pre-wrap">
                   {this.state.error.toString()}
-                  {this.state.errorInfo && this.state.errorInfo.componentStack}
+                  {this.state.errorInfo?.componentStack && `\n\nComponent stack:\n${this.state.errorInfo.componentStack}`}
                 </pre>
               </details>
             )}
+            <p className="text-sm text-gray-500 mt-2">
+              If the backend (port 5000) is not running, start it with <code className="bg-gray-100 px-1 rounded">npm run server</code> or <code className="bg-gray-100 px-1 rounded">npm run dev:all</code>.
+            </p>
             <div className="flex gap-3 mt-4">
               <button
                 onClick={() => this.setState({ hasError: false, error: null, errorInfo: null })}

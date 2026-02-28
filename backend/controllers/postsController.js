@@ -1,5 +1,6 @@
 const crypto = require('crypto')
 const { getSupabaseAdmin } = require('../utils/supabaseAdmin')
+const { sendLikeNotification, sendSaveNotification, sendCommentNotification } = require('../utils/emailNotifications')
 
 function nanoidLike() {
   return crypto.randomBytes(8).toString('hex')
@@ -200,6 +201,14 @@ async function toggleLike(req, res) {
     }
     await db.from('post_likes').insert({ post_id: id, user_id: userId })
     const { count } = await db.from('post_likes').select('*', { count: 'exact', head: true }).eq('post_id', id)
+
+    // Email notify post author (fire-and-forget)
+    const { data: post } = await db.from('posts').select('id, author_id, title').eq('id', id).maybeSingle()
+    if (post && post.author_id && post.author_id !== userId) {
+      const { data: actorProfile } = await db.from('shorts_user_profiles').select('name').eq('user_id', userId).maybeSingle()
+      sendLikeNotification(post.author_id, actorProfile?.name || null, post.title, id).catch((e) => console.warn('Like email notification failed:', e?.message || e))
+    }
+
     res.json({ liked: true, like_count: count ?? 0 })
   } catch (err) {
     console.error('toggleLike:', err)
@@ -219,6 +228,14 @@ async function toggleSave(req, res) {
       return res.json({ saved: false })
     }
     await db.from('post_saves').insert({ post_id: id, user_id: userId })
+
+    // Email notify post author (fire-and-forget)
+    const { data: post } = await db.from('posts').select('id, author_id, title').eq('id', id).maybeSingle()
+    if (post && post.author_id && post.author_id !== userId) {
+      const { data: actorProfile } = await db.from('shorts_user_profiles').select('name').eq('user_id', userId).maybeSingle()
+      sendSaveNotification(post.author_id, actorProfile?.name || null, post.title, id).catch((e) => console.warn('Save email notification failed:', e?.message || e))
+    }
+
     res.json({ saved: true })
   } catch (err) {
     console.error('toggleSave:', err)
@@ -269,19 +286,27 @@ async function addComment(req, res) {
       return res.status(400).json({ error: 'comment is required' })
     }
     const db = getAdmin()
-    const { data: post } = await db.from('posts').select('id, visibility, author_id').eq('id', id).single()
+    const { data: post } = await db.from('posts').select('id, visibility, author_id, title').eq('id', id).single()
     if (!post) return res.status(404).json({ error: 'Post not found' })
     if (post.visibility !== 'public' && post.author_id !== req.user.id) {
       return res.status(404).json({ error: 'Post not found' })
     }
+    const commentText = String(comment).trim()
     const { data: row, error } = await db
       .from('post_comments')
-      .insert({ post_id: id, user_id: req.user.id, comment: String(comment).trim() })
+      .insert({ post_id: id, user_id: req.user.id, comment: commentText })
       .select()
       .single()
     if (error) throw error
     const { data: profile } = await db.from('shorts_user_profiles').select('name').eq('user_id', req.user.id).maybeSingle()
-    res.status(201).json({ ...row, author_display_name: profile?.name || null })
+    const actorName = profile?.name || null
+
+    // Email notify post author (fire-and-forget)
+    if (post.author_id && post.author_id !== req.user.id) {
+      sendCommentNotification(post.author_id, actorName, post.title, commentText, id).catch((e) => console.warn('Comment email notification failed:', e?.message || e))
+    }
+
+    res.status(201).json({ ...row, author_display_name: actorName })
   } catch (err) {
     console.error('addComment:', err)
     res.status(500).json({ error: err.message || 'Failed to add comment' })

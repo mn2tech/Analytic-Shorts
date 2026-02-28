@@ -53,8 +53,8 @@ function Footer() {
             <h3 className="font-semibold text-gray-900 mb-4">Support</h3>
             <ul className="space-y-2">
               <li>
-                <a href="mailto:support@nm2tech.com" className="text-sm text-gray-600 hover:text-gray-900">
-                  support@nm2tech.com
+                <a href="mailto:support@nm2tech-sas.com" className="text-sm text-gray-600 hover:text-gray-900">
+                  support@nm2tech-sas.com
                 </a>
               </li>
             </ul>

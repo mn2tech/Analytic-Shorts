@@ -193,7 +193,7 @@ function KPIStatCardRow({ block }) {
   }
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+    <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
       {cards.map((c, i) => (
         <KPIStatCard
           key={c.label + i}

@@ -24,7 +24,7 @@ function FileUploader({ onUploadSuccess, onError, onUpgradeRequired }) {
       'application/xlsx'
     ]
 
-    const validExtensions = ['.csv', '.xlsx', '.xls']
+    const validExtensions = ['.csv', '.xlsx', '.xls', '.xpt', '.sas7bdat']
     const fileExtension = file.name.toLowerCase().substring(file.name.lastIndexOf('.'))
 
     // Check both MIME type and file extension (mobile browsers are inconsistent)
@@ -32,8 +32,10 @@ function FileUploader({ onUploadSuccess, onError, onUpgradeRequired }) {
         !validExtensions.includes(fileExtension) && 
         !file.name.toLowerCase().endsWith('.csv') && 
         !file.name.toLowerCase().endsWith('.xlsx') && 
-        !file.name.toLowerCase().endsWith('.xls')) {
-      onError('Please upload a CSV or Excel file (.csv, .xlsx, or .xls)')
+        !file.name.toLowerCase().endsWith('.xls') &&
+        !file.name.toLowerCase().endsWith('.xpt') &&
+        !file.name.toLowerCase().endsWith('.sas7bdat')) {
+      onError('Please upload a CSV, Excel, SAS XPORT (.xpt), or SAS dataset (.sas7bdat) file')
       return
     }
 
@@ -186,7 +188,7 @@ function FileUploader({ onUploadSuccess, onError, onUpgradeRequired }) {
       <input
         ref={fileInputRef}
         type="file"
-        accept=".csv,.xlsx,.xls,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        accept=".csv,.xlsx,.xls,.xpt,.sas7bdat,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         onChange={handleFileSelect}
         className="hidden"
         // Mobile-specific attributes

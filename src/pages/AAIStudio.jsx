@@ -3,11 +3,14 @@ import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import apiClient from '../config/api'
 import { getDashboard } from '../services/dashboardService'
 import { templates as studioTemplates, TEMPLATE_IDS } from '../config/studioTemplates'
+import { getFirstCatalogIdForEngineId } from '../studio/templatesCatalog'
 import StudioThemeProvider from '../components/aaiStudio/StudioThemeProvider'
 import AAIStudioBlockRenderer from '../components/aaiStudio/AAIStudioBlockRenderer'
 import GlobalFilterBar from '../components/aaiStudio/GlobalFilterBar'
 import AnalystInsightsPanel from '../components/aaiStudio/AnalystInsightsPanel'
 import AgencyReportView from '../components/aaiStudio/AgencyReportView'
+import TemplateGallery from '../components/aaiStudio/TemplateGallery'
+import TemplatePreviewPanel from '../components/aaiStudio/TemplatePreviewPanel'
 import { KPIRowSkeleton } from '../components/aaiStudio/CardSkeleton'
 import { parseCommand, applyCommand, HELP_LINES } from '../lib/studioCommands'
 import { evidenceToBlocks } from '../utils/evidenceToBlocks'
@@ -21,11 +24,18 @@ class StudioPageErrorBoundary extends Component {
   }
   render() {
     if (this.state.hasError) {
+      const err = this.state.error
+      const message = err?.message || 'Something went wrong while rendering. Try reloading the page.'
       return (
         <div className="min-h-screen bg-gray-100 flex items-center justify-center p-6">
           <div className="max-w-md w-full bg-white rounded-xl shadow-lg border border-gray-200 p-6 text-center">
             <h1 className="text-lg font-semibold text-gray-900 mb-2">Studio failed to load</h1>
-            <p className="text-sm text-gray-600 mb-4">Something went wrong while rendering. Try reloading the page.</p>
+            <p className="text-sm text-gray-600 mb-2">{message}</p>
+            {err?.stack && (
+              <pre className="text-left text-xs text-gray-500 mt-2 p-2 bg-gray-50 rounded overflow-auto max-h-32 mb-4">
+                {err.stack.split('\n').slice(0, 8).join('\n')}
+              </pre>
+            )}
             <button
               type="button"
               onClick={() => window.location.reload()}
@@ -241,6 +251,9 @@ export default function AAIStudio() {
   const [filters, setFilters] = useState({ eq: {}, timeRange: null, search: '' })
   const searchValue = filters.search ?? ''
   const [templateId, setTemplateId] = useState('general')
+  const [selectedTemplateId, setSelectedTemplateId] = useState('general')
+  const [isStudioSidebarOpen, setIsStudioSidebarOpen] = useState(true)
+  const uploadSectionRef = useRef(null)
   const [runConfigOverrides, setRunConfigOverrides] = useState({})
   const [commandInput, setCommandInput] = useState('')
   const [commandMessage, setCommandMessage] = useState(null)
@@ -261,6 +274,13 @@ export default function AAIStudio() {
   const [searchParams] = useSearchParams()
   const openDashboardId = searchParams.get('open')
 
+  const trackEvent = useCallback((name, payload = {}) => {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('studio:track', { detail: { name, ...payload } }))
+    }
+    if (typeof console !== 'undefined') console.debug('[AAIStudio event]', name, payload)
+  }, [])
+
   useEffect(() => {
     setDatasetsLoading(true)
     apiClient
@@ -269,6 +289,10 @@ export default function AAIStudio() {
       .catch(() => setDatasets([]))
       .finally(() => setDatasetsLoading(false))
   }, [])
+
+  useEffect(() => {
+    setSelectedTemplateId(getFirstCatalogIdForEngineId(templateId))
+  }, [templateId])
 
   // Load saved dashboard when opening from My Dashboards (?open=:id)
   useEffect(() => {
@@ -594,6 +618,29 @@ export default function AAIStudio() {
         try {
           const text = await blob.text()
           const j = JSON.parse(text)
+          // Recovery path: some servers stringify Uint8Array as {"0":37,"1":80,...}
+          // Convert numeric-key object back to bytes and proceed if it is a real PDF.
+          const numericKeys = j && typeof j === 'object'
+            ? Object.keys(j).filter((k) => /^\d+$/.test(k)).map((k) => Number(k)).sort((a, b) => a - b)
+            : []
+          if (numericKeys.length > 0) {
+            const recovered = new Uint8Array(numericKeys.length)
+            for (let i = 0; i < numericKeys.length; i++) recovered[i] = Number(j[numericKeys[i]]) || 0
+            const looksPdf = recovered.length >= 5 && pdfMagic.every((b, i) => recovered[i] === b)
+            if (looksPdf) {
+              const recoveredBlob = new Blob([recovered], { type: 'application/pdf' })
+              const recoveredUrl = URL.createObjectURL(recoveredBlob)
+              const recoveredA = document.createElement('a')
+              recoveredA.href = recoveredUrl
+              recoveredA.download = 'agency-report.pdf'
+              document.body.appendChild(recoveredA)
+              recoveredA.click()
+              document.body.removeChild(recoveredA)
+              URL.revokeObjectURL(recoveredUrl)
+              setShowPdfModal(false)
+              return
+            }
+          }
           setPdfError(j.message || j.error || 'The server did not return a valid PDF.')
         } catch (_) {
           setPdfError('The server returned an invalid or corrupt file. Use "Download HTML" then Print → Save as PDF.')
@@ -776,10 +823,15 @@ export default function AAIStudio() {
   const displayBlocks = useMemo(() => {
     const raw = insightBlocks || []
     if (!evidence) return raw
-    const fromEvidence = evidenceToBlocks(evidence)
-    const evidenceIds = new Set(fromEvidence.map((b) => b.id))
-    const rest = raw.filter((b) => b && !evidenceIds.has(b.id))
-    return [...fromEvidence, ...rest]
+    try {
+      const fromEvidence = evidenceToBlocks(evidence)
+      const evidenceIds = new Set(fromEvidence.map((b) => b.id))
+      const rest = raw.filter((b) => b && !evidenceIds.has(b.id))
+      return [...fromEvidence, ...rest]
+    } catch (e) {
+      if (typeof console !== 'undefined') console.warn('[AAIStudio] evidenceToBlocks failed, using insightBlocks only:', e?.message || e)
+      return raw
+    }
   }, [evidence, insightBlocks])
 
   const orderedBlocks = useMemo(() => {
@@ -969,14 +1021,42 @@ export default function AAIStudio() {
     { value: 'csv', label: 'My uploads', icon: '📁' },
   ]
 
+  const hasDatasetSelected = useMemo(() => {
+    if (sourceType === 'dataset') return !!datasetId
+    if (sourceType === 'csv') return !!lakeId
+    if (sourceType === 'api') return !!String(customApiUrl || '').trim()
+    if (sourceType === 'db') return !!String(dbTable || '').trim()
+    if (sourceType === 'samgov') return true
+    return false
+  }, [sourceType, datasetId, lakeId, customApiUrl, dbTable])
+
+  const handleSelectTemplateFromGallery = useCallback((catalogId, engineTemplateId) => {
+    setSelectedTemplateId(catalogId || 'general')
+    setTemplateId(engineTemplateId || 'general')
+  }, [])
+
+  const focusUploadSection = useCallback(() => {
+    if (uploadSectionRef.current && typeof uploadSectionRef.current.scrollIntoView === 'function') {
+      uploadSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }, [])
+
   return (
     <StudioPageErrorBoundary>
       <StudioThemeProvider themeId={activeThemeId}>
         <div className="min-h-screen flex" style={{ background: '#0d1117', color: sidebarText }}>
           {/* Left sidebar - modern, scannable */}
-          <aside className="w-[260px] shrink-0 flex flex-col border-r" style={{ background: sidebarBg, borderColor: sidebarBorder }}>
+          <aside
+            className="shrink-0 flex flex-col border-r overflow-hidden transition-all duration-300"
+            style={{
+              width: isStudioSidebarOpen ? 260 : 0,
+              background: sidebarBg,
+              borderColor: isStudioSidebarOpen ? sidebarBorder : 'transparent',
+            }}
+          >
             <div className="p-5 border-b" style={{ borderColor: sidebarBorder }}>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
                 <div className="w-9 h-9 rounded-xl flex items-center justify-center text-lg" style={{ background: 'linear-gradient(135deg,#58a6ff22,#58a6ff11)' }}>
                   <span aria-hidden>◇</span>
                 </div>
@@ -985,10 +1065,21 @@ export default function AAIStudio() {
                   <p className="text-[11px] mt-0.5" style={{ color: sidebarMuted }}>AI dashboard builder</p>
                 </div>
               </div>
+                <button
+                  type="button"
+                  onClick={() => setIsStudioSidebarOpen(false)}
+                  className="w-8 h-8 rounded-lg flex items-center justify-center text-sm hover:bg-white/10 transition-colors"
+                  style={{ color: sidebarMuted }}
+                  title="Hide Studio sidebar"
+                  aria-label="Hide Studio sidebar"
+                >
+                  ‹
+                </button>
+              </div>
             </div>
             <div className="p-4 flex-1 overflow-auto space-y-6">
               {/* Upload / Data */}
-              <section>
+              <section ref={uploadSectionRef}>
                 <p className="text-[11px] font-medium uppercase tracking-wider mb-2" style={{ color: sidebarMuted }}>Data</p>
                 <div
                   className="rounded-xl border-2 border-dashed p-4 text-center cursor-pointer transition-all duration-200 hover:border-[#58a6ff44] hover:bg-[#58a6ff08] focus-within:ring-2 focus-within:ring-[#58a6ff44]"
@@ -998,14 +1089,14 @@ export default function AAIStudio() {
                     e.preventDefault(); e.stopPropagation()
                     if (uploadLoading || loading) return
                     const f = e.dataTransfer?.files?.[0]
-                    if (f && (/\.(csv|xlsx|xls|json|pdf)$/i.test(f.name) || f.type === 'text/csv' || f.type === 'application/json' || f.type === 'application/pdf' || f.type?.includes('spreadsheet'))) handleCsvUploadToLake(f)
+                    if (f && (/\.(csv|xlsx|xls|json|pdf|xpt|sas7bdat)$/i.test(f.name) || f.type === 'text/csv' || f.type === 'application/json' || f.type === 'application/pdf' || f.type?.includes('spreadsheet'))) handleCsvUploadToLake(f)
                   }}
                 >
                   <label className="cursor-pointer block">
-                    <input type="file" accept=".csv,.xlsx,.xls,.json,.pdf,application/json,application/pdf,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="hidden" disabled={uploadLoading || loading} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; handleCsvUploadToLake(f) }} />
+                    <input type="file" accept=".csv,.xlsx,.xls,.json,.pdf,.xpt,.sas7bdat,application/json,application/pdf,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="hidden" disabled={uploadLoading || loading} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; handleCsvUploadToLake(f) }} />
                     <span className="block text-2xl mb-1.5 opacity-80">📤</span>
                     <span className="text-sm font-medium" style={{ color: sidebarText }}>{uploadLoading ? 'Uploading…' : 'Drop file or click'}</span>
-                    <span className="block text-[11px] mt-0.5" style={{ color: sidebarMuted }}>CSV, Excel, JSON, or PDF</span>
+                    <span className="block text-[11px] mt-0.5" style={{ color: sidebarMuted }}>CSV, Excel, JSON, PDF, SAS XPORT (.xpt), or SAS dataset (.sas7bdat)</span>
                     <span className="block text-[10px] mt-1 opacity-80" style={{ color: sidebarMuted }}>JSON: array of objects or &#123; data: [...] &#125;</span>
                   </label>
                   {uploadError && <p className="text-[11px] mt-2 px-2 py-1 rounded" style={{ color: danger, background: 'rgba(248,81,73,0.15)' }}>{uploadError}</p>}
@@ -1032,7 +1123,7 @@ export default function AAIStudio() {
                   <div className="mt-2">
                     <select className="studio-select-options w-full rounded-lg px-3 py-2 text-sm" style={{ background: inputBg, border: `1px solid ${sidebarBorder}`, color: sidebarText }} value={datasetId} onChange={(e) => setDatasetId(e.target.value)} disabled={datasetsLoading || loading}>
                       {(datasets || []).map((d) => <option key={d.id} value={d.id} style={{ color: '#1f2937', backgroundColor: '#fff' }}>{d.id}</option>)}
-                      {!datasetsLoading && datasets.length === 0 && (<><option value="sales" style={{ color: '#1f2937', backgroundColor: '#fff' }}>sales</option><option value="samgov/live" style={{ color: '#1f2937', backgroundColor: '#fff' }}>samgov/live</option></>)}
+                      {!datasetsLoading && datasets.length === 0 && (<><option value="sales" style={{ color: '#1f2937', backgroundColor: '#fff' }}>sales</option><option value="sas7bdat-sample" style={{ color: '#1f2937', backgroundColor: '#fff' }}>sas7bdat-sample</option><option value="samgov/live" style={{ color: '#1f2937', backgroundColor: '#fff' }}>samgov/live</option></>)}
                     </select>
                   </div>
                 )}
@@ -1059,20 +1150,12 @@ export default function AAIStudio() {
                       <option value="" style={{ color: '#1f2937', backgroundColor: '#fff' }}>Choose a dataset or upload CSV/JSON…</option>
                       {(lakeList || []).map((d) => <option key={d.id} value={d.id} style={{ color: '#1f2937', backgroundColor: '#fff' }}>{d.name || d.id} · {d.rowCount ?? 0} rows</option>)}
                     </select>
-                    <label className="inline-flex items-center gap-1.5 mt-2 cursor-pointer text-[11px]" style={{ color: accent }} title="CSV, Excel, JSON, or PDF">
-                      <input type="file" accept=".csv,.xlsx,.xls,.json,.pdf,application/json,application/pdf,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="hidden" disabled={uploadLoading || loading} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; handleCsvUploadToLake(f) }} />
-                      + Upload CSV or JSON
+                    <label className="inline-flex items-center gap-1.5 mt-2 cursor-pointer text-[11px]" style={{ color: accent }} title="CSV, Excel, JSON, PDF, SAS XPORT (.xpt), or SAS dataset (.sas7bdat)">
+                      <input type="file" accept=".csv,.xlsx,.xls,.json,.pdf,.xpt,.sas7bdat,application/json,application/pdf,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="hidden" disabled={uploadLoading || loading} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; handleCsvUploadToLake(f) }} />
+                      + Upload CSV, JSON, or SAS (.xpt / .sas7bdat)
                     </label>
                   </div>
                 )}
-              </section>
-
-              {/* Template */}
-              <section>
-                <p className="text-[11px] font-medium uppercase tracking-wider mb-2" style={{ color: sidebarMuted }}>Template</p>
-                <select className="studio-select-options w-full rounded-lg px-3 py-2.5 text-sm" style={{ background: inputBg, border: `1px solid ${sidebarBorder}`, color: sidebarText }} value={templateId} onChange={(e) => setTemplateId(e.target.value)} disabled={loading}>
-                  {TEMPLATE_IDS.map((id) => <option key={id} value={id} style={{ color: '#1f2937', backgroundColor: '#fff' }}>{studioTemplates[id]?.name ?? id}</option>)}
-                </select>
               </section>
 
               {/* Build & Clear */}
@@ -1105,6 +1188,16 @@ export default function AAIStudio() {
           <main className="flex-1 flex flex-col min-w-0 min-h-screen">
             <header className="shrink-0 h-14 flex items-center justify-between px-5 border-b" style={{ background: sidebarBg, borderColor: sidebarBorder }}>
               <div className="flex items-center gap-4 flex-1 min-w-0">
+                <button
+                  type="button"
+                  onClick={() => setIsStudioSidebarOpen((v) => !v)}
+                  className="w-9 h-9 rounded-lg flex items-center justify-center text-sm font-semibold transition-colors hover:bg-white/10"
+                  style={{ color: sidebarText, border: `1px solid ${sidebarBorder}` }}
+                  title={isStudioSidebarOpen ? 'Hide Studio sidebar' : 'Show Studio sidebar'}
+                  aria-label={isStudioSidebarOpen ? 'Hide Studio sidebar' : 'Show Studio sidebar'}
+                >
+                  {isStudioSidebarOpen ? '‹' : '›'}
+                </button>
                 {runId ? (
                   <>
                     <input
@@ -1124,9 +1217,14 @@ export default function AAIStudio() {
                 {runId && (
                   <>
                     <span className="text-xs font-medium" style={{ color: sidebarMuted }}>Report mode:</span>
-                    <select value={reportMode} onChange={(e) => setReportMode(e.target.value)} className="text-sm px-2 py-1.5 rounded-lg border bg-transparent" style={{ color: sidebarText, borderColor: sidebarBorder }}>
-                      <option value="analyst">Analyst</option>
-                      <option value="agency">Agency</option>
+                    <select
+                      value={reportMode}
+                      onChange={(e) => setReportMode(e.target.value)}
+                      className="text-sm px-2 py-1.5 rounded-lg border"
+                      style={{ color: sidebarText, borderColor: sidebarBorder, background: inputBg }}
+                    >
+                      <option value="analyst" style={{ color: '#1f2937', backgroundColor: '#fff' }}>Analyst</option>
+                      <option value="agency" style={{ color: '#1f2937', backgroundColor: '#fff' }}>Agency</option>
                     </select>
                     <button type="button" onClick={saveDashboardPrivate} disabled={loading || saveLoading} className="text-sm px-3 py-2 rounded-lg font-medium transition-colors disabled:opacity-50 hover:bg-white/8" style={{ color: sidebarText }}>{saveLoading ? 'Saving…' : savedDashboardId ? '✓ Saved' : 'Save'}</button>
                     <button type="button" onClick={shareToFeed} disabled={loading || saveLoading} className="text-sm px-3 py-2 rounded-lg font-medium transition-colors disabled:opacity-50 hover:bg-white/8" style={{ color: success }}>Share to feed</button>
@@ -1141,15 +1239,32 @@ export default function AAIStudio() {
             <div className="flex-1 overflow-auto flex flex-col" style={{ background: '#0d1117' }}>
         <div className="max-w-5xl w-full mx-auto flex-1 px-5 py-6">
         {!hasOverview && !loading && (
-          <div className="rounded-2xl border p-12 text-center max-w-lg mx-auto" style={{ borderColor: sidebarBorder, background: 'rgba(255,255,255,0.02)' }}>
-            <div className="w-16 h-16 rounded-2xl mx-auto mb-4 flex items-center justify-center text-3xl" style={{ background: 'linear-gradient(135deg,#58a6ff22,#58a6ff08)' }}>◇</div>
-            <h2 className="text-lg font-semibold mb-2" style={{ color: sidebarText }}>Create your first dashboard</h2>
-            <p className="text-sm mb-6" style={{ color: sidebarMuted }}>Pick a data source in the sidebar, choose a template, then click <strong style={{ color: accent }}>Build dashboard</strong>. You can upload a file or use a sample dataset to start.</p>
-            <ol className="text-left text-sm space-y-2 inline-block" style={{ color: sidebarMuted }}>
-              <li className="flex items-center gap-2"><span className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-semibold" style={{ background: accent, color: '#fff' }}>1</span> Select or upload data</li>
-              <li className="flex items-center gap-2"><span className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-semibold" style={{ background: accent, color: '#fff' }}>2</span> Choose a template</li>
-              <li className="flex items-center gap-2"><span className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-semibold" style={{ background: accent, color: '#fff' }}>3</span> Click Build dashboard</li>
-            </ol>
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-4 pb-6">
+            <div className="rounded-2xl border p-5" style={{ borderColor: sidebarBorder, background: 'rgba(255,255,255,0.02)' }}>
+              <TemplateGallery
+                selectedCatalogId={selectedTemplateId}
+                onSelectTemplate={handleSelectTemplateFromGallery}
+                trackEvent={trackEvent}
+              />
+            </div>
+            <div className="hidden lg:block">
+              <TemplatePreviewPanel
+                selectedCatalogId={selectedTemplateId}
+                hasDataset={hasDatasetSelected}
+                loading={loading}
+                onBuildDashboard={() => doBuild(filters)}
+                onUploadData={focusUploadSection}
+              />
+            </div>
+            <div className="lg:hidden">
+              <TemplatePreviewPanel
+                selectedCatalogId={selectedTemplateId}
+                hasDataset={hasDatasetSelected}
+                loading={loading}
+                onBuildDashboard={() => doBuild(filters)}
+                onUploadData={focusUploadSection}
+              />
+            </div>
           </div>
         )}
         {hasOverview && (

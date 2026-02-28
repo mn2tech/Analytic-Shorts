@@ -28,11 +28,52 @@ export default function Publish() {
   const [tagsStr, setTagsStr] = useState('')
   const [visibility, setVisibility] = useState('public')
   const [thumbnailUrl, setThumbnailUrl] = useState('')
+  const [useCustomThumbnailUrl, setUseCustomThumbnailUrl] = useState(false)
+  const [captureView, setCaptureView] = useState('graph') // graph | full
+  const [thumbnailColorStyle, setThumbnailColorStyle] = useState('original') // original | vibrant | muted
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(null)
   const [capturing, setCapturing] = useState(false)
   const [previewDashboard, setPreviewDashboard] = useState(null)
   const captureRef = useRef(null)
+
+  const applyColorStyle = (canvas) => {
+    if (!canvas || thumbnailColorStyle === 'original') return canvas
+    const out = document.createElement('canvas')
+    out.width = canvas.width
+    out.height = canvas.height
+    const ctx = out.getContext('2d', { willReadFrequently: true })
+    if (!ctx) return canvas
+    ctx.drawImage(canvas, 0, 0)
+    const img = ctx.getImageData(0, 0, out.width, out.height)
+    const d = img.data
+    const profile = thumbnailColorStyle === 'vibrant'
+      ? { sat: 1.45, contrast: 1.12, brightness: 1.04 }
+      : { sat: 0.62, contrast: 0.96, brightness: 1.02 }
+    const clamp = (n) => (n < 0 ? 0 : n > 255 ? 255 : n)
+    for (let i = 0; i < d.length; i += 4) {
+      let r = d[i]
+      let g = d[i + 1]
+      let b = d[i + 2]
+      // Saturation adjustment around luminance to make style effects obvious.
+      const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b
+      r = lum + (r - lum) * profile.sat
+      g = lum + (g - lum) * profile.sat
+      b = lum + (b - lum) * profile.sat
+      // Contrast + brightness.
+      r = (r - 128) * profile.contrast + 128
+      g = (g - 128) * profile.contrast + 128
+      b = (b - 128) * profile.contrast + 128
+      r *= profile.brightness
+      g *= profile.brightness
+      b *= profile.brightness
+      d[i] = clamp(r)
+      d[i + 1] = clamp(g)
+      d[i + 2] = clamp(b)
+    }
+    ctx.putImageData(img, 0, 0)
+    return out
+  }
 
   useEffect(() => {
     if (!user) {
@@ -49,20 +90,23 @@ export default function Publish() {
       const dashboard = await getDashboard(dashboardId)
       setPreviewDashboard(dashboard)
       await new Promise((r) => setTimeout(r, 1200))
-      const el = captureRef.current
-      if (!el) {
+      const root = captureRef.current
+      if (!root) {
         setError('Could not find dashboard preview to capture.')
         setPreviewDashboard(null)
         setCapturing(false)
         return
       }
-      const canvas = await html2canvas(el, {
+      const graphCandidate = root.querySelector('.recharts-wrapper, svg, canvas')
+      const targetEl = (captureView === 'graph' && graphCandidate) ? graphCandidate : root
+      const canvasRaw = await html2canvas(targetEl, {
         scale: 2,
         useCORS: true,
         logging: false,
         backgroundColor: '#f8fafc'
       })
-      const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png', 0.9))
+      const canvas = applyColorStyle(canvasRaw)
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png', 0.92))
       if (!blob) {
         setError('Failed to create thumbnail image.')
         setPreviewDashboard(null)
@@ -227,23 +271,64 @@ export default function Publish() {
           <label htmlFor="thumbnailUrl" className="block text-sm font-medium text-gray-700 mb-1">
             Thumbnail <span className="text-gray-400 font-normal">(optional)</span>
           </label>
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-3">
             <button
               type="button"
               onClick={handleCaptureThumbnail}
               disabled={capturing || !dashboardId}
               className="w-full sm:w-auto px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
             >
-              {capturing ? 'Capturing dashboard…' : 'Capture thumbnail from dashboard'}
+              {capturing ? 'Capturing dashboard graph…' : 'Generate thumbnail from dashboard graph'}
             </button>
-            <input
-              id="thumbnailUrl"
-              type="text"
-              value={thumbnailUrl}
-              onChange={(e) => setThumbnailUrl(e.target.value)}
-              placeholder="Or paste image URL"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-            />
+            <div className="grid sm:grid-cols-2 gap-2">
+              <label className="text-xs text-gray-700">
+                Capture view
+                <select
+                  value={captureView}
+                  onChange={(e) => setCaptureView(e.target.value)}
+                  className="mt-1 w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm"
+                >
+                  <option value="graph">Graph only</option>
+                  <option value="full">Full dashboard</option>
+                </select>
+              </label>
+              <label className="text-xs text-gray-700">
+                Display colors
+                <select
+                  value={thumbnailColorStyle}
+                  onChange={(e) => setThumbnailColorStyle(e.target.value)}
+                  className="mt-1 w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm"
+                >
+                  <option value="original">Original</option>
+                  <option value="vibrant">Vibrant</option>
+                  <option value="muted">Muted</option>
+                </select>
+              </label>
+            </div>
+            {thumbnailUrl && (
+              <div className="rounded-lg border border-gray-200 p-2 bg-gray-50">
+                <img src={thumbnailUrl} alt="" className="w-full h-36 object-cover rounded-md" />
+                <p className="mt-1 text-xs text-gray-500">Thumbnail generated from {captureView === 'graph' ? 'graph view' : 'dashboard view'} ({thumbnailColorStyle}).</p>
+              </div>
+            )}
+            <label className="inline-flex items-center gap-2 text-xs text-gray-600">
+              <input
+                type="checkbox"
+                checked={useCustomThumbnailUrl}
+                onChange={(e) => setUseCustomThumbnailUrl(e.target.checked)}
+              />
+              Use custom image URL instead
+            </label>
+            {useCustomThumbnailUrl && (
+              <input
+                id="thumbnailUrl"
+                type="text"
+                value={thumbnailUrl}
+                onChange={(e) => setThumbnailUrl(e.target.value)}
+                placeholder="Paste custom image URL"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              />
+            )}
           </div>
         </div>
         {previewDashboard && (

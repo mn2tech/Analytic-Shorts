@@ -62,7 +62,7 @@ export default function GovConKpiRow({ block }) {
   ]
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+    <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
       {cards.map((c, i) => (
         <div
           key={c.label + i}
@@ -80,10 +80,10 @@ export default function GovConKpiRow({ block }) {
               Risk
             </span>
           )}
-          <div className="text-xs font-medium uppercase tracking-wide" style={{ color: 'var(--muted)' }}>
+          <div className="text-xs font-medium uppercase tracking-wide truncate" style={{ color: 'var(--muted)' }} title={c.label}>
             {c.label}
           </div>
-          <div className="text-xl font-bold mt-1" style={{ color: 'var(--text)' }}>
+          <div className="text-[clamp(1.2rem,1.8vw,1.5rem)] font-bold mt-1 leading-tight break-words" style={{ color: 'var(--text)' }}>
             {c.value}
           </div>
           {c.subtitle && (

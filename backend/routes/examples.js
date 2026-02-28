@@ -10,6 +10,13 @@ const OpenAI = require('openai')
 const router = express.Router()
 const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null
 
+let SAS7BDAT
+try {
+  SAS7BDAT = require('sas7bdat')
+} catch (_) {
+  SAS7BDAT = null
+}
+
 const supabaseUrl = process.env.SUPABASE_URL
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 const supabase = supabaseUrl && supabaseServiceKey
@@ -844,6 +851,52 @@ router.get('/pharmacy', (req, res) => {
     dateColumns,
     rowCount: processedData.length,
   })
+})
+
+// Sample SAS dataset: read from backend/sample-data/sample.sas7bdat if present, else return sales data
+router.get('/sas7bdat-sample', async (req, res) => {
+  const fallback = () => {
+    const dataset = exampleDatasets.sales
+    const columns = Object.keys(dataset.data[0])
+    const { numericColumns, categoricalColumns, dateColumns } = detectColumnTypes(dataset.data, columns)
+    const processedData = processDataPreservingNumbers(dataset.data, numericColumns)
+    return res.json({
+      data: processedData,
+      columns,
+      numericColumns,
+      categoricalColumns,
+      dateColumns,
+      rowCount: processedData.length,
+    })
+  }
+  if (!SAS7BDAT) return fallback()
+  const candidates = [
+    path.join(__dirname, '../sample-data/sample.sas7bdat'),
+    path.join(__dirname, '../../sample-data/sample.sas7bdat'),
+    path.join(process.cwd(), 'backend/sample-data/sample.sas7bdat'),
+    path.join(process.cwd(), 'sample-data/sample.sas7bdat'),
+  ]
+  const filePath = candidates.find((p) => fs.existsSync(p))
+  if (!filePath) return fallback()
+  try {
+    const rows = await SAS7BDAT.parse(filePath, { rowFormat: 'object' })
+    const data = Array.isArray(rows) ? rows : []
+    if (data.length === 0) return fallback()
+    const columns = Object.keys(data[0] || {})
+    const { numericColumns, categoricalColumns, dateColumns } = detectColumnTypes(data, columns)
+    const processedData = processDataPreservingNumbers(data, numericColumns)
+    return res.json({
+      data: processedData,
+      columns,
+      numericColumns,
+      categoricalColumns,
+      dateColumns,
+      rowCount: processedData.length,
+    })
+  } catch (err) {
+    console.warn('sas7bdat-sample: parse failed, using sales fallback:', err?.message || err)
+    return fallback()
+  }
 })
 
 router.get('/superbowl-winners', (req, res) => {

@@ -128,7 +128,7 @@ function Terms() {
                 If you have any questions about these Terms of Service, please contact us:
               </p>
               <p className="text-gray-700">
-                <strong>Email:</strong> support@nm2tech.com<br />
+                <strong>Email:</strong> support@nm2tech-sas.com<br />
                 <strong>Website:</strong> <a href="/" className="text-blue-600 hover:underline">nm2tech.com</a>
               </p>
             </section>

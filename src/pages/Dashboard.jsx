@@ -27,7 +27,6 @@ import jsPDF from 'jspdf'
 import html2canvas from 'html2canvas'
 import * as XLSX from 'xlsx'
 import { createDashboardShortVideo, downloadVideoBlob, getVideoFileExtension, getShortsExportCapabilities, saveVideoBlobAs } from '../utils/shortsVideoExport'
-import { usePortraitMode } from '../contexts/PortraitModeContext'
 import * as savedShortsStorage from '../utils/savedShortsStorage'
 import { getGoogleYouTubeUploadToken, uploadVideoToYouTube, isYouTubeUploadConfigured } from '../utils/youtubeUpload'
 import { API_BASE_URL } from '../config/api'
@@ -37,7 +36,6 @@ function Dashboard() {
   const navigate = useNavigate()
   const location = useLocation()
   const { user } = useAuth()
-  const { enabled: portraitEnabled } = usePortraitMode()
   const [data, setData] = useState(null)
   const [filteredData, setFilteredData] = useState(null)
   const [columns, setColumns] = useState([])
@@ -4022,63 +4020,6 @@ function Dashboard() {
       </div>
 
       <div ref={shortRootRef} className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 relative">
-        {portraitEnabled && isScreenRecordingSupported() && (
-          <div className="mb-6 rounded-2xl border border-gray-200 bg-white shadow-lg overflow-hidden" data-html2canvas-ignore="true">
-            <div className="px-5 py-4 border-b border-gray-100 bg-gradient-to-r from-indigo-50 to-white">
-              <h2 className="text-lg font-semibold text-gray-900">Live capture</h2>
-              <p className="text-sm text-gray-600 mt-0.5">Record your tab or screen • 9:16 Shorts • Upload to YouTube or LinkedIn</p>
-            </div>
-            <div className="p-5 flex flex-wrap items-center gap-3">
-              {!isRecordingScreen ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={handleStartScreenRecord}
-                    disabled={!data}
-                    className="px-5 py-2.5 bg-emerald-600 text-white rounded-lg font-semibold text-sm hover:bg-emerald-700 disabled:opacity-50 shadow-md"
-                    title="Record your tab or screen in real time"
-                  >
-                    Live capture
-                  </button>
-                </>
-              ) : (
-                <>
-                  <span className="px-3 py-2 rounded-lg bg-red-100 text-red-800 text-sm font-medium">
-                    Recording {Math.floor(screenRecordingElapsed / 60)}:{String(screenRecordingElapsed % 60).padStart(2, '0')}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleStopScreenRecord}
-                    className="px-4 py-2.5 bg-red-600 text-white rounded-lg font-medium text-sm hover:bg-red-700"
-                  >
-                    Stop recording
-                  </button>
-                </>
-              )}
-              {lastShortVideo?.blob && !isRecordingScreen && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => handleUploadToYouTube()}
-                    disabled={!!uploadingToYouTubeId}
-                    className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-50"
-                    title={isYouTubeUploadConfigured() ? 'Upload to YouTube' : 'Add VITE_GOOGLE_CLIENT_ID to enable'}
-                  >
-                    {uploadingToYouTubeId === 'current' ? 'Uploading…' : 'Upload to YouTube'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleShareToLinkedIn}
-                    className="px-4 py-2 bg-[#0A66C2] text-white rounded-lg text-sm font-medium hover:bg-[#004182]"
-                    title="Download video and open LinkedIn to post"
-                  >
-                    Share to LinkedIn
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-        )}
         {/* Header */}
         <div className="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center animate-fade-in">
           <div>

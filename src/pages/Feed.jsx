@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import Loader from '../components/Loader'
 import PostThumbnail from '../components/PostThumbnail'
+import SaaSAdSection from '../components/SaaSAdSection'
 import { getFeed, toggleLike, toggleSave, createOrGetLiveSession, deletePost } from '../services/postsService'
 import { getDashboards } from '../services/dashboardService'
 import { followUser, unfollowUser } from '../services/followService'
@@ -12,8 +13,25 @@ import apiClient from '../config/api'
 const FEED_TITLE = 'Analytics Shorts Feed'
 const FEED_DESCRIPTION = 'Your analytics social feed — share dashboards, discover insights, and connect with the community.'
 
+// Special title for notable community members (e.g. Bryan Harris — CTO of SAS)
+function getMemberTitle(displayName) {
+  if (!displayName || typeof displayName !== 'string') return null
+  const n = displayName.trim().toLowerCase()
+  if (n === 'bryan harris' || n === 'bryan.harris') return 'CTO, SAS'
+  return null
+}
+
+const ONLINE_THRESHOLD_MS = 3 * 60 * 1000 // 3 minutes
+function isUserOnline(lastSeenAt) {
+  if (!lastSeenAt) return false
+  return Date.now() - new Date(lastSeenAt).getTime() < ONLINE_THRESHOLD_MS
+}
+
 // Curated AI & analytics news links for sidebar (open in new tab)
 const AI_ANALYTICS_NEWS = [
+  { title: 'SAS CTO Bryan Harris: AI requires pragmatism, not hype', source: 'Techzine', url: 'https://www.techzine.eu/blogs/analytics/138925/sas-cto-bryan-harris-ai-requires-pragmatism-not-hype/' },
+  { title: '2025 will be “explosive” for SAS – CTO Bryan Harris', source: 'IT Brief', url: 'https://itbrief.co.nz/story/2025-will-be-explosive-for-sas-cto-bryan-harris' },
+  { title: 'SAS CTO Bryan Harris named to NC AI Leadership Council', source: 'SAS', url: 'https://www.sas.com/en_us/news/press-releases/2025/september/bryan-harris-nc-ai-leadership-council.html' },
   { title: 'Latest in AI', source: 'TechCrunch', url: 'https://techcrunch.com/tag/artificial-intelligence/' },
   { title: 'AI & Machine Learning', source: 'VentureBeat', url: 'https://venturebeat.com/category/ai/' },
   { title: 'Data & Analytics', source: 'MIT Technology Review', url: 'https://www.technologyreview.com/topic/artificial-intelligence/' },
@@ -311,28 +329,32 @@ export default function Feed() {
   const [communityError, setCommunityError] = useState(false)
   const [communityAvatarErrors, setCommunityAvatarErrors] = useState(() => new Set())
 
-  // Community stats: public endpoint, fetch for everyone so sidebar shows for all (incl. non-admin and guests)
-  useEffect(() => {
-    let cancelled = false
-    setCommunityLoading(true)
+  // Community stats: public endpoint, fetch for everyone so sidebar shows all (incl. avatars)
+  const fetchCommunity = useCallback(() => {
     setCommunityError(false)
     apiClient.get('/api/analytics/community', { timeout: 5000 })
       .then((res) => {
-        if (cancelled) return
         setCommunitySummary(res?.data ?? null)
         setCommunityError(false)
       })
       .catch(() => {
-        if (!cancelled) {
-          setCommunityError(true)
-          setCommunitySummary(null)
-        }
+        setCommunityError(true)
+        setCommunitySummary(null)
       })
-      .finally(() => {
-        if (!cancelled) setCommunityLoading(false)
-      })
-    return () => { cancelled = true }
+      .finally(() => setCommunityLoading(false))
   }, [])
+
+  useEffect(() => {
+    setCommunityLoading(true)
+    fetchCommunity()
+  }, [fetchCommunity])
+
+  // Refetch community when Feed is visible again (e.g. after editing profile) so avatars stay up to date
+  useEffect(() => {
+    const onVisible = () => { fetchCommunity() }
+    window.addEventListener('focus', onVisible)
+    return () => window.removeEventListener('focus', onVisible)
+  }, [fetchCommunity])
 
   // When user logs out or session is missing, reset scope to public so we don't request scope=all|mine|following|saved
   useEffect(() => {
@@ -702,7 +724,8 @@ export default function Feed() {
                           const showImg = avatarUrl && !avatarFailed
                           return (
                             <li key={u.user_id || i} className="flex items-center gap-2 text-sm">
-                              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex flex-col items-center justify-center text-white overflow-hidden" title={displayName}>
+                              <div className="flex-shrink-0 relative">
+                                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex flex-col items-center justify-center text-white overflow-hidden" title={displayName}>
                                 {showImg ? (
                                   <img
                                     src={avatarUrl}
@@ -716,18 +739,29 @@ export default function Feed() {
                                     <span className="text-[8px] opacity-90 leading-none">Click</span>
                                   </>
                                 )}
+                                </div>
+                                {isUserOnline(u.last_seen_at) && (
+                                  <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-white" title="Online" aria-label="Online" />
+                                )}
                               </div>
                               <div className="min-w-0 flex-1 flex items-center justify-between gap-2">
-                                {u.user_id ? (
-                                  <Link
-                                    to={`/profile/${u.user_id}`}
-                                    className="truncate text-gray-900 font-medium hover:text-blue-600 hover:underline"
-                                  >
-                                    {displayName}
-                                  </Link>
-                                ) : (
-                                  <span className="truncate text-gray-900">{displayName}</span>
-                                )}
+                                <div className="min-w-0 flex-1">
+                                  {u.user_id ? (
+                                    <Link
+                                      to={`/profile/${u.user_id}`}
+                                      className="truncate text-gray-900 font-medium hover:text-blue-600 hover:underline"
+                                    >
+                                      {displayName}
+                                    </Link>
+                                  ) : (
+                                    <span className="truncate text-gray-900">{displayName}</span>
+                                  )}
+                                  {getMemberTitle(displayName) && (
+                                    <span className="block text-[10px] font-medium text-indigo-600 mt-0.5" title="Chief Technology Officer, SAS">
+                                      {getMemberTitle(displayName)}
+                                    </span>
+                                  )}
+                                </div>
                                 <span className="text-xs text-gray-500 flex-shrink-0">
                                   {u.created_at ? new Date(u.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : ''}
                                 </span>
@@ -742,6 +776,58 @@ export default function Feed() {
               )}
             </div>
           </div>
+
+          {/* News from the feed: welcome new members */}
+          {Array.isArray(communitySummary?.recent_signups) && communitySummary.recent_signups.length > 0 && (
+            <div className="rounded-lg bg-white border border-gray-200/80 overflow-hidden">
+              <div className="px-3 py-2.5 border-b border-gray-100 bg-gradient-to-r from-blue-50/80 to-white">
+                <h3 className="text-sm font-semibold text-gray-900">News from the feed</h3>
+                <p className="text-xs text-gray-500 mt-0.5">Welcome, new members</p>
+              </div>
+              <ul className="divide-y divide-gray-100">
+                {communitySummary.recent_signups.slice(0, 8).map((u, i) => {
+                  const displayName = u.name || 'Anonymous'
+                  const joinedDate = u.created_at ? new Date(u.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : ''
+                  const memberTitle = getMemberTitle(displayName)
+                  const online = isUserOnline(u.last_seen_at)
+                  return (
+                    <li key={u.user_id || i}>
+                      {u.user_id ? (
+                        <Link
+                          to={`/profile/${u.user_id}`}
+                          className="block px-3 py-2.5 hover:bg-gray-50/80 group"
+                        >
+                          <span className="text-sm text-gray-900 group-hover:text-blue-600 inline-flex items-center gap-2 flex-wrap">
+                            <strong>{displayName}</strong>
+                            {online && <span className="w-2 h-2 rounded-full bg-emerald-500" title="Online" aria-label="Online" />}
+                            joined the feed
+                          </span>
+                          {memberTitle && (
+                            <span className="block text-xs font-medium text-indigo-600 mt-0.5" title="Chief Technology Officer, SAS">{memberTitle}</span>
+                          )}
+                          {joinedDate && (
+                            <span className="block text-xs text-gray-500 mt-0.5">{joinedDate}</span>
+                          )}
+                        </Link>
+                      ) : (
+                        <div className="px-3 py-2.5">
+                          <span className="text-sm text-gray-900"><strong>{displayName}</strong> joined the feed</span>
+                          {memberTitle && (
+                            <span className="block text-xs font-medium text-indigo-600 mt-0.5">{memberTitle}</span>
+                          )}
+                          {joinedDate && (
+                            <span className="block text-xs text-gray-500 mt-0.5">{joinedDate}</span>
+                          )}
+                        </div>
+                      )}
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          )}
+
+          <SaaSAdSection />
           <div className="rounded-lg bg-white border border-gray-200/80 overflow-hidden">
             <div className="px-3 py-2.5 flex items-center justify-between border-b border-gray-100">
               <span className="text-xs font-medium text-amber-600">Careers</span>

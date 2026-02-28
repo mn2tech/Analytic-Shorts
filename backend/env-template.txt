@@ -31,4 +31,10 @@ FRONTEND_URL=http://localhost:3000
 # CORS Allowed Origins
 ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
 
+# Email notifications (messages, likes, saves, comments) via Resend
+# Get API key at https://resend.com — if unset, notifications are skipped (logged in dev).
+# RESEND_API_KEY=re_xxxxxxxxxxxx
+# Sender shown in inbox (use a verified domain in production)
+# NOTIFICATION_EMAIL_FROM=Analytics Shorts <notifications@yourdomain.com>
+
 

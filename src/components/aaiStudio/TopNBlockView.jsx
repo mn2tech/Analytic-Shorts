@@ -38,7 +38,7 @@ export default function TopNBlockView({ block, filterState, onFilterChange }) {
         <YAxis type="category" dataKey="name" width={100} stroke="var(--border)" style={{ fontSize: FONT_SIZE_AXIS }} tick={{ fontSize: 11, fill: 'var(--chart-axis)' }} />
         <Tooltip
           contentStyle={{ background: 'var(--chart-tooltip-bg)', color: 'var(--chart-tooltip-text)', border: '1px solid var(--border)', borderRadius: 6 }}
-          formatter={[(v) => [Number(v).toLocaleString(), dimension || 'Value']]}
+          formatter={(v) => [Number(v).toLocaleString(), dimension || 'Value']}
         />
         <Bar
           dataKey="value"

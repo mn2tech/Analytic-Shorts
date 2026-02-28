@@ -1,18 +1,22 @@
--- Migration: Add shorts_user_profiles table
--- Run this if you already have the base schema and want to add user profiles
--- This script safely adds the user_profiles table without breaking existing setup
+-- Migration: Ashorts – user profiles and subscription (Analytics Shorts)
+-- Run this if you already have the base schema and want to add user profiles.
+-- This script is specific to the Ashorts (NM2TECH Analytics Shorts) project.
 
--- User profiles table - extends auth.users with additional user data
+-- Ashorts: User profiles table – extends auth.users with display name, avatar, etc.
 CREATE TABLE IF NOT EXISTS shorts_user_profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   user_id UUID NOT NULL UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE,
   name VARCHAR(255),
   company VARCHAR(255),
   role VARCHAR(100),
+  avatar_url TEXT,
   preferences JSONB DEFAULT '{}',
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- Ensure avatar_url exists (if table was created before this column was added)
+ALTER TABLE shorts_user_profiles ADD COLUMN IF NOT EXISTS avatar_url TEXT;
 
 -- Create index
 CREATE INDEX IF NOT EXISTS idx_shorts_user_profiles_user_id ON shorts_user_profiles(user_id);
@@ -39,8 +43,9 @@ CREATE POLICY "Users can update own profile"
   USING (auth.uid() = user_id)
   WITH CHECK (auth.uid() = user_id);
 
--- Drop existing trigger if it exists
+-- Drop existing triggers if they exist (Ashorts)
 DROP TRIGGER IF EXISTS update_shorts_user_profiles_updated_at ON shorts_user_profiles;
+DROP TRIGGER IF EXISTS on_auth_user_created_ashorts ON auth.users;
 DROP TRIGGER IF EXISTS on_auth_user_created_shorts ON auth.users;
 
 -- Create trigger for updated_at
@@ -49,16 +54,16 @@ CREATE TRIGGER update_shorts_user_profiles_updated_at
   FOR EACH ROW
   EXECUTE FUNCTION update_updated_at_column();
 
--- Update the function to create both profile and subscription
-CREATE OR REPLACE FUNCTION create_default_shorts_user()
+-- Ashorts: Create profile + subscription when a new user signs up
+CREATE OR REPLACE FUNCTION create_default_ashorts_user()
 RETURNS TRIGGER AS $$
 BEGIN
-  -- Create user profile (only if it doesn't exist)
+  -- Create Ashorts user profile (only if it doesn't exist)
   INSERT INTO shorts_user_profiles (id, user_id, name)
   VALUES (NEW.id, NEW.id, COALESCE(NEW.raw_user_meta_data->>'name', NEW.email))
   ON CONFLICT (id) DO NOTHING;
   
-  -- Create default subscription (only if it doesn't exist)
+  -- Create default Ashorts subscription (only if it doesn't exist)
   INSERT INTO shorts_subscriptions (user_id, plan, status)
   VALUES (NEW.id, 'free', 'active')
   ON CONFLICT (user_id) DO NOTHING;
@@ -67,13 +72,13 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Recreate trigger
-CREATE TRIGGER on_auth_user_created_shorts
+-- Trigger: run when a new user is created (Ashorts)
+CREATE TRIGGER on_auth_user_created_ashorts
   AFTER INSERT ON auth.users
   FOR EACH ROW
-  EXECUTE FUNCTION create_default_shorts_user();
+  EXECUTE FUNCTION create_default_ashorts_user();
 
--- Backfill: Create profiles for existing users who don't have one
+-- Backfill: Create Ashorts profiles for existing auth users who don't have one
 INSERT INTO shorts_user_profiles (id, user_id, name)
 SELECT 
   id,

@@ -15,7 +15,7 @@ export function CardSkeleton({ className = '', lines = 3 }) {
 
 export function KPIRowSkeleton() {
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+    <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
       {Array.from({ length: 6 }).map((_, i) => (
         <div key={i} className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm animate-pulse">
           <div className="h-3 bg-gray-200 rounded w-2/3 mb-2" />

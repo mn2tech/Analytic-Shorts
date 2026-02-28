@@ -172,14 +172,28 @@ router.get('/community', async (req, res) => {
       supabase.from('shorts_user_profiles').select('id', { count: 'exact', head: true }).gte('created_at', sevenDaysAgo.toISOString()),
       supabase.from('shorts_user_profiles').select('id', { count: 'exact', head: true }).gte('created_at', thirtyDaysAgo.toISOString()),
       supabase.from('shorts_user_profiles').select('*', { count: 'exact', head: true }),
-      supabase.from('shorts_user_profiles').select('user_id, name, created_at, avatar_url').order('created_at', { ascending: false }).limit(10)
+      supabase.from('shorts_user_profiles').select('user_id, name, created_at, avatar_url, last_seen_at').order('created_at', { ascending: false }).limit(40)
     ])
     const total_users = totalUsersResult?.count ?? 0
+    const mapped = (recentProfiles?.data || []).map((p) => ({
+      name: p.name || 'Anonymous',
+      created_at: p.created_at,
+      user_id: p.user_id,
+      avatar_url: p.avatar_url || null,
+      last_seen_at: p.last_seen_at || null
+    }))
+    // Show users who have a profile picture first, then the rest by signup date (so avatars appear at top)
+    mapped.sort((a, b) => {
+      const aHas = !!(a.avatar_url && String(a.avatar_url).trim())
+      const bHas = !!(b.avatar_url && String(b.avatar_url).trim())
+      if (aHas !== bHas) return aHas ? -1 : 1
+      return new Date(b.created_at) - new Date(a.created_at)
+    })
     return res.json({
       new_signups_7d: r7?.count ?? 0,
       new_signups_30d: r30?.count ?? 0,
       total_users: total_users,
-      recent_signups: (recentProfiles?.data || []).map((p) => ({ name: p.name || 'Anonymous', created_at: p.created_at, user_id: p.user_id, avatar_url: p.avatar_url || null }))
+      recent_signups: mapped.slice(0, 20)
     })
   } catch (e) {
     console.error('community:', e)
@@ -200,7 +214,7 @@ router.get('/new-members', getUserFromToken, isAdmin, async (req, res) => {
       supabase.from('shorts_user_profiles').select('id', { count: 'exact', head: true }).gte('created_at', sevenDaysAgo.toISOString()),
       supabase.from('shorts_user_profiles').select('id', { count: 'exact', head: true }).gte('created_at', thirtyDaysAgo.toISOString()),
       supabase.from('shorts_user_profiles').select('*', { count: 'exact', head: true }),
-      supabase.from('shorts_user_profiles').select('user_id, name, created_at, avatar_url').order('created_at', { ascending: false }).limit(10)
+      supabase.from('shorts_user_profiles').select('user_id, name, created_at, avatar_url').order('created_at', { ascending: false }).limit(20)
     ])
     const total_users = totalUsersResult?.count ?? 0
     return res.json({

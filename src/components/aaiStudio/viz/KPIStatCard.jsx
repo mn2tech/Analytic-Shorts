@@ -44,14 +44,14 @@ export default function KPIStatCard({
       className={`p-4 rounded-xl shadow-sm ${className}`}
       style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
     >
-      <div className="text-xs font-medium uppercase tracking-wide" style={{ color: 'var(--muted)' }}>
+      <div className="text-xs font-medium uppercase tracking-wide truncate" style={{ color: 'var(--muted)' }} title={label}>
         {label}
       </div>
-      <div className="text-[32px] font-bold mt-1 leading-none" style={{ color: 'var(--text)' }}>
+      <div className="text-[clamp(1.45rem,2vw,2.2rem)] font-bold mt-1 leading-tight break-words" style={{ color: 'var(--text)' }}>
         {typeof value === 'number' ? formatNum(value) : value}
       </div>
       {(subtitle || delta != null) && (
-        <div className="text-xs mt-1 flex items-center gap-2" style={{ color: 'var(--muted)' }}>
+        <div className="text-xs mt-1 flex items-start gap-2 flex-wrap" style={{ color: 'var(--muted)' }}>
           {delta != null && <DeltaArrow value={delta} />}
           {subtitle && <span>{subtitle}</span>}
         </div>

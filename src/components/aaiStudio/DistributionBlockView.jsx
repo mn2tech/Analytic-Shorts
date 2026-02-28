@@ -30,7 +30,7 @@ export default function DistributionBlockView({ block }) {
         <Tooltip
           contentStyle={{ background: 'var(--chart-tooltip-bg)', color: 'var(--chart-tooltip-text)', border: '1px solid var(--border)', borderRadius: 6 }}
           labelFormatter={(v) => v}
-          formatter={[(v) => [Number(v).toLocaleString(), 'Count']]}
+          formatter={(v) => [Number(v).toLocaleString(), 'Count']}
         />
         <Bar dataKey="count" fill="var(--chart-primary)" radius={BAR_RADIUS} name="Count" />
       </BarChart>

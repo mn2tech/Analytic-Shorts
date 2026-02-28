@@ -10,7 +10,6 @@ import Navbar from '../components/Navbar'
 import Footer from '../components/Footer'
 import ChatBot from '../components/ChatBot'
 import { useAuth } from '../contexts/AuthContext'
-import { usePortraitMode } from '../contexts/PortraitModeContext'
 import { getUnreadCount } from '../services/messagesService'
 import apiClient from '../config/api'
 
@@ -40,6 +39,7 @@ const PATH_TO_LABEL = [
   { path: '/admin/analytics', label: 'Admin' },
   { path: '/help', label: 'Help' },
   { path: '/pricing', label: 'Pricing' },
+  { path: '/advanced-analytics', label: 'Advanced Analytics' },
   { path: '/feed', label: 'Feed' },
   { path: '/messages', label: 'Messages' },
   { path: '/careers', label: 'Careers' },
@@ -135,7 +135,6 @@ function AppLayout() {
   const location = useLocation()
   const navigate = useNavigate()
   const { user, userProfile } = useAuth()
-  const { enabled: portraitEnabled } = usePortraitMode()
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     try {
       return localStorage.getItem(STORAGE_KEY_SIDEBAR_COLLAPSED) !== 'true'
@@ -307,127 +306,6 @@ function AppLayout() {
     }`
 
   const hideFooter = location.pathname.startsWith('/studio')
-
-  // In 9:16 portrait mode, force a "mobile-like" layout so desktop breakpoints
-  // don't keep the sidebar visible inside the portrait frame.
-  if (portraitEnabled) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex flex-col overflow-x-hidden relative">
-        {mobileMenuOpen && (
-          <div
-            className="absolute inset-0 z-40 bg-black/50"
-            onClick={() => setMobileMenuOpen(false)}
-            aria-hidden="true"
-          />
-        )}
-        <aside
-          className={`absolute inset-y-0 left-0 z-50 w-72 max-w-[85vw] bg-white border-r border-gray-200 transform transition-transform duration-200 ease-out ${
-            mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
-          }`}
-          aria-hidden={!mobileMenuOpen}
-        >
-          <div className="flex h-14 items-center justify-between px-4 border-b border-gray-200">
-            <span className="font-semibold text-gray-900">Menu</span>
-            <button
-              type="button"
-              onClick={() => setMobileMenuOpen(false)}
-              className="p-2 rounded-lg hover:bg-gray-100"
-              aria-label="Close menu"
-            >
-              ✕
-            </button>
-          </div>
-          <div className="p-3 space-y-1 overflow-y-auto h-[calc(100vh-3.5rem)]">
-            <div className="px-3 pt-2 pb-1">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Navigate</p>
-            </div>
-            <NavLink to="/" end className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
-              <span>🏠</span>
-              <span>Home</span>
-            </NavLink>
-            <NavLink to="/feed" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
-              <span>📰</span>
-              <span>Feed</span>
-            </NavLink>
-            <NavLink to="/dashboard" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
-              <span>📈</span>
-              <span>Dashboard</span>
-            </NavLink>
-            <NavLink to="/studio/chat" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
-              <span>🎨</span>
-              <span>Studio</span>
-            </NavLink>
-            <NavLink to="/dashboards" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
-              <span>📋</span>
-              <span>My Dashboards</span>
-            </NavLink>
-            {user && (
-              <NavLink to="/profile" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
-                <span>👤</span>
-                <span>Profile</span>
-              </NavLink>
-            )}
-            <NavLink to="/#upload" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
-              <span>📤</span>
-              <span>Upload Data</span>
-            </NavLink>
-            <div className="px-3 pt-4 pb-1">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Support</p>
-            </div>
-            <NavLink to="/pricing" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
-              <span>💳</span>
-              <span>Pricing</span>
-            </NavLink>
-            <NavLink to="/help" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
-              <span>❓</span>
-              <span>Help</span>
-            </NavLink>
-            {showAdminLink && (
-              <>
-                <div className="px-3 pt-4 pb-1">
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Admin</p>
-                </div>
-                <NavLink to="/admin/analytics" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
-                  <span>⚙️</span>
-                  <span>Admin</span>
-                </NavLink>
-              </>
-            )}
-            {samgovQuickActionVisible && (
-              <>
-                <div className="px-3 pt-4 pb-1">
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Quick load</p>
-                </div>
-                <button
-                  type="button"
-                  className={navLinkClass({ isActive: false })}
-                  onClick={() => {
-                    setMobileMenuOpen(false)
-                    loadSamgovOpportunities()
-                  }}
-                  disabled={quickActionLoading === 'samgov'}
-                  aria-disabled={quickActionLoading === 'samgov'}
-                >
-                  <span>{quickActionLoading === 'samgov' ? '⏳' : '🏛️'}</span>
-                  <span>SAM.gov Opportunities</span>
-                </button>
-              </>
-            )}
-          </div>
-        </aside>
-        <header className="shrink-0">
-          <div className="border-b border-gray-200 bg-white">
-            <Navbar onOpenSidebar={() => setMobileMenuOpen(true)} />
-          </div>
-        </header>
-        <main className="flex-1 min-h-0">
-          <Outlet />
-        </main>
-        {!hideFooter && <Footer />}
-        <ChatBot />
-      </div>
-    )
-  }
 
   const loadSamgovOpportunities = useCallback(async () => {
     if (quickActionLoading) return
@@ -696,6 +574,12 @@ function AppLayout() {
                   <NavLink to="/pricing" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
                     <span>💳</span>
                     <span className={sidebarOpen ? '' : 'lg:hidden'}>Pricing</span>
+                  </NavLink>
+                </SidebarTooltip>
+                <SidebarTooltip show={!sidebarOpen} label="Advanced Analytics">
+                  <NavLink to="/advanced-analytics" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
+                    <span>📊</span>
+                    <span className={sidebarOpen ? '' : 'lg:hidden'}>Advanced Analytics</span>
                   </NavLink>
                 </SidebarTooltip>
                 <SidebarTooltip show={!sidebarOpen} label="Help">

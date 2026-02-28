@@ -24,9 +24,13 @@
     "puppeteer": "^23.0.0",
     "react-joyride": "^2.9.3",
     "serverless-http": "^3.2.0",
-    "stripe": "^20.0.0"
+    "stripe": "^20.0.0",
+    "xport-js": "^0.4.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"
+  },
+  "optionalDependencies": {
+    "sas7bdat": "^0.1.7"
   }
 }

@@ -328,6 +328,7 @@ const datasetRegistry = {
   'revenue-trends': { type: 'api', endpoint: '/api/example/revenue-trends' },
   'alters-insights': { type: 'api', endpoint: '/api/example/alters-insights' },
   'samgov/live': { type: 'api', endpoint: '/api/example/samgov/live' },
+  'sas7bdat-sample': { type: 'api', endpoint: '/api/example/sas7bdat-sample' },
   'maritime-ais': { type: 'api', endpoint: '/api/datasets/maritime-ais' }
 }
 
@@ -1037,11 +1038,13 @@ async function handlePdfExport(req, res) {
     try {
       const page = await browser.newPage()
       await page.setContent(html, { waitUntil: 'networkidle0', timeout: 15000 })
-      const pdfBuf = await page.pdf({
+      const pdfRaw = await page.pdf({
         format: 'Letter',
         printBackground: true,
         margin: { top: '0.6in', right: '0.6in', bottom: '0.6in', left: '0.6in' },
       })
+      // Puppeteer may return a Uint8Array in newer versions; normalize to Buffer
+      const pdfBuf = Buffer.isBuffer(pdfRaw) ? pdfRaw : Buffer.from(pdfRaw)
       const pdfMagic = Buffer.from('%PDF-', 'ascii')
       const valid = pdfBuf && pdfBuf.length >= 5 && pdfBuf[0] === pdfMagic[0] && pdfBuf[1] === pdfMagic[1] && pdfBuf[2] === pdfMagic[2] && pdfBuf[3] === pdfMagic[3] && pdfBuf[4] === pdfMagic[4]
       if (!valid) {

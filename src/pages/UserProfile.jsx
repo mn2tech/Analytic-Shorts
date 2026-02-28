@@ -10,6 +10,22 @@ function getInitials(name) {
   return String(name).slice(0, 2).toUpperCase()
 }
 
+function timeAgo(dateStr) {
+  if (!dateStr) return null
+  const d = new Date(dateStr)
+  const now = Date.now()
+  const diffMs = now - d.getTime()
+  const sec = Math.floor(diffMs / 1000)
+  const min = Math.floor(sec / 60)
+  const hr = Math.floor(min / 60)
+  const day = Math.floor(hr / 24)
+  if (day >= 1) return `${day} day${day !== 1 ? 's' : ''} ago`
+  if (hr >= 1) return `${hr} hour${hr !== 1 ? 's' : ''} ago`
+  if (min >= 1) return `${min} min ago`
+  if (sec >= 10) return `${sec} sec ago`
+  return 'just now'
+}
+
 export default function UserProfile() {
   const { userId } = useParams()
   const [profile, setProfile] = useState(null)
@@ -59,9 +75,11 @@ export default function UserProfile() {
 
   const name = profile.name || 'Anonymous'
   const initials = getInitials(name)
-  const avatarStyle = profile.avatar_focal
-    ? { objectPosition: `${profile.avatar_focal.x}% ${profile.avatar_focal.y}%` }
+  const focal = profile.avatar_focal
+  const avatarStyle = focal && typeof focal.x === 'number' && typeof focal.y === 'number'
+    ? { objectPosition: `${focal.x}% ${focal.y}%` }
     : undefined
+  const email = profile.email != null && String(profile.email).trim() ? String(profile.email).trim() : null
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-8">
@@ -79,9 +97,30 @@ export default function UserProfile() {
               initials
             )}
           </div>
-          <div className="text-center sm:text-left min-w-0">
-            <h1 className="text-xl font-semibold text-gray-900 truncate">{name}</h1>
-            <p className="text-sm text-gray-500 mt-0.5">Community member</p>
+          <div className="text-center sm:text-left min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-xl font-semibold text-gray-900 truncate">{name}</h1>
+              {profile.is_online && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800" title="Online now">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" aria-hidden />
+                  Online
+                </span>
+              )}
+            </div>
+            {email ? (
+              <p className="text-sm text-gray-500 mt-0.5 truncate" title={email}>{email}</p>
+            ) : (
+              <p className="text-sm text-gray-500 mt-0.5">Community member</p>
+            )}
+            {!profile.is_online && (profile.last_seen_at || profile.last_login_at) && (
+              <p className="text-xs text-gray-500 mt-1">
+                {profile.last_seen_at
+                  ? `Last active on Shorts ${timeAgo(profile.last_seen_at)}`
+                  : profile.last_login_at
+                    ? `Last login to Shorts ${timeAgo(profile.last_login_at)}`
+                    : null}
+              </p>
+            )}
           </div>
         </div>
 
@@ -106,8 +145,8 @@ export default function UserProfile() {
             <div>
               <p className="text-xs font-medium text-gray-500 mb-2">Dashboards</p>
               <ul className="space-y-2 max-h-64 overflow-y-auto">
-                {profile.dashboards.map((d) => (
-                  <li key={d.id} className="flex items-center justify-between gap-2 text-sm">
+                {profile.dashboards.map((d, idx) => (
+                  <li key={d?.id ?? idx} className="flex items-center justify-between gap-2 text-sm">
                     {d.share_url ? (
                       <Link
                         to={d.share_url}

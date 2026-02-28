@@ -2,13 +2,18 @@ import { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
+import { updateUserProfile } from '../services/profileService'
 import Navbar from '../components/Navbar'
+
+const AVATAR_BUCKET = 'avatars'
 
 function Signup() {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [avatarFile, setAvatarFile] = useState(null)
+  const [avatarPreview, setAvatarPreview] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
@@ -44,7 +49,22 @@ function Signup() {
 
     try {
       const result = await signUp(email, password, name)
-      
+
+      // If user was created and they chose a profile picture, upload it and set avatar_url
+      if (result?.user?.id && avatarFile && avatarFile.type?.startsWith('image/')) {
+        try {
+          const path = `${result.user.id}/avatar`
+          const { error: uploadError } = await supabase.storage.from(AVATAR_BUCKET).upload(path, avatarFile, { upsert: true })
+          if (!uploadError) {
+            const { data: { publicUrl } } = supabase.storage.from(AVATAR_BUCKET).getPublicUrl(path)
+            await updateUserProfile(result.user.id, { name: name.trim() || undefined, avatar_url: publicUrl })
+          }
+        } catch (avatarErr) {
+          console.warn('Profile picture upload failed:', avatarErr)
+          // Still create account; they can add photo later in Profile
+        }
+      }
+
       // Supabase signup is successful if no error was thrown
       // When email confirmation is required, result.user might be null
       // but the account is still created successfully
@@ -187,6 +207,59 @@ function Signup() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 placeholder="Your name"
               />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Profile picture (Optional)
+              </label>
+              <div className="flex items-center gap-4">
+                <div className="flex-shrink-0 w-16 h-16 rounded-full bg-gray-100 border-2 border-gray-200 flex items-center justify-center overflow-hidden">
+                  {avatarPreview ? (
+                    <img src={avatarPreview} alt="Preview" className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="text-2xl text-gray-400" aria-hidden="true">👤</span>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <input
+                    id="avatar"
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (file) {
+                        if (!file.type.startsWith('image/')) {
+                          setError('Please choose an image file (e.g. JPG, PNG).')
+                          return
+                        }
+                        setAvatarFile(file)
+                        const reader = new FileReader()
+                        reader.onload = () => setAvatarPreview(reader.result || '')
+                        reader.readAsDataURL(file)
+                        setError('')
+                      } else {
+                        setAvatarFile(null)
+                        setAvatarPreview('')
+                      }
+                    }}
+                    className="block w-full text-sm text-gray-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                  />
+                  {avatarPreview && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAvatarFile(null)
+                        setAvatarPreview('')
+                        const input = document.getElementById('avatar')
+                        if (input) input.value = ''
+                      }}
+                      className="mt-1 text-xs text-gray-500 hover:text-red-600"
+                    >
+                      Remove photo
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">

@@ -2,7 +2,6 @@ import { Routes, Route, Outlet, useLocation, Navigate, useParams } from 'react-r
 import { useEffect } from 'react'
 import { AuthProvider } from './contexts/AuthContext'
 import { NotificationProvider } from './contexts/NotificationContext'
-import { PortraitModeProvider } from './contexts/PortraitModeContext'
 import ProtectedRoute from './components/ProtectedRoute'
 import BrandWatermark from './components/BrandWatermark'
 import PortraitFrame from './components/PortraitFrame'
@@ -31,6 +30,7 @@ import Messages from './pages/Messages'
 import EditPost from './pages/EditPost'
 import Publish from './pages/Publish'
 import Live from './pages/Live'
+import AdvancedAnalytics from './pages/AdvancedAnalytics'
 
 /** Redirect /studio to /studio/chat, preserving search (e.g. ?open=:id). */
 function StudioIndexRedirect() {
@@ -62,7 +62,6 @@ function PageViewTracker() {
 
 function App() {
   return (
-    <PortraitModeProvider>
       <AuthProvider>
         <NotificationProvider>
         <PortraitFrame>
@@ -81,6 +80,7 @@ function App() {
             <Route element={<AppLayout />}>
               <Route path="/" element={<Home />} />
               <Route path="/pricing" element={<Pricing />} />
+              <Route path="/advanced-analytics" element={<AdvancedAnalytics />} />
               <Route path="/help" element={<Help />} />
               <Route path="/privacy" element={<Privacy />} />
               <Route path="/terms" element={<Terms />} />
@@ -194,7 +194,6 @@ function App() {
         </PortraitFrame>
         </NotificationProvider>
       </AuthProvider>
-    </PortraitModeProvider>
   )
 }
 

@@ -12,6 +12,19 @@ const { createClient } = require('@supabase/supabase-js')
 const pdfParseModule = require('pdf-parse')
 const pdfParse = typeof pdfParseModule === 'function' ? pdfParseModule : (pdfParseModule.default || pdfParseModule)
 const { checkUploadLimit } = require('../middleware/usageLimits')
+// xport-js is pure JS; sas7bdat is optional (uses native fs-ext on some systems)
+let XportLibrary
+let SAS7BDAT
+try {
+  XportLibrary = require('xport-js').default || require('xport-js')
+} catch (_) {
+  XportLibrary = null
+}
+try {
+  SAS7BDAT = require('sas7bdat')
+} catch (_) {
+  SAS7BDAT = null
+}
 
 const router = express.Router()
 
@@ -235,13 +248,13 @@ const upload = multer({
       'application/octet-stream', // browser may send this for .json/.pdf
     ]
     const ext = (path.extname(file.originalname) || '').toLowerCase()
-    const allowedExt = ['.csv', '.xlsx', '.xls', '.json', '.pdf']
+    const allowedExt = ['.csv', '.xlsx', '.xls', '.json', '.pdf', '.xpt', '.sas7bdat']
     const mimeOk = allowedMimes.includes(file.mimetype)
     const extOk = allowedExt.includes(ext)
     if (mimeOk || extOk) {
       cb(null, true)
     } else {
-      cb(new Error('Allowed: CSV, Excel (.xlsx), JSON, or PDF'))
+      cb(new Error('Allowed: CSV, Excel (.xlsx), JSON, PDF, SAS XPORT (.xpt), or SAS dataset (.sas7bdat)'))
     }
   },
 })
@@ -381,9 +394,52 @@ router.post('/', getUserFromToken, upload.single('file'), checkUploadLimitWithTi
         error: 'Unsupported Excel format',
         message: 'Legacy .xls files are not supported. Please re-save as .xlsx and try again.'
       })
+    } else if (fileExt === '.sas7bdat') {
+      if (!SAS7BDAT) {
+        fs.unlinkSync(filePath)
+        return res.status(500).json({
+          error: 'SAS dataset format not available',
+          message: 'SAS dataset (.sas7bdat) support is optional and failed to install (e.g. missing build tools). Use SAS XPORT (.xpt) or CSV, or install Visual Studio Build Tools and run npm install again.'
+        })
+      }
+      try {
+        const rows = await SAS7BDAT.parse(filePath, { rowFormat: 'object' })
+        rawData = Array.isArray(rows) ? rows : []
+      } catch (sasErr) {
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
+        const msg = sasErr?.message || String(sasErr)
+        console.error('SAS7BDAT parse error:', msg)
+        return res.status(400).json({
+          error: 'SAS dataset could not be read',
+          message: msg.length < 200 ? msg : 'The .sas7bdat file may be corrupted, compressed, or from an unsupported SAS version. Try exporting as SAS XPORT (.xpt) or CSV.'
+        })
+      }
+    } else if (fileExt === '.xpt') {
+      if (!XportLibrary) {
+        fs.unlinkSync(filePath)
+        return res.status(500).json({
+          error: 'SAS XPORT format not available',
+          message: 'xport-js package is not installed. Add it to backend dependencies.'
+        })
+      }
+      try {
+        const lib = new XportLibrary(filePath)
+        rawData = []
+        for await (const obs of lib.read({ rowFormat: 'object' })) {
+          rawData.push(obs)
+        }
+      } catch (xptErr) {
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
+        const msg = xptErr?.message || String(xptErr)
+        console.error('XPT parse error:', msg)
+        return res.status(400).json({
+          error: 'SAS XPORT file could not be read',
+          message: msg.length < 200 ? msg : 'The .xpt file may be corrupted or in an unsupported variant.'
+        })
+      }
     } else {
       fs.unlinkSync(filePath) // Clean up
-      return res.status(400).json({ error: 'Unsupported file format. Use CSV, Excel (.xlsx), JSON, or PDF.' })
+      return res.status(400).json({ error: 'Unsupported file format. Use CSV, Excel (.xlsx), JSON, PDF, SAS XPORT (.xpt), or SAS dataset (.sas7bdat).' })
     }
 
     if (rawData.length === 0) {

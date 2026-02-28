@@ -18,10 +18,10 @@ function DeltaArrow({ value }) {
 function KPICard({ label, value, delta, subLabel, className = '' }) {
   return (
     <div className={`p-4 rounded-xl shadow-sm ${className}`} style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
-      <div className="text-xs font-medium uppercase tracking-wide" style={{ color: 'var(--muted)' }}>{label}</div>
-      <div className="text-[32px] font-bold mt-1 leading-none" style={{ color: 'var(--text)' }}>{value}</div>
+      <div className="text-xs font-medium uppercase tracking-wide truncate" style={{ color: 'var(--muted)' }} title={label}>{label}</div>
+      <div className="text-[clamp(1.45rem,2vw,2.2rem)] font-bold mt-1 leading-tight break-words" style={{ color: 'var(--text)' }}>{value}</div>
       {(delta != null || subLabel) && (
-        <div className="text-xs mt-1 flex items-center gap-2" style={{ color: 'var(--muted)' }}>
+        <div className="text-xs mt-1 flex items-start gap-2 flex-wrap" style={{ color: 'var(--muted)' }}>
           {delta != null && <DeltaArrow value={delta} />}
           {subLabel && <span>{subLabel}</span>}
         </div>
@@ -106,14 +106,14 @@ export default function KPIBlockView({ block }) {
 
   if (cards.length === 0) {
     return (
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
         <KPICard label="Total" value="—" />
       </div>
     )
   }
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+    <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
       {cards.map((c) => (
         <KPICard key={c.key} label={c.label} value={c.value} delta={c.delta} subLabel={c.subLabel} />
       ))}
