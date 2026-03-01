@@ -164,7 +164,13 @@ async function sendMessage(req, res) {
     // Notify recipient by email (fire-and-forget)
     const { data: senderProfile } = await db.from('shorts_user_profiles').select('name').eq('user_id', userId).maybeSingle()
     const senderName = senderProfile?.name || null
-    sendNewMessageNotification(to_user_id, senderName, String(body).trim()).catch((e) => console.warn('Message email notification failed:', e?.message || e))
+    sendNewMessageNotification(to_user_id, senderName, String(body).trim())
+      .then((sent) => {
+        if (!sent) {
+          console.warn('[email] message notification not sent', { to_user_id })
+        }
+      })
+      .catch((e) => console.warn('Message email notification failed:', e?.message || e))
 
     res.status(201).json(msg)
   } catch (err) {

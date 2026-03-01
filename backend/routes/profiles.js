@@ -162,12 +162,20 @@ router.get('/:userId', async (req, res) => {
     const dashboardsRows = dashboardsResult.data || []
     const dashboard_count = countResult.count ?? 0
 
-    // Post count (public posts by this user)
-    const { count: post_count } = await supabase
-      .from('posts')
-      .select('id', { count: 'exact', head: true })
-      .eq('author_id', data.user_id)
-      .eq('visibility', 'public')
+    // Post count (public posts by this user) + follower count
+    const [postCountResult, followerCountResult] = await Promise.all([
+      supabase
+        .from('posts')
+        .select('id', { count: 'exact', head: true })
+        .eq('author_id', data.user_id)
+        .eq('visibility', 'public'),
+      supabase
+        .from('follows')
+        .select('follower_id', { count: 'exact', head: true })
+        .eq('following_id', data.user_id)
+    ])
+    const post_count = postCountResult.count ?? 0
+    const follower_count = followerCountResult.count ?? 0
 
     // Map dashboard_id -> share_id from their public posts that have a share
     const { data: postsWithShare } = await supabase
@@ -199,7 +207,8 @@ router.get('/:userId', async (req, res) => {
       is_online: !!is_online,
       dashboard_count,
       dashboards,
-      post_count: post_count ?? 0
+      post_count,
+      follower_count
     })
   } catch (e) {
     console.error('profiles:', e)

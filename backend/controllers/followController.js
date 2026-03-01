@@ -1,4 +1,5 @@
 const { getSupabaseAdmin } = require('../utils/supabaseAdmin')
+const { sendFollowNotification } = require('../utils/emailNotifications')
 
 function getAdmin() {
   const admin = getSupabaseAdmin()
@@ -24,6 +25,12 @@ async function follow(req, res) {
       if (error.code === '23505') return res.json({ following: true }) // already following
       throw error
     }
+
+    // Notify followed user by email (fire-and-forget)
+    const { data: followerProfile } = await db.from('shorts_user_profiles').select('name').eq('user_id', followerId).maybeSingle()
+    const followerName = followerProfile?.name || null
+    sendFollowNotification(followingId, followerName, followerId).catch((e) => console.warn('Follow email notification failed:', e?.message || e))
+
     res.status(201).json({ following: true })
   } catch (err) {
     console.error('follow:', err)
@@ -56,7 +63,7 @@ async function check(req, res) {
     const followingId = req.query.user_id
     if (!followingId) return res.status(400).json({ error: 'user_id query required' })
     const db = getAdmin()
-    const { data, error } = await db.from('follows').select('id').eq('follower_id', followerId).eq('following_id', followingId).maybeSingle()
+    const { data, error } = await db.from('follows').select('follower_id').eq('follower_id', followerId).eq('following_id', followingId).maybeSingle()
     if (error) throw error
     res.json({ following: !!data })
   } catch (err) {

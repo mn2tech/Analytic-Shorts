@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import apiClient from '../config/api'
 import Loader from '../components/Loader'
+import { useAuth } from '../contexts/AuthContext'
+import { followUser, unfollowUser, checkFollow } from '../services/followService'
 
 function getInitials(name) {
   if (!name || !String(name).trim()) return '?'
@@ -27,10 +29,13 @@ function timeAgo(dateStr) {
 }
 
 export default function UserProfile() {
+  const { user } = useAuth()
   const { userId } = useParams()
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [followed, setFollowed] = useState(false)
+  const [followLoading, setFollowLoading] = useState(false)
 
   useEffect(() => {
     if (!userId) {
@@ -56,6 +61,23 @@ export default function UserProfile() {
     return () => { cancelled = true }
   }, [userId])
 
+  useEffect(() => {
+    const targetUserId = profile?.user_id
+    if (!user?.id || !targetUserId || String(user.id) === String(targetUserId)) {
+      setFollowed(false)
+      return
+    }
+    let cancelled = false
+    checkFollow(targetUserId)
+      .then((isFollowing) => {
+        if (!cancelled) setFollowed(!!isFollowing)
+      })
+      .catch(() => {
+        if (!cancelled) setFollowed(false)
+      })
+    return () => { cancelled = true }
+  }, [user?.id, profile?.user_id])
+
   if (loading) {
     return (
       <div className="min-h-[40vh] flex items-center justify-center">
@@ -80,6 +102,7 @@ export default function UserProfile() {
     ? { objectPosition: `${focal.x}% ${focal.y}%` }
     : undefined
   const email = profile.email != null && String(profile.email).trim() ? String(profile.email).trim() : null
+  const canFollow = !!user?.id && !!profile?.user_id && String(user.id) !== String(profile.user_id)
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-8">
@@ -126,7 +149,48 @@ export default function UserProfile() {
 
         {/* Stats: dashboards */}
         <div className="mt-6 pt-4 border-t border-gray-100">
-          <h2 className="text-sm font-semibold text-gray-900 mb-3">Stats</h2>
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <h2 className="text-sm font-semibold text-gray-900">Stats</h2>
+            {canFollow && (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={followLoading}
+                  onClick={async () => {
+                    const targetUserId = profile.user_id
+                    const previousFollowed = followed
+                    const previousCount = Number(profile.follower_count ?? 0)
+                    const nextFollowed = !previousFollowed
+                    setFollowLoading(true)
+                    setFollowed(nextFollowed)
+                    setProfile((prev) => prev ? { ...prev, follower_count: Math.max(0, previousCount + (nextFollowed ? 1 : -1)) } : prev)
+                    try {
+                      const res = await (nextFollowed ? followUser(targetUserId) : unfollowUser(targetUserId))
+                      const confirmedFollowed = !!res?.following
+                      setFollowed(confirmedFollowed)
+                      setProfile((prev) => prev ? { ...prev, follower_count: Math.max(0, previousCount + (confirmedFollowed ? 1 : 0)) } : prev)
+                    } catch {
+                      setFollowed(previousFollowed)
+                      setProfile((prev) => prev ? { ...prev, follower_count: previousCount } : prev)
+                    } finally {
+                      setFollowLoading(false)
+                    }
+                  }}
+                  className={`text-xs border px-3 py-1.5 rounded-lg inline-flex items-center gap-1.5 disabled:opacity-50 ${
+                    followed ? 'text-gray-600 bg-gray-100 border-gray-200 hover:bg-gray-200' : 'text-blue-600 border-blue-200 hover:bg-blue-50'
+                  }`}
+                >
+                  {followLoading ? '…' : followed ? 'Following' : 'Follow'}
+                </button>
+                <Link
+                  to={`/messages?with=${profile.user_id}`}
+                  className="text-xs text-gray-600 hover:text-gray-900 border border-gray-300 px-3 py-1.5 rounded-lg hover:bg-gray-50 inline-flex items-center gap-1.5"
+                >
+                  Message
+                </Link>
+              </div>
+            )}
+          </div>
           <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600 mb-4">
             <span className="flex items-center gap-1.5">
               <svg className="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -139,6 +203,12 @@ export default function UserProfile() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
               </svg>
               <strong className="text-gray-900">{profile.post_count ?? 0}</strong> post{(profile.post_count ?? 0) !== 1 ? 's' : ''} on Feed
+            </span>
+            <span className="flex items-center gap-1.5">
+              <svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5V18a4 4 0 00-5-3.87M17 20H7m10 0v-2c0-.653-.126-1.276-.356-1.848M7 20H2V18a4 4 0 015-3.87M7 20v-2c0-.653.126-1.276.356-1.848m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              <strong className="text-gray-900">{profile.follower_count ?? 0}</strong> follower{(profile.follower_count ?? 0) !== 1 ? 's' : ''}
             </span>
           </div>
           {Array.isArray(profile.dashboards) && profile.dashboards.length > 0 && (

@@ -159,7 +159,7 @@ async function getPost(req, res) {
       return res.status(404).json({ error: 'Post not found' })
     }
     const authorFollowed = req.user && post.author_id && post.author_id !== req.user.id
-      ? await db.from('follows').select('id').eq('follower_id', req.user.id).eq('following_id', post.author_id).maybeSingle()
+      ? await db.from('follows').select('follower_id').eq('follower_id', req.user.id).eq('following_id', post.author_id).maybeSingle()
       : { data: null }
     const [likeCount, commentCount, saved, liked, profile] = await Promise.all([
       db.from('post_likes').select('id', { count: 'exact', head: true }).eq('post_id', id),
