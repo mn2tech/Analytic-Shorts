@@ -294,19 +294,6 @@ function AppLayout() {
       }
     })()
 
-  if (isStudioFullscreen) {
-    return <Outlet />
-  }
-
-  const navLinkClass = ({ isActive }) =>
-    `flex items-center gap-3 rounded-lg text-sm transition-colors py-2.5 pr-3 pl-3 border-l-4 ${
-      isActive
-        ? 'bg-blue-100 text-blue-800 font-semibold border-blue-600'
-        : 'border-transparent font-medium text-gray-700 hover:bg-gray-100'
-    }`
-
-  const hideFooter = location.pathname.startsWith('/studio')
-
   const loadSamgovOpportunities = useCallback(async () => {
     if (quickActionLoading) return
     setQuickActionLoading('samgov')
@@ -355,6 +342,19 @@ function AppLayout() {
       setQuickActionLoading(null)
     }
   }, [navigate, quickActionLoading])
+
+  if (isStudioFullscreen) {
+    return <Outlet />
+  }
+
+  const navLinkClass = ({ isActive }) =>
+    `flex items-center gap-3 rounded-lg text-sm transition-colors py-2.5 pr-3 pl-3 border-l-4 ${
+      isActive
+        ? 'bg-blue-100 text-blue-800 font-semibold border-blue-600'
+        : 'border-transparent font-medium text-gray-700 hover:bg-gray-100'
+    }`
+
+  const hideFooter = location.pathname.startsWith('/studio')
 
   return (
     <div className="flex min-h-screen bg-gray-50">

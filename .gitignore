@@ -36,6 +36,7 @@ backend/data-lake
 
 # Keep specific sample datasets tracked
 !sample-usaspending-data.csv
+!backend/data/nfl-schedule-2025.csv
 
 # IDE
 .vscode

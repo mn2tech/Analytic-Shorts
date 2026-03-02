@@ -1,8 +1,12 @@
-import { useState, useEffect } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { Link, useSearchParams, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { getConversations, getThread, sendMessage } from '../services/messagesService'
+import { supabase } from '../lib/supabase'
 import Loader from '../components/Loader'
+
+const TYPING_DEBOUNCE_MS = 300
+const TYPING_TIMEOUT_MS = 2500
 
 function getInitials(name) {
   if (!name || !String(name).trim()) return '?'
@@ -20,10 +24,34 @@ function formatTime(dateStr) {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
+// Parse with userId from search ?with= or hash #with= (hash survives email client redirects)
+function parseWithUserId(searchParams, location) {
+  const fromSearch = searchParams.get('with')
+  if (fromSearch) return fromSearch
+  const hash = location.hash || ''
+  const m = hash.match(/#(?:with|w)=([^&]+)/)
+  if (m) {
+    try {
+      return decodeURIComponent(m[1])
+    } catch {
+      return null
+    }
+  }
+  return null
+}
+
 export default function Messages() {
   const { user } = useAuth()
+  const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
-  const withUserId = searchParams.get('with')
+  const withUserId = parseWithUserId(searchParams, location)
+
+  // Sync hash to search params so URL is consistent (e.g. when arriving from email link with #with=uuid)
+  useEffect(() => {
+    if (withUserId && !searchParams.get('with')) {
+      setSearchParams({ with: withUserId }, { replace: true })
+    }
+  }, [withUserId, searchParams, setSearchParams])
 
   const [conversations, setConversations] = useState([])
   const [loadingConvos, setLoadingConvos] = useState(true)
@@ -32,6 +60,65 @@ export default function Messages() {
   const [reply, setReply] = useState('')
   const [sending, setSending] = useState(false)
   const [error, setError] = useState(null)
+  const [partnerTyping, setPartnerTyping] = useState(false)
+  const messagesEndRef = useRef(null)
+  const messagesContainerRef = useRef(null)
+
+  const scrollToBottom = useCallback((smooth = true) => {
+    messagesEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'end' })
+  }, [])
+
+  useEffect(() => {
+    if (thread?.messages?.length) scrollToBottom(true)
+  }, [thread?.messages?.length, scrollToBottom])
+
+  const channelRef = useRef(null)
+
+  // Supabase Realtime: typing indicator – subscribe and store channel
+  useEffect(() => {
+    if (!user?.id || !withUserId) return
+    const channelName = `dm:${[user.id, withUserId].sort().join('-')}`
+    const channel = supabase.channel(channelName)
+    channelRef.current = channel
+    let partnerTimeout = null
+
+    channel
+      .on('broadcast', { event: 'typing' }, ({ payload }) => {
+        if (payload?.userId === withUserId && payload?.typing) {
+          setPartnerTyping(true)
+          if (partnerTimeout) clearTimeout(partnerTimeout)
+          partnerTimeout = setTimeout(() => setPartnerTyping(false), TYPING_TIMEOUT_MS)
+        }
+      })
+      .subscribe()
+
+    return () => {
+      if (partnerTimeout) clearTimeout(partnerTimeout)
+      channelRef.current = null
+      supabase.removeChannel(channel)
+    }
+  }, [user?.id, withUserId])
+
+  const typingDebounceRef = useRef(null)
+
+  useEffect(() => {
+    if (!user?.id || !withUserId || !channelRef.current) return
+    const ch = channelRef.current
+    if (reply.trim().length > 0) {
+      if (typingDebounceRef.current) clearTimeout(typingDebounceRef.current)
+      typingDebounceRef.current = setTimeout(() => {
+        ch.send({ type: 'broadcast', event: 'typing', payload: { userId: user.id, typing: true } })
+      }, TYPING_DEBOUNCE_MS)
+    } else {
+      if (typingDebounceRef.current) clearTimeout(typingDebounceRef.current)
+      typingDebounceRef.current = setTimeout(() => {
+        ch.send({ type: 'broadcast', event: 'typing', payload: { userId: user.id, typing: false } })
+      }, TYPING_DEBOUNCE_MS)
+    }
+    return () => {
+      if (typingDebounceRef.current) clearTimeout(typingDebounceRef.current)
+    }
+  }, [reply, user?.id, withUserId])
 
   useEffect(() => {
     if (!user) return
@@ -47,18 +134,50 @@ export default function Messages() {
       setThread(null)
       return
     }
+    if (String(withUserId) === String(user.id)) {
+      setSearchParams({})
+      setThread(null)
+      setError(null)
+      return
+    }
     setLoadingThread(true)
     setError(null)
     getThread(withUserId)
       .then((data) => {
         setThread(data)
+        setError(null)
         // Backend marked messages as read; refresh conversation list so blue dot updates
         getConversations().then((r) => setConversations(r.conversations || []))
         window.dispatchEvent(new CustomEvent('messages-unread-changed'))
       })
-      .catch((err) => setError(err.response?.data?.error || err.message))
+      .catch((err) => {
+        const msg = err.response?.data?.error || err.message
+        const details = err.response?.data?.details
+        setError(details ? `${msg} (${details})` : msg)
+        if (msg && String(msg).includes('with yourself')) {
+          setSearchParams({})
+        }
+      })
       .finally(() => setLoadingThread(false))
   }, [user, withUserId])
+
+  const retryLoadThread = useCallback(() => {
+    if (!withUserId || !user) return
+    setError(null)
+    setLoadingThread(true)
+    getThread(withUserId)
+      .then((data) => {
+        setThread(data)
+        getConversations().then((r) => setConversations(r.conversations || []))
+        window.dispatchEvent(new CustomEvent('messages-unread-changed'))
+      })
+      .catch((err) => {
+        const msg = err.response?.data?.error || err.message
+        const details = err.response?.data?.details
+        setError(details ? `${msg} (${details})` : msg)
+      })
+      .finally(() => setLoadingThread(false))
+  }, [withUserId, user])
 
   const handleSend = async (e) => {
     e.preventDefault()
@@ -67,6 +186,8 @@ export default function Messages() {
     try {
       const sent = await sendMessage(withUserId, reply.trim())
       setReply('')
+      setPartnerTyping(false)
+      if (channelRef.current) channelRef.current.send({ type: 'broadcast', event: 'typing', payload: { userId: user.id, typing: false } })
       setThread((prev) => (prev ? { ...prev, messages: [...(prev.messages || []), sent] } : null))
     } catch (err) {
       setError(err.response?.data?.error || err.message)
@@ -153,9 +274,22 @@ export default function Messages() {
           {withUserId && !loadingThread && error && !thread && (
             <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
               <p className="text-red-600 font-medium mb-1">Couldn&apos;t load conversation</p>
-              <p className="text-sm text-gray-600 mb-4">{error}</p>
-              <p className="text-xs text-gray-500">Make sure the direct_messages migration has been run in Supabase. Then try again from the Feed.</p>
-              <Link to="/feed" className="mt-4 text-blue-600 hover:underline text-sm">Back to Feed</Link>
+              <p className="text-sm text-gray-600 mb-2">{error}</p>
+              {String(error).toLowerCase().includes('auth') || String(error).toLowerCase().includes('token') ? (
+                <p className="text-xs text-gray-500 mb-4">Your session may have expired. Try signing in again.</p>
+              ) : (
+                <p className="text-xs text-gray-500 mb-4">If this link came from an email, try opening it again or message from the Feed.</p>
+              )}
+              <div className="flex gap-3 justify-center flex-wrap">
+                <button
+                  type="button"
+                  onClick={retryLoadThread}
+                  className="px-4 py-2 text-sm font-medium text-blue-600 border border-blue-600 rounded-lg hover:bg-blue-50"
+                >
+                  Retry
+                </button>
+                <Link to="/feed" className="px-4 py-2 text-sm font-medium text-blue-600 hover:underline">Back to Feed</Link>
+              </div>
             </div>
           )}
           {withUserId && !loadingThread && !thread && !error && (
@@ -177,7 +311,7 @@ export default function Messages() {
                 </div>
                 <p className="font-semibold text-gray-900">{thread.other_display_name}</p>
               </div>
-              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              <div ref={messagesContainerRef} className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-3 scroll-smooth">
                 {thread.messages?.length === 0 && (
                   <p className="text-center text-gray-500 text-sm">No messages yet. Say hello!</p>
                 )}
@@ -186,11 +320,11 @@ export default function Messages() {
                   return (
                     <div
                       key={m.id}
-                      className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}
+                      className={`flex ${isMe ? 'justify-end' : 'justify-start'} animate-fade-in`}
                     >
                       <div
-                        className={`max-w-[85%] rounded-2xl px-4 py-2 ${
-                          isMe ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-900'
+                        className={`max-w-[85%] rounded-2xl px-4 py-2 shadow-sm ${
+                          isMe ? 'bg-blue-600 text-white rounded-br-md' : 'bg-gray-100 text-gray-900 rounded-bl-md'
                         }`}
                       >
                         <p className="text-sm whitespace-pre-wrap break-words">{m.body}</p>
@@ -201,6 +335,18 @@ export default function Messages() {
                     </div>
                   )
                 })}
+                {partnerTyping && (
+                  <div className="flex justify-start">
+                    <div className="bg-gray-100 text-gray-500 rounded-2xl rounded-bl-md px-4 py-3 shadow-sm">
+                      <span className="inline-flex gap-1" aria-label="Typing">
+                        <span className="w-2 h-2 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+                        <span className="w-2 h-2 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+                        <span className="w-2 h-2 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+                      </span>
+                    </div>
+                  </div>
+                )}
+                <div ref={messagesEndRef} aria-hidden="true" className="h-0" />
               </div>
               {error && (
                 <div className="px-4 py-2 bg-red-50 text-red-700 text-sm">{error}</div>

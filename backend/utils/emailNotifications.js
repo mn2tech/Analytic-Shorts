@@ -27,9 +27,7 @@ async function sendEmail(toEmail, subject, html) {
   if (!toEmail || !String(toEmail).trim()) return
   const key = RESEND_API_KEY?.trim()
   if (!key) {
-    if (process.env.NODE_ENV !== 'production') {
-      console.log('[email] (no RESEND_API_KEY) would send:', { to: toEmail, subject })
-    }
+    console.warn('[email] RESEND_API_KEY not set — skipping', { to: toEmail?.slice(0, 20) + '…', subject })
     return false
   }
   if (typeof fetch === 'undefined') {
@@ -74,7 +72,7 @@ function escapeHtml(s) {
 }
 
 /** Notify recipient when they receive a new direct message. */
-async function sendNewMessageNotification(recipientUserId, senderDisplayName, bodyPreview) {
+async function sendNewMessageNotification(recipientUserId, senderDisplayName, bodyPreview, senderUserId = null) {
   const email = await getUserEmail(recipientUserId)
   if (!email) {
     console.warn('[email] message notification skipped: recipient has no auth email', { recipientUserId })
@@ -82,7 +80,10 @@ async function sendNewMessageNotification(recipientUserId, senderDisplayName, bo
   }
   const name = escapeHtml(senderDisplayName || 'Someone')
   const preview = escapeHtml((bodyPreview || '').slice(0, 200))
-  const link = `${FRONTEND_URL}/messages`
+  const encoded = senderUserId ? encodeURIComponent(String(senderUserId)) : ''
+  const link = senderUserId
+    ? `${FRONTEND_URL}/messages?with=${encoded}#with=${encoded}`
+    : `${FRONTEND_URL}/messages`
   return sendEmail(
     email,
     `${name} sent you a message — Analytics Shorts`,

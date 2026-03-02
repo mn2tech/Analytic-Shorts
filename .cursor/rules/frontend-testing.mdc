@@ -1,0 +1,51 @@
+---
+description: How to test the frontend (Studio, Agency mode, Vitest)
+globs: src/**/*.jsx, src/**/*.js, src/**/*.tsx, src/**/*.ts
+alwaysApply: false
+---
+
+# Frontend Testing (Cursor Agent)
+
+When asked to "test the frontend" or "verify the UI", follow this flow.
+
+## 1. Run unit/component tests
+
+From repo root (PowerShell use `;` not `&&`):
+
+```bash
+npm run test:ui
+```
+
+Runs Vitest for `src/**` (e.g. `TrendBlockView.test.jsx`, `evidenceToBlocks`-related tests). Backend tests are under `backend/` and run with `node --test` from `backend/`.
+
+## 2. Start app for manual / E2E checks
+
+- **Frontend:** `npm run dev` (Vite, usually http://localhost:3000)
+- **Backend:** `cd backend; npm run server` (Express, usually port 5000)
+- **Both:** `npm run dev:all` (concurrently)
+
+Ensure backend is up before testing Studio or PDF export (API calls go to same origin in dev via Vite proxy).
+
+## 3. What to verify in the UI
+
+- **AAI Studio:** Data → Template → Build dashboard. Then:
+  - **Analyst mode:** KPI blocks, trend chart, breakdowns/drivers, no regression.
+  - **Agency mode:** Report mode = Agency → Executive Summary, Key Metrics (period total first), one Trend, tables (Top Products, Top Categories, Top Regions, Payment Methods) with Name / Value / Share. No "Latest revenue…", no Sample/Quality text.
+- **Export:** Export Branded PDF (and Download HTML) with mode sent; Agency mode uses client-ready report.
+
+## 4. Using the browser (MCP)
+
+If cursor-ide-browser is available: navigate to the dev URL, use `browser_snapshot` to inspect the page, then click/type as needed. Prefer short waits (1–3s) and snapshots to check readiness. Lock before interacting, unlock when done.
+
+## 5. Test IDs for automation
+
+Agency report view and tables use stable `data-testid` attributes:
+
+- `agency-report-view`
+- `agency-kpi-total`
+- `agency-table-products`
+- `agency-table-categories`
+- `agency-table-regions`
+- `agency-table-payments`
+
+Use these in Vitest (Testing Library) or browser automation to assert visibility and content.

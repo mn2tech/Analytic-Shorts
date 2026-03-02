@@ -1,0 +1,72 @@
+---
+description: Agent that tests Agency Report frontend vs HTML export parity and fixes until they match
+globs: "**/agencyReportModel.js,**/evidenceToAgencyModel.js,**/AgencyReportView.jsx,**/agency_report_agency.html,**/renderTemplate.js"
+alwaysApply: false
+---
+
+# Agency Report Parity Agent
+
+When the user asks to **test agency report parity** or **verify frontend matches HTML export**, run this agent loop until the issue is fixed.
+
+## Goal
+
+Ensure the Agency Report View (React UI) and the exported HTML/PDF (backend) show the **same content**: Executive Summary, Key Metrics, Trend, **dimension tables** (Top Products, Top Categories, Top Regions, Payment Methods), and Suggested Questions. If the frontend shows these tables but the HTML page does not (or vice versa), fix the code and re-test until both match.
+
+## 1. Run automated tests
+
+**Backend (from repo root; PowerShell use `;` not `&&`):**
+
+```bash
+cd backend; node --test studio-ai/evidence/evidenceToAgencyModel.test.js
+```
+
+If you get `spawn EPERM`, run the test with full permissions (e.g. outside sandbox).
+
+All tests must pass, including:
+
+- `pickTopNByDimension` from **breakdowns** and from **drivers** (both driver-level and **row-level** `dimension` on `topDrivers[]`).
+- `buildAgencyReportModel` builds `tables` from **drivers only** when there are no breakdowns (row-level dimension).
+- **Rendered agency HTML** includes "Top Categories", "Top Regions", "Payment Methods", `<table>`, and row data (e.g. "Electronics", "Credit Card").
+
+**Frontend:**
+
+```bash
+npm run test:ui
+```
+
+Ensure `AgencyReportView` tests pass and that the view model builds tables (e.g. from `buildAgencyViewModel` in `src/utils/agencyReportModel.js`).
+
+## 2. If backend tests fail (e.g. tables empty in model or HTML)
+
+- **Empty `model.tables` with drivers present:** Backend `pickTopNByDimension` in `backend/studio-ai/evidence/evidenceToAgencyModel.js` must collect rows from **both**:
+  - **Breakdowns:** match by `b.dimension`.
+  - **Drivers:** iterate every `evidence.drivers[].topDrivers[]` and include rows where **row.dimension** (or, if missing, driver-level `d.dimension`) matches the requested dimension/hint.
+- Ensure **row-level dimension** is used: the engine sends `topDrivers` where each item has `dimension`, `group`, `total`; the driver object itself may have no top-level `dimension`.
+
+## 3. If frontend tests fail (tables missing in UI)
+
+- In `src/utils/agencyReportModel.js`, `pickTopNByDimension` must also collect from **drivers** by iterating `topDrivers` and matching **row.dimension** (and optionally falling back to a driver-level dimension if present).
+- Ensure `tableConfigs` dimension keys (e.g. `product_category`, `state`, `payment_method`) align with the dimension names in the evidence (breakdowns and drivers).
+
+## 4. If tests pass but user reports HTML still doesn’t match
+
+- Confirm the **same evidence** is used for both: frontend gets evidence from the run; HTML export uses the same payload with `mode: 'agency'` and the backend builds the model from that evidence.
+- Check `backend/utils/renderTemplate.js`: `renderAgencyModeReportHtml(model)` must pass `model.tables` into the template (e.g. `tables: model.tables || []`).
+- Check `backend/templates/agency_report_agency.html`: there must be a `{{#tables}}` block that renders each table’s `title` and `rows` (name, value, share).
+
+## 5. Fix and re-run loop
+
+1. Apply the fix (backend and/or frontend).
+2. Run the backend and frontend tests again.
+3. Repeat until all tests pass and the user confirms the HTML export matches the frontend.
+
+## Key files
+
+| Purpose | Path |
+|--------|------|
+| Backend model + pickTopNByDimension | `backend/studio-ai/evidence/evidenceToAgencyModel.js` |
+| Backend tests (incl. HTML parity) | `backend/studio-ai/evidence/evidenceToAgencyModel.test.js` |
+| Frontend model | `src/utils/agencyReportModel.js` |
+| Frontend view | `src/components/aaiStudio/AgencyReportView.jsx` |
+| HTML template | `backend/templates/agency_report_agency.html` |
+| Render HTML | `backend/utils/renderTemplate.js` → `renderAgencyModeReportHtml` |

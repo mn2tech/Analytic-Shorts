@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import Navbar from '../components/Navbar'
@@ -9,15 +9,22 @@ function Login() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [searchParams] = useSearchParams()
+  const redirectTo = searchParams.get('redirect')
   const { signIn, user } = useAuth()
   const navigate = useNavigate()
+
+  const safeRedirect =
+    redirectTo && redirectTo.startsWith('/') && !redirectTo.startsWith('//')
+      ? decodeURIComponent(redirectTo)
+      : '/feed'
 
   // Redirect if already logged in
   useEffect(() => {
     if (user) {
-      navigate('/feed')
+      navigate(safeRedirect, { replace: true })
     }
-  }, [user, navigate])
+  }, [user, navigate, safeRedirect])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -39,13 +46,12 @@ function Login() {
         // Verify session was created
         const { data: { session } } = await supabase.auth.getSession()
         if (session) {
-          // Session is set, auth state should update automatically via onAuthStateChange
-          navigate('/feed')
+          navigate(safeRedirect, { replace: true })
         } else {
           setError('Session not created. Please try again.')
         }
       } else if (result && result.session) {
-        navigate('/feed')
+        navigate(safeRedirect, { replace: true })
       } else {
         setError('Sign in failed. Please check your credentials and try again.')
       }

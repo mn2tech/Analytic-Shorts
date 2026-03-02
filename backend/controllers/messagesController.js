@@ -88,14 +88,20 @@ async function getUnreadCount(req, res) {
   }
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 // GET /api/messages?with=:userId - get thread with a user
 async function getThread(req, res) {
   try {
     const userId = req.user?.id
     if (!userId) return res.status(401).json({ error: 'Authentication required' })
-    const withUserId = req.query.with
+    const raw = req.query.with
+    const withUserId = Array.isArray(raw) ? String(raw[0] || '').trim() : String(raw || '').trim()
     if (!withUserId) return res.status(400).json({ error: 'Query "with" (user id) required' })
-    if (withUserId === userId) return res.status(400).json({ error: 'Cannot load thread with yourself' })
+    if (!UUID_RE.test(withUserId)) {
+      return res.status(400).json({ error: 'Invalid user id in link', details: 'The link may have been corrupted. Try opening from the Feed instead.' })
+    }
+    if (withUserId === String(userId)) return res.status(400).json({ error: 'Cannot load thread with yourself' })
 
     const db = getAdmin()
     // Mark as read: messages in this thread sent to the current user
@@ -164,7 +170,7 @@ async function sendMessage(req, res) {
     // Notify recipient by email (fire-and-forget)
     const { data: senderProfile } = await db.from('shorts_user_profiles').select('name').eq('user_id', userId).maybeSingle()
     const senderName = senderProfile?.name || null
-    sendNewMessageNotification(to_user_id, senderName, String(body).trim())
+    sendNewMessageNotification(to_user_id, senderName, String(body).trim(), userId)
       .then((sent) => {
         if (!sent) {
           console.warn('[email] message notification not sent', { to_user_id })
