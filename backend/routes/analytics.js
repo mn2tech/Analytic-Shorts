@@ -1,6 +1,7 @@
 const express = require('express')
 const router = express.Router()
 const { createClient } = require('@supabase/supabase-js')
+const { sendEmail } = require('../utils/emailNotifications')
 
 const supabaseUrl = process.env.SUPABASE_URL
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -347,6 +348,156 @@ function getVisitsByDay(logs) {
     .sort((a, b) => a[0].localeCompare(b[0]))
     .map(([day, count]) => ({ day, count }))
 }
+
+/**
+ * POST /api/analytics/broadcast-email
+ * Admin only. Sends an email to all users.
+ * Body: { subject: string, html?: string, body?: string }
+ * - subject: required
+ * - html: HTML content (use this or body)
+ * - body: plain text; if html not provided, wrapped in <p> tags
+ */
+router.post('/broadcast-email', getUserFromToken, isAdmin, async (req, res) => {
+  try {
+    const { subject, html, body } = req.body || {}
+    if (!subject || typeof subject !== 'string' || !subject.trim()) {
+      return res.status(400).json({ error: 'subject is required' })
+    }
+    const emailHtml = html && typeof html === 'string'
+      ? html
+      : body && typeof body === 'string'
+        ? `<p>${String(body).replace(/\n/g, '</p><p>')}</p>`
+        : null
+    if (!emailHtml) {
+      return res.status(400).json({ error: 'html or body is required' })
+    }
+
+    if (!supabase?.auth?.admin?.listUsers) {
+      return res.status(500).json({ error: 'Auth admin API not available' })
+    }
+
+    const emails = new Set()
+    let page = 1
+    const perPage = 1000
+    let hasMore = true
+
+    while (hasMore) {
+      const { data, error } = await supabase.auth.admin.listUsers({ page, perPage })
+      if (error) {
+        console.error('[broadcast-email] listUsers error:', error)
+        return res.status(500).json({ error: 'Failed to fetch users', details: error.message })
+      }
+      const users = data?.users || []
+      users.forEach((u) => {
+        const e = u?.email?.trim()
+        if (e) emails.add(e)
+      })
+      hasMore = users.length >= perPage
+      page++
+    }
+
+    const emailList = Array.from(emails)
+    let sent = 0
+    let failed = 0
+
+    for (const to of emailList) {
+      const ok = await sendEmail(to, subject.trim(), emailHtml)
+      if (ok) sent++
+      else failed++
+      // Small delay to avoid rate limits (Resend allows high throughput but be conservative)
+      if (emailList.length > 10) await new Promise((r) => setTimeout(r, 50))
+    }
+
+    console.log(`[broadcast-email] Sent ${sent}/${emailList.length} by ${req.user?.email}`)
+    return res.json({
+      total: emailList.length,
+      sent,
+      failed,
+      message: `Email sent to ${sent} of ${emailList.length} users`,
+    })
+  } catch (err) {
+    console.error('[broadcast-email]', err)
+    return res.status(500).json({ error: 'Broadcast failed', message: err?.message || 'Unknown error' })
+  }
+})
+
+/**
+ * POST /api/analytics/reminder-no-dashboards
+ * Admin only. Sends a reminder to users who have not created any dashboard.
+ * Tells them they can create 3 dashboards free and post on the Feed.
+ */
+router.post('/reminder-no-dashboards', getUserFromToken, isAdmin, async (req, res) => {
+  try {
+    if (!supabase?.auth?.admin?.listUsers) {
+      return res.status(500).json({ error: 'Auth admin API not available' })
+    }
+
+    // Get user_ids who have at least one dashboard
+    const { data: dashboards } = await supabase
+      .from('shorts_dashboards')
+      .select('user_id')
+    const usersWithDashboards = new Set((dashboards || []).map((d) => d?.user_id).filter(Boolean))
+
+    // Get all auth users and filter to those with 0 dashboards
+    const noDashboardEmails = []
+    let page = 1
+    const perPage = 1000
+    let hasMore = true
+
+    while (hasMore) {
+      const { data, error } = await supabase.auth.admin.listUsers({ page, perPage })
+      if (error) {
+        console.error('[reminder-no-dashboards] listUsers error:', error)
+        return res.status(500).json({ error: 'Failed to fetch users', details: error.message })
+      }
+      const users = data?.users || []
+      users.forEach((u) => {
+        if (usersWithDashboards.has(u?.id)) return
+        const e = u?.email?.trim()
+        if (e) noDashboardEmails.push(e)
+      })
+      hasMore = users.length >= perPage
+      page++
+    }
+
+    const frontendUrl = (process.env.FRONTEND_URL || process.env.VITE_APP_URL || 'http://localhost:3000').replace(/\/$/, '')
+
+    const subject = 'Create your first dashboard — free!'
+    const html = `
+      <p>Hi there,</p>
+      <p>You signed up for NM2TECH Analytics Shorts but haven't created a dashboard yet.</p>
+      <p><strong>Good news:</strong> You can create <strong>3 dashboards for free</strong> and share them on the Feed!</p>
+      <p>Here's how:</p>
+      <ol>
+        <li>Upload a CSV or Excel file, or explore public data APIs</li>
+        <li>Get instant charts and insights</li>
+        <li>Save your dashboard and post it to the Feed for the community to see</li>
+      </ol>
+      <p><a href="${frontendUrl}">Get started →</a></p>
+      <p style="color:#888;font-size:12px;">You received this because you have an Analytics Shorts account.</p>
+    `.trim().replace(/\n\s+/g, '\n')
+
+    let sent = 0
+    let failed = 0
+    for (const to of noDashboardEmails) {
+      const ok = await sendEmail(to, subject, html)
+      if (ok) sent++
+      else failed++
+      if (noDashboardEmails.length > 10) await new Promise((r) => setTimeout(r, 50))
+    }
+
+    console.log(`[reminder-no-dashboards] Sent ${sent}/${noDashboardEmails.length} to users with 0 dashboards by ${req.user?.email}`)
+    return res.json({
+      total: noDashboardEmails.length,
+      sent,
+      failed,
+      message: `Reminder sent to ${sent} of ${noDashboardEmails.length} users (those with no dashboards)`,
+    })
+  } catch (err) {
+    console.error('[reminder-no-dashboards]', err)
+    return res.status(500).json({ error: 'Reminder failed', message: err?.message || 'Unknown error' })
+  }
+})
 
 module.exports = router
 

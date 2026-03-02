@@ -314,6 +314,8 @@ app.use((req, res) => {
       'GET /api/analytics/community',
       'GET /api/analytics/admin-check',
       'GET /api/analytics/new-members',
+      'POST /api/analytics/broadcast-email',
+      'POST /api/analytics/reminder-no-dashboards',
       'POST /api/posts',
       'GET /api/posts/:id',
       'POST /api/posts/:id/like',
