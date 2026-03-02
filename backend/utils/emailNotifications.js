@@ -101,7 +101,7 @@ async function sendFollowNotification(recipientUserId, followerDisplayName, foll
   const email = await getUserEmail(recipientUserId)
   if (!email) return
   const follower = escapeHtml(followerDisplayName || 'Someone')
-  const link = followerUserId ? `${FRONTEND_URL}/users/${followerUserId}` : `${FRONTEND_URL}/feed?scope=following`
+  const link = followerUserId ? `${FRONTEND_URL}/profile/${followerUserId}` : `${FRONTEND_URL}/feed?scope=following`
   return sendEmail(
     email,
     `${follower} started following you — Analytics Shorts`,

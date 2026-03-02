@@ -12,6 +12,10 @@ const supabase = supabaseUrl && supabaseServiceKey
     })
   : null
 
+function looksLikeUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ''))
+}
+
 // Update current user's last_seen_at (presence heartbeat). Call periodically when app is open.
 // Never returns 500 so the frontend doesn't break; logs errors and returns 200 with ok: false.
 router.post('/me/seen', requireAuth, async (req, res) => {
@@ -102,6 +106,9 @@ router.get('/:userId', async (req, res) => {
     const userId = (req.params.userId || '').trim()
     if (!userId || !supabase) {
       return res.status(400).json({ error: 'Invalid request' })
+    }
+    if (!looksLikeUuid(userId)) {
+      return res.status(404).json({ error: 'Profile not found' })
     }
     let { data, error } = await supabase
       .from('shorts_user_profiles')
