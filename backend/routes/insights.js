@@ -359,15 +359,34 @@ const EVIDENCE_SYSTEM_ANALYST = `You are a data analyst. You will receive a JSON
 
 const EVIDENCE_SYSTEM_AGENCY = `You are writing for a client-facing monthly performance report. You will receive a JSON object called "evidence" containing KPIs, trends, breakdowns, and drivers. Write a short narrative using ONLY the numbers and facts present in that evidence. Do not invent any metrics or figures. Tone: professional, client-ready, executive summary style. Be concise and factual.`
 
+const EVIDENCE_SYSTEM_EXECUTIVE = `You are writing for a C-suite executive audience. You will receive a JSON object called "evidence" containing KPIs, trends, breakdowns, and drivers. Your narrative must:
+- Use ONLY numbers and facts from the evidence. Do not invent metrics.
+- Be corporate, confident, and risk-aware. Acknowledge uncertainty where data is limited.
+- Use formal business language. No slang, no emojis, no casual phrasing.
+- Be concise: 2-3 sentences for executive summary; 3 bullet points for insights.
+- Cite key metrics explicitly when making claims (e.g. "Revenue increased 12% to $2.4M in Q1").
+- If the evidence does not support a claim, do not make it. Say "not enough information" if unsure.`
+
 async function generateEvidenceNarration(evidence, mode) {
   const executiveSummary = ''
   const topInsights = []
   const suggestedQuestions = []
   const isAgency = mode === 'agency'
-  const systemContent = isAgency ? EVIDENCE_SYSTEM_AGENCY : EVIDENCE_SYSTEM_ANALYST
+  const isExecutive = mode === 'executive'
+  const systemContent = isExecutive
+    ? EVIDENCE_SYSTEM_EXECUTIVE
+    : isAgency
+      ? EVIDENCE_SYSTEM_AGENCY
+      : EVIDENCE_SYSTEM_ANALYST
+
+  const promptSuffix = isExecutive
+    ? ' Write in corporate executive voice: confident, risk-aware, cite metrics explicitly.'
+    : isAgency
+      ? ' Write for a client-facing monthly performance report.'
+      : ''
 
   const prompt = `Use only the numbers in the evidence JSON below; do not invent metrics. If unsure, say "not enough information."
-${isAgency ? ' Write for a client-facing monthly performance report.' : ''}
+${promptSuffix}
 
 Evidence:
 ${JSON.stringify(evidence, null, 2)}
@@ -425,4 +444,5 @@ Respond with valid JSON only, no markdown, with exactly these keys:
 }
 
 module.exports = router
+module.exports.generateEvidenceNarration = generateEvidenceNarration
 

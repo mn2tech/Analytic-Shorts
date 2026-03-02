@@ -3,7 +3,11 @@ function detectColumnTypes(data, columns) {
   const categoricalColumns = []
   const dateColumns = []
 
-  columns.forEach((column) => {
+  const colList = Array.isArray(columns) && columns.length > 0
+    ? columns
+    : Object.keys((data && data[0]) || {})
+
+  colList.forEach((column) => {
     const sampleSize = Math.min(100, data.length)
     let numericCount = 0
     let dateCount = 0
@@ -110,9 +114,46 @@ function processData(data) {
   })
 }
 
+/**
+ * Safe coercion for numeric-looking strings (e.g. "1,200", "$3,400").
+ */
+function coerceNumeric(value) {
+  if (value == null || value === '') return null
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  const cleaned = String(value).replace(/[$,\s]/g, '')
+  const n = parseFloat(cleaned)
+  return Number.isFinite(n) ? n : null
+}
+
+/**
+ * Process data while preserving numeric columns as numbers.
+ * Coerces string values in numericColumns (e.g. "1,200", "$3,400") to numbers.
+ * Categorical "numeric-looking" IDs (noticeId, naicsCode, etc.) should be excluded from numericColumns.
+ */
+function processDataPreservingNumbers(data, numericColumns) {
+  const numSet = new Set(Array.isArray(numericColumns) ? numericColumns : [])
+  return data.map((row) => {
+    const processed = {}
+    Object.keys(row).forEach((key) => {
+      const value = row[key]
+      if (numSet.has(key)) {
+        const coerced = coerceNumeric(value)
+        processed[key] = coerced != null ? coerced : ''
+      } else if (value === null || value === undefined) {
+        processed[key] = ''
+      } else {
+        processed[key] = typeof value === 'object' ? JSON.stringify(value) : String(value).trim()
+      }
+    })
+    return processed
+  })
+}
+
 module.exports = {
   detectColumnTypes,
   processData,
+  processDataPreservingNumbers,
+  coerceNumeric,
 }
 
 

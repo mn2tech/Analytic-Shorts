@@ -159,6 +159,9 @@ export default function Publish() {
               datasetProfile: spec.datasetProfile,
               filters: spec.filters,
               dashboardTitle: dashboard.name,
+              evidence: spec.evidence ?? null,
+              reportMode: spec.reportMode || 'analyst',
+              narrative: spec.narrative ?? null,
             }
           } else {
             let rows = dashboard.data || []
@@ -349,6 +352,9 @@ export default function Publish() {
                     sceneGraph: spec.sceneGraph,
                     filters: spec.filters,
                     dashboardTitle: previewDashboard.name,
+                    evidence: spec.evidence ?? null,
+                    reportMode: spec.reportMode || 'analyst',
+                    narrative: spec.narrative ?? null,
                   }
                   return (
                     <div style={{ transform: 'scale(0.5)', transformOrigin: 'top left', width: 1280, height: 720 }}>

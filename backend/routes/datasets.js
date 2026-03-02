@@ -3,7 +3,7 @@
  * Mounted at /api/datasets. Does not replace /api/example; add new dataset types here.
  */
 const express = require('express')
-const { detectColumnTypes } = require('../controllers/dataProcessor')
+const { detectColumnTypes, processDataPreservingNumbers } = require('../controllers/dataProcessor')
 
 const router = express.Router()
 
@@ -11,23 +11,6 @@ const router = express.Router()
 const VESSEL_TYPES = [
   'Cargo', 'Tanker', 'Passenger', 'Fishing', 'Pleasure', 'Pilot', 'Tug', 'SAR', 'Law', 'Military'
 ]
-
-function processDataPreservingNumbers(data, numericColumns) {
-  return data.map((row) => {
-    const processed = {}
-    Object.keys(row).forEach((key) => {
-      const value = row[key]
-      if (numericColumns.includes(key) && typeof value === 'number') {
-        processed[key] = value
-      } else if (value === null || value === undefined) {
-        processed[key] = ''
-      } else {
-        processed[key] = typeof value === 'object' ? JSON.stringify(value) : String(value).trim()
-      }
-    })
-    return processed
-  })
-}
 
 /**
  * Generate realistic mock AIS vessel data.

@@ -1,4 +1,5 @@
 const express = require('express')
+const axios = require('axios')
 const cors = require('cors')
 const multer = require('multer')
 const path = require('path')
@@ -176,6 +177,51 @@ app.post('/api/studio/pdf/', (req, res, next) => {
 })
 app.use('/api/upload', uploadRoutes)
 app.use('/api/insights', insightsRoutes)
+// USAspending proxy (agency-wise only, no NAICS filter)
+app.get('/api/example/proxy/usaspending/spending-over-time', async (req, res) => {
+  const agency = (req.query.agency || 'TREASURY').trim()
+  const fyParam = (req.query.fy || '2024,2025').trim()
+  const fyList = fyParam.split(',').map((s) => s.trim()).filter(Boolean)
+  console.log('USAspending proxy hit', agency, fyList)
+  const timePeriod = fyList.map((fy) => {
+    const year = parseInt(String(fy).trim(), 10)
+    if (!Number.isFinite(year) || year < 1900 || year > 2100) return null
+    return { start_date: `${year - 1}-10-01`, end_date: `${year}-09-30` }
+  }).filter(Boolean)
+  if (timePeriod.length === 0) {
+    return res.status(400).json({ error: 'USAspending error', details: `Invalid fy. Must be comma-separated years (e.g. 2024,2025). Got: ${fyParam}` })
+  }
+  const payload = {
+    group: 'fiscal_year',
+    filters: {
+      time_period: timePeriod,
+      agencies: [{ type: 'awarding', tier: 'toptier', name: agency }],
+      award_type_codes: ['A', 'B', 'C', 'D'],
+    },
+  }
+  try {
+    const response = await axios.post('https://api.usaspending.gov/api/v2/search/spending_over_time/', payload, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 30000,
+      validateStatus: () => true,
+    })
+    if (response.status < 200 || response.status >= 300) {
+      return res.status(response.status).json({
+        error: 'USAspending error',
+        details: response.data?.message || response.data?.detail || JSON.stringify(response.data || '').slice(0, 500),
+      })
+    }
+    const results = Array.isArray(response.data?.results) ? response.data.results : []
+    const flattened = results.map((r) => ({
+      fiscal_year: r.time_period?.fiscal_year != null ? parseInt(String(r.time_period.fiscal_year), 10) : null,
+      obligations: typeof r.aggregated_amount === 'number' ? r.aggregated_amount : 0,
+      agency,
+    }))
+    res.json(flattened)
+  } catch (err) {
+    return res.status(500).json({ error: 'Proxy failed', details: err?.message || String(err) })
+  }
+})
 app.use('/api/example', exampleRoutes)
 app.use('/api/datasets', datasetsRoutes)
 app.use('/api/dashboards', dashboardRoutes)
@@ -262,6 +308,7 @@ app.use((req, res) => {
       'GET /api/example/yearly-income',
       'GET /api/example/samgov/expand-intent',
       'GET /api/example/samgov/live',
+      'GET /api/example/proxy/usaspending/spending-over-time',
       'GET /api/datasets/maritime-ais',
       'GET /api/feed',
       'GET /api/analytics/community',

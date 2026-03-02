@@ -840,6 +840,89 @@ function executePlan(dataset, semanticGraph, analysisPlan, options = {}) {
       continue
     }
 
+    if (b.type === 'ForecastBlock') {
+      const { generateForecastFromSeries } = require('../forecasting')
+      const timeCol = b.timeColumn || cols.date[0]
+      const measure = b.measure || pickTopMeasures(rows, cols.numeric, { limit: 1 })[0] || null
+      const grain = b.grain || selections?.grain || 'day'
+      const periods = Math.max(1, Math.min(12, b.periods || 6))
+
+      if (!timeCol || !measure) {
+        blocks.push({
+          id: buildId('forecast', i),
+          type: 'ForecastBlock',
+          title: b.title || 'Forecast',
+          questionAnswered: 'What is the predicted outlook?',
+          status: 'NOT_APPLICABLE',
+          confidence: 0,
+          assumptions: [...baseAssumptions, !timeCol ? 'No time column.' : 'No measure column.'],
+          sampleSize,
+          badges: defaultBadges,
+          blockNarrative: !timeCol ? 'No time column for forecast.' : 'No measure column for forecast.',
+          payload: { reason: !timeCol ? 'No time column' : 'No measure column' },
+        })
+        continue
+      }
+
+      const buckets = new Map()
+      const agg = 'sum'
+      for (const r of rows) {
+        const d = parseDate(r?.[timeCol])
+        if (!d) continue
+        const t = startOfGrain(d, grain)
+        const cur = buckets.get(t) || { t, count: 0, sum: 0 }
+        cur.count++
+        const n = safeNumber(r?.[measure])
+        if (n !== null) cur.sum += n
+        buckets.set(t, cur)
+      }
+      const series = Array.from(buckets.values()).sort((a, b) => a.t.localeCompare(b.t))
+
+      if (series.length < 3) {
+        blocks.push({
+          id: buildId('forecast', i),
+          type: 'ForecastBlock',
+          title: b.title || `Forecast: ${measure}`,
+          questionAnswered: 'What is the predicted outlook?',
+          status: 'INSUFFICIENT_DATA',
+          confidence: 0.1,
+          assumptions: [...baseAssumptions, 'Not enough time periods for forecast.'],
+          sampleSize,
+          badges: defaultBadges,
+          blockNarrative: 'Insufficient time series data for forecasting.',
+          payload: { timeColumn: timeCol, grain, measure, reason: 'Need at least 3 periods' },
+        })
+        continue
+      }
+
+      const { forecast: forecastPoints, trend } = generateForecastFromSeries(series, periods)
+      const blockNarrative = trend.direction !== 'neutral'
+        ? `Forecast projects ${trend.direction} trend for ${measure} over next ${periods} periods (confidence ${formatPct(trend.confidence)}).`
+        : `Forecast generated for ${measure}; trend is flat.`
+
+      blocks.push({
+        id: buildId('forecast', i),
+        type: 'ForecastBlock',
+        title: b.title || `${measure} Forecast`,
+        questionAnswered: 'What is the predicted outlook?',
+        status: 'OK',
+        confidence: clamp01(trend.confidence),
+        assumptions: [...baseAssumptions, `Linear regression on ${series.length} periods`, `Grain: ${grain}`],
+        sampleSize,
+        badges: computeBadges({ sampleSize, timeCoverage: computeTimeCoverage(rows, timeCol), dataQualityPenalty }),
+        blockNarrative,
+        payload: {
+          timeColumn: timeCol,
+          grain,
+          measure,
+          series,
+          forecast: forecastPoints,
+          trend: { direction: trend.direction, slope: trend.slope, confidence: trend.confidence, rSquared: trend.rSquared },
+        },
+      })
+      continue
+    }
+
     if (b.type === 'AnomalyBlock') {
       const enabled = !!b.enabled
       blocks.push({

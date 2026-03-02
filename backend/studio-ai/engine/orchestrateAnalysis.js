@@ -255,6 +255,9 @@ function orchestrateAnalysis(datasetProfile, semanticGraph, canonicalDataset, op
     if (compareMode) compareBlock.compareMode = compareMode
     blocks.push(compareBlock)
   }
+  if (timeColumn && primaryMeasure) {
+    blocks.push({ type: 'ForecastBlock', timeColumn, grain, measure: primaryMeasure, periods: 6 })
+  }
   if (semanticGraph?.enableAnomaly) {
     blocks.push({ type: 'AnomalyBlock', enabled: true })
   }

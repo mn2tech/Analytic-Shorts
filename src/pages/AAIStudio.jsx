@@ -401,8 +401,9 @@ export default function AAIStudio() {
       datasetProfile: datasetProfile ? { schema: datasetProfile.schema } : null,
       filters,
       reportMode: reportMode || 'analyst',
+      narrative: reportMode === 'agency' && narrative ? narrative : null,
     }
-  }, [runId, insightBlocks, evidence, sceneGraph, sourceConfig, templateId, datasetProfile, filters, reportMode])
+  }, [runId, insightBlocks, evidence, sceneGraph, sourceConfig, templateId, datasetProfile, filters, reportMode, narrative])
 
   const doBuild = useCallback(
     async (nextFilters = filters, nextOverrides = runConfigOverrides) => {

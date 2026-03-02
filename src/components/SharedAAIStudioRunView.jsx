@@ -1,10 +1,12 @@
 /**
  * Renders a shared Studio run (aaiStudioRun) in read-only mode on the feed or shared page.
  * Uses the same block renderer as AAIStudio but with no filter interaction.
+ * When reportMode is 'agency' and evidence exists, renders AgencyReportView (client-ready report).
  */
 import React, { useMemo } from 'react'
 import StudioThemeProvider from './aaiStudio/StudioThemeProvider'
 import AAIStudioBlockRenderer from './aaiStudio/AAIStudioBlockRenderer'
+import AgencyReportView from './aaiStudio/AgencyReportView'
 import { themeMeta } from '../config/studioThemes'
 
 export default function SharedAAIStudioRunView({ sharedData }) {
@@ -13,6 +15,10 @@ export default function SharedAAIStudioRunView({ sharedData }) {
   const sceneGraph = sharedData?.sceneGraph || {}
   const filterState = sharedData?.filters || { eq: {}, timeRange: null }
   const themeId = themeMeta[sharedData?.themeId] ? sharedData.themeId : (templateId === 'govcon' ? 'ecommerceLight' : 'neutral')
+  const reportMode = sharedData?.reportMode || 'analyst'
+  const evidence = sharedData?.evidence ?? null
+  const narrative = sharedData?.narrative ?? {}
+  const isAgencyReport = reportMode === 'agency' && evidence && typeof evidence === 'object'
 
   const orderedBlocks = useMemo(() => {
     const byId = new Map(insightBlocks.map((b) => [b.id, b]))
@@ -29,6 +35,25 @@ export default function SharedAAIStudioRunView({ sharedData }) {
     }
     return insightBlocks.slice()
   }, [insightBlocks, sceneGraph])
+
+  if (isAgencyReport) {
+    return (
+      <StudioThemeProvider themeId={themeId}>
+        <div className="rounded-xl border p-4 space-y-4" style={{ background: 'var(--card)', borderColor: 'var(--border)' }}>
+          {sharedData?.dashboardTitle && (
+            <h2 className="text-lg font-semibold" style={{ color: 'var(--text)' }}>{sharedData.dashboardTitle}</h2>
+          )}
+          <AgencyReportView
+            evidence={evidence}
+            narrative={narrative}
+            reportMeta={{}}
+            branding={{}}
+            loading={false}
+          />
+        </div>
+      </StudioThemeProvider>
+    )
+  }
 
   if (orderedBlocks.length === 0) {
     return (

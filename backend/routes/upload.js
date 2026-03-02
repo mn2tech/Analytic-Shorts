@@ -515,6 +515,85 @@ router.use((err, req, res, next) => {
   next(err)
 })
 
+// POST /api/upload/analyze - Upload file and return CanonicalIR + descriptive report
+const { connectorFactory } = require('../studio-ai/data-connectors/connectorFactory')
+const { runStudioBuildFromCanonical } = require('../studio-ai/buildRunner')
+const { studioRunToCanonicalIR } = require('../studio-ai/schema/canonicalIR')
+const { transformIRToReport } = require('../studio-ai/reportTransformers')
+const { inferSchema, normalizeRows } = require('../studio-ai/data-connectors/normalizer')
+
+router.post('/analyze', getUserFromToken, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' })
+    }
+    const filePath = req.file.path
+    const fileExt = path.extname(req.file.originalname).toLowerCase()
+    const filename = req.file.originalname
+
+    let canonical
+    if (fileExt === '.csv' || fileExt === '.xlsx') {
+      const buffer = fs.readFileSync(filePath)
+      canonical = await connectorFactory(
+        { sourceType: 'csv', buffer, filename },
+        { timeoutMs: 15000, sampleRowLimit: 2000 }
+      )
+    } else if (fileExt === '.json' || fileExt === '.pdf') {
+      let rawData = []
+      if (fileExt === '.json') {
+        const fileContent = fs.readFileSync(filePath, 'utf-8')
+        const parsed = JSON.parse(fileContent)
+        rawData = Array.isArray(parsed) ? parsed : (parsed?.data || [parsed])
+        rawData = rawData.filter((row) => row && typeof row === 'object')
+      } else {
+        try {
+          const dataBuffer = fs.readFileSync(filePath)
+          const pdfData = await pdfParse(dataBuffer)
+          const text = String(pdfData?.text || '')
+          rawData = pdfTextToRows(text)
+        } catch {
+          rawData = []
+        }
+      }
+      if (rawData.length === 0) {
+        fs.unlinkSync(filePath)
+        return res.status(400).json({ error: 'No tabular data', message: 'Could not extract rows from file.' })
+      }
+      const rows = normalizeRows(rawData, { rowLimit: 2000 })
+      const schema = inferSchema(rows, { sampleRowLimit: 2000 })
+      canonical = { schema, rows, metadata: { sourceType: 'upload', sourceName: filename, rowCount: rows.length } }
+    } else {
+      fs.unlinkSync(filePath)
+      return res.status(400).json({ error: 'Unsupported format', message: 'Use CSV, XLSX, JSON, or PDF.' })
+    }
+
+    fs.unlinkSync(filePath)
+
+    const buildResponse = await runStudioBuildFromCanonical(canonical, {
+      filters: null,
+      overrides: {},
+      templateId: 'general',
+      sourceConfig: { sourceType: 'upload', filename },
+    })
+
+    const canonicalIR = studioRunToCanonicalIR(buildResponse)
+    const report = transformIRToReport(canonicalIR, 'descriptive')
+
+    res.json({
+      runId: buildResponse.runId,
+      canonicalIR,
+      report: { mode: 'descriptive', reportBlocks: report },
+    })
+  } catch (error) {
+    if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path)
+    console.error('Upload analyze error:', error)
+    res.status(500).json({
+      error: 'Analyze failed',
+      message: error.message || 'Failed to analyze file',
+    })
+  }
+})
+
 module.exports = router
 
 
