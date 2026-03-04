@@ -5,6 +5,11 @@
 
 const templates = {
   general: { id: 'general', name: 'General' },
+  'govcon-4pack': {
+    id: 'govcon-4pack',
+    name: 'GovCon 4-Pack',
+    description: 'Four widgets: Opportunities Feed, Agency Rollup, Spend Over Time, Recent Awards.',
+  },
   govcon: {
     id: 'govcon',
     name: 'GovCon Intelligence',

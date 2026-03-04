@@ -29,8 +29,14 @@ import UserProfile from './pages/UserProfile'
 import Messages from './pages/Messages'
 import EditPost from './pages/EditPost'
 import Publish from './pages/Publish'
+import PublishLink from './pages/PublishLink'
 import Live from './pages/Live'
 import AdvancedAnalytics from './pages/AdvancedAnalytics'
+import GovCon4Pack from './pages/GovCon4Pack'
+import FederalEntryReport from './pages/FederalEntryReport'
+import HospitalBedCommandCenter from './pages/HospitalBedCommandCenter'
+import FederalEntryBrief from './pages/FederalEntryBrief'
+import Contact from './pages/Contact'
 
 /** Redirect /studio to /studio/chat, preserving search (e.g. ?open=:id). */
 function StudioIndexRedirect() {
@@ -81,6 +87,11 @@ function App() {
               <Route path="/" element={<Home />} />
               <Route path="/pricing" element={<Pricing />} />
               <Route path="/advanced-analytics" element={<AdvancedAnalytics />} />
+              <Route path="/govcon-4pack" element={<GovCon4Pack />} />
+              <Route path="/hospital-bed-command-center" element={<HospitalBedCommandCenter />} />
+              <Route path="/federal-entry-brief" element={<FederalEntryBrief />} />
+              <Route path="/reports/federal-entry" element={<FederalEntryReport />} />
+              <Route path="/contact" element={<Contact />} />
               <Route path="/help" element={<Help />} />
               <Route path="/privacy" element={<Privacy />} />
               <Route path="/terms" element={<Terms />} />
@@ -117,6 +128,14 @@ function App() {
                 element={
                   <ProtectedRoute>
                     <EditPost />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/publish/link"
+                element={
+                  <ProtectedRoute>
+                    <PublishLink />
                   </ProtectedRoute>
                 }
               />

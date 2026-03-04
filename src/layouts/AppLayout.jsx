@@ -26,12 +26,13 @@ function loadSectionOpen() {
         return {
           status: !!o.status,
           quickActions: !!o.quickActions,
-          navigate: !!o.navigate
+          navigate: !!o.navigate,
+          apps: o.apps !== false
         }
       }
     }
   } catch (_) {}
-  return { status: false, quickActions: false, navigate: false }
+  return { status: false, quickActions: false, navigate: false, apps: true }
 }
 
 // Pathname to sidebar label for "Current" and active-state clarity
@@ -40,6 +41,10 @@ const PATH_TO_LABEL = [
   { path: '/help', label: 'Help' },
   { path: '/pricing', label: 'Pricing' },
   { path: '/advanced-analytics', label: 'Advanced Analytics' },
+  { path: '/govcon-4pack', label: 'GovCon 4-Pack' },
+  { path: '/hospital-bed-command-center', label: 'Hospital Bed Command Center' },
+  { path: '/federal-entry-brief', label: 'Federal Entry Brief' },
+  { path: '/reports/federal-entry', label: 'Federal Entry Report' },
   { path: '/feed', label: 'Feed' },
   { path: '/messages', label: 'Messages' },
   { path: '/careers', label: 'Careers' },
@@ -500,6 +505,47 @@ function AppLayout() {
               </div>
             )}
           </div>
+
+          {/* Apps – collapsible */}
+          <nav className="space-y-0.5">
+            <button
+              type="button"
+              onClick={() => toggleSection('apps')}
+              className={`w-full flex items-center justify-between px-3 py-1.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider hover:bg-gray-50 rounded ${!sidebarOpen ? 'lg:hidden' : ''}`}
+              aria-expanded={sectionOpen.apps}
+            >
+              <span>Apps</span>
+              <span className="text-gray-400">{sectionOpen.apps ? '▼' : '▶'}</span>
+            </button>
+            {sectionOpen.apps && (
+              <>
+                <SidebarTooltip show={!sidebarOpen} label="GovCon 4-Pack">
+                  <NavLink to="/govcon-4pack" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
+                    <span>🏛️</span>
+                    <span className={sidebarOpen ? '' : 'lg:hidden'}>GovCon 4-Pack</span>
+                  </NavLink>
+                </SidebarTooltip>
+                <SidebarTooltip show={!sidebarOpen} label="Hospital Bed Command Center">
+                  <NavLink to="/hospital-bed-command-center" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
+                    <span>🏥</span>
+                    <span className={sidebarOpen ? '' : 'lg:hidden'}>Hospital Bed Command Center</span>
+                  </NavLink>
+                </SidebarTooltip>
+                <SidebarTooltip show={!sidebarOpen} label="Federal Entry Brief">
+                  <NavLink to="/federal-entry-brief" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
+                    <span>📑</span>
+                    <span className={sidebarOpen ? '' : 'lg:hidden'}>Federal Entry Brief</span>
+                  </NavLink>
+                </SidebarTooltip>
+                <SidebarTooltip show={!sidebarOpen} label="Federal Entry Report">
+                  <NavLink to="/reports/federal-entry" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
+                    <span>📋</span>
+                    <span className={sidebarOpen ? '' : 'lg:hidden'}>Federal Entry Report</span>
+                  </NavLink>
+                </SidebarTooltip>
+              </>
+            )}
+          </nav>
 
           {/* Navigate – collapsible */}
           <nav className="space-y-0.5">

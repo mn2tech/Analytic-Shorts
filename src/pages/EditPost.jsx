@@ -235,15 +235,17 @@ export default function EditPost() {
             Thumbnail <span className="text-gray-400 font-normal">(optional)</span>
           </label>
           <div className="flex flex-col gap-3">
-            <button
-              type="button"
-              onClick={handleCaptureThumbnail}
-              disabled={capturing || !post?.dashboard_id}
-              className="w-full sm:w-auto px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
-            >
-              {capturing ? 'Capturing dashboard graph…' : 'Generate thumbnail from dashboard graph'}
-            </button>
-            <div className="grid sm:grid-cols-2 gap-2">
+            {post?.dashboard_id !== 'link' && (
+              <>
+                <button
+                  type="button"
+                  onClick={handleCaptureThumbnail}
+                  disabled={capturing || !post?.dashboard_id}
+                  className="w-full sm:w-auto px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+                >
+                  {capturing ? 'Capturing dashboard graph…' : 'Generate thumbnail from dashboard graph'}
+                </button>
+                <div className="grid sm:grid-cols-2 gap-2">
               <label className="text-xs text-gray-700">
                 Capture view
                 <select
@@ -268,6 +270,11 @@ export default function EditPost() {
                 </select>
               </label>
             </div>
+              </>
+            )}
+            {post?.dashboard_id === 'link' && (
+              <p className="text-xs text-gray-500">Link posts: use a custom image URL below.</p>
+            )}
             {thumbnailUrl && (
               <div className="rounded-lg border border-gray-200 p-2 bg-gray-50">
                 <img src={thumbnailUrl} alt="" className="w-full h-36 object-cover rounded-md" />

@@ -16,10 +16,33 @@ function getAdmin() {
 async function createPost(req, res) {
   try {
     const { dashboardId, title, caption, tags, visibility, thumbnailUrl, shareId } = req.body
+    const linkUrl = req.body.linkUrl ?? req.body.link_url
+    const db = getAdmin()
+    // Link posts: linkUrl required, dashboard_id = 'link'
+    if (linkUrl != null && String(linkUrl).trim()) {
+      if (!title || !String(title).trim()) {
+        return res.status(400).json({ error: 'title is required' })
+      }
+      const insert = {
+        dashboard_id: 'link',
+        link_url: String(linkUrl).trim(),
+        author_id: req.user.id,
+        title: String(title).trim(),
+        caption: caption != null ? String(caption).trim() : null,
+        tags: Array.isArray(tags) ? tags : (typeof tags === 'string' ? tags.split(',').map(t => t.trim()).filter(Boolean) : []),
+        visibility: ['private', 'org', 'public', 'unlisted'].includes(visibility) ? visibility : 'public'
+      }
+      if (thumbnailUrl != null && String(thumbnailUrl).trim()) {
+        insert.thumbnail_url = String(thumbnailUrl).trim()
+      }
+      const { data, error } = await db.from('posts').insert(insert).select().single()
+      if (error) throw error
+      return res.status(201).json(data)
+    }
+    // Dashboard posts
     if (!dashboardId || !title) {
       return res.status(400).json({ error: 'dashboardId and title are required' })
     }
-    const db = getAdmin()
     const insert = {
       dashboard_id: String(dashboardId),
       author_id: req.user.id,
@@ -364,15 +387,19 @@ async function deletePost(req, res) {
   }
 }
 
-// GET /api/posts/:id/dashboard - return dashboard data for embedding (only if post visible)
+// GET /api/posts/:id/dashboard - return dashboard data for embedding, or link payload for link posts
 async function getPostDashboard(req, res) {
   try {
     const { id } = req.params
     const db = getAdmin()
-    const { data: post, error: postErr } = await db.from('posts').select('id, dashboard_id, visibility, author_id').eq('id', id).single()
+    const { data: post, error: postErr } = await db.from('posts').select('id, dashboard_id, link_url, visibility, author_id').eq('id', id).single()
     if (postErr || !post) return res.status(404).json({ error: 'Post not found' })
     if (post.visibility !== 'public' && post.author_id !== (req.user && req.user.id)) {
       return res.status(404).json({ error: 'Post not found' })
+    }
+    // Link posts: return synthetic payload
+    if (post.dashboard_id === 'link' && post.link_url) {
+      return res.json({ type: 'link', linkUrl: post.link_url })
     }
     const { data: dashboard, error: dashErr } = await db
       .from('shorts_dashboards')

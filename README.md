@@ -216,6 +216,24 @@ Click "Try Example Dashboard" on the home page to test without uploading files.
 4. Export charts and CSV
 5. Generate AI insights
 
+### Federal Entry Report (curl examples)
+
+See [docs/FEDERAL_ENTRY_INTELLIGENCE_REPORT.md](./docs/FEDERAL_ENTRY_INTELLIGENCE_REPORT.md) for full details. Quick validation:
+
+```bash
+# Run with industry JANITORIAL (NAICS 561720); confirm janitorial-related opportunities
+curl -X POST http://localhost:5000/api/reports/federal-entry/run \
+  -H "Content-Type: application/json" \
+  -d '{"industryKey":"JANITORIAL","naics":["561720"],"agency":"TREASURY","fy":["2024","2025"],"limit":100,"debug":true}'
+
+# Custom NAICS override (replaces industry NAICS)
+curl -X POST http://localhost:5000/api/reports/federal-entry/run \
+  -H "Content-Type: application/json" \
+  -d '{"industryKey":"JANITORIAL","naics":["541512","541511"],"agency":"","fy":["2024"],"limit":50,"debug":true}'
+```
+
+Then poll `GET /api/reports/federal-entry/:reportRunId/summary` for results.
+
 ## 🔧 Configuration
 
 ### API Endpoints

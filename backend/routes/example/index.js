@@ -7,6 +7,7 @@ const { router: apiReportsRouter, visibilityGuard } = require('./apiReports')
 const datasetRoutes = require('./datasetRoutes')
 const usaspendingRoutes = require('./usaspendingRoutes')
 const samgovRoutes = require('./samgovRoutes')
+const federalEntryRoutes = require('./federalEntryRoutes')
 const externalApisRoutes = require('./externalApisRoutes')
 const miscRoutes = require('./miscRoutes')
 const { exampleDatasets } = require('../../data/exampleDatasets')
@@ -25,6 +26,9 @@ router.use(usaspendingRoutes)
 
 // SAM.gov
 router.use(samgovRoutes)
+
+// GovCon Federal Entry Engine
+router.use('/govcon', federalEntryRoutes)
 
 // External APIs (BLS, CDC, Treasury)
 router.use(externalApisRoutes)

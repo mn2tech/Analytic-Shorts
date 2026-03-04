@@ -3,10 +3,16 @@
  * Must stay in sync with backend/studio-ai/templates/templates.js for templateId values.
  */
 
-export const TEMPLATE_IDS = ['general', 'govcon', 'ecommerce', 'saas']
+export const TEMPLATE_IDS = ['general', 'govcon', 'govcon-4pack', 'ecommerce', 'saas']
 
 export const templates = {
   general: { id: 'general', name: 'General', description: 'No template bias; default analysis.', themeId: 'neutral' },
+  'govcon-4pack': {
+    id: 'govcon-4pack',
+    name: 'GovCon 4-Pack',
+    description: 'Four widgets: Opportunities Feed, Agency Rollup, Spend Over Time, Recent Awards.',
+    themeId: 'ecommerceLight',
+  },
   govcon: {
     id: 'govcon',
     name: 'GovCon Intelligence',

@@ -133,10 +133,12 @@ function applySamgovColumnTypes(transformedData) {
   return { columns, numericColumns, categoricalColumns, dateColumns, processedData }
 }
 
+const SAMGOV_API_PAGE_SIZE = 1000
+
 // GET /samgov/live
 router.get('/samgov/live', requireSamgovKey, async (req, res) => {
   try {
-    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 1000)
+    const requestedLimit = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 10000)
     const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0)
     const ptype = (req.query.ptype || '').toString().trim() || undefined
     const title = (req.query.title || req.query.q || '').toString().trim() || undefined
@@ -156,29 +158,51 @@ router.get('/samgov/live', requireSamgovKey, async (req, res) => {
     from.setDate(from.getDate() - (wantsUpdatedFilter ? 364 : 30))
     const postedFrom = (req.query.postedFrom || req.query.posted_from || '').toString().trim() || formatMmDdYyyy(from)
 
-    const cacheKey = JSON.stringify({ limit, offset, ptype, title, state, ncode, postedFrom, postedTo, updatedWithinDays: Number.isFinite(updatedWithinDays) ? updatedWithinDays : null, updatedFrom: updatedFromRaw || null, updatedTo: updatedToRaw || null })
-    const cached = samgovCache.get(cacheKey)
-    if (cached && Date.now() - cached.ts < SAMGOV_CACHE_TTL_MS) {
-      res.setHeader('X-Cache', 'HIT')
-      return res.json(cached.payload)
+    const cacheKey = JSON.stringify({ limit: requestedLimit, offset, ptype, title, state, ncode, postedFrom, postedTo, updatedWithinDays: Number.isFinite(updatedWithinDays) ? updatedWithinDays : null, updatedFrom: updatedFromRaw || null, updatedTo: updatedToRaw || null })
+    const useCache = requestedLimit <= SAMGOV_API_PAGE_SIZE && offset < SAMGOV_API_PAGE_SIZE
+    if (useCache) {
+      const cached = samgovCache.get(cacheKey)
+      if (cached && Date.now() - cached.ts < SAMGOV_CACHE_TTL_MS) {
+        res.setHeader('X-Cache', 'HIT')
+        return res.json(cached.payload)
+      }
     }
     res.setHeader('X-Cache', 'MISS')
 
     const apiUrl = 'https://api.sam.gov/opportunities/v2/search'
-    const params = {
-      api_key: req.samgovApiKey,
-      limit, offset, postedFrom, postedTo, rdlfrom, rdlto,
-      ...(ptype ? { ptype } : {}),
-      ...(title ? { title } : {}),
-      ...(state ? { state } : {}),
-      ...(ncode ? { ncode } : {}),
+    let allItems = []
+    let currentOffset = offset
+    const remainingToFetch = requestedLimit
+
+    while (allItems.length < remainingToFetch) {
+      const pageLimit = Math.min(SAMGOV_API_PAGE_SIZE, remainingToFetch - allItems.length)
+      const params = {
+        api_key: req.samgovApiKey,
+        limit: pageLimit,
+        offset: currentOffset,
+        postedFrom,
+        postedTo,
+        rdlfrom,
+        rdlto,
+        ...(ptype ? { ptype } : {}),
+        ...(title ? { title } : {}),
+        ...(state ? { state } : {}),
+        ...(ncode ? { ncode } : {}),
+      }
+
+      const response = await axios.get(apiUrl, { params, timeout: AX_TIMEOUT, validateStatus: () => true })
+      const raw = response.data
+      const items = Array.isArray(raw?.opportunitiesData) ? raw.opportunitiesData : (Array.isArray(raw) ? raw : [])
+
+      if (!items.length) break
+
+      allItems = allItems.concat(items)
+      if (items.length < SAMGOV_API_PAGE_SIZE) break
+      currentOffset += items.length
+      if (allItems.length >= remainingToFetch) break
     }
 
-    const response = await axios.get(apiUrl, { params, timeout: AX_TIMEOUT, validateStatus: () => true })
-    const raw = response.data
-    const items = Array.isArray(raw?.opportunitiesData) ? raw.opportunitiesData : (Array.isArray(raw) ? raw : [])
-
-    if (!items.length) {
+    if (!allItems.length) {
       return res.status(404).json({
         error: 'No opportunities found',
         message: 'Try adjusting postedFrom/postedTo, title, state, ncode, or ptype.',
@@ -186,7 +210,7 @@ router.get('/samgov/live', requireSamgovKey, async (req, res) => {
       })
     }
 
-    const transformedData = buildSamgovPayload(items, wantsUpdatedFilter, updatedWithinDays, updatedFromRaw, updatedToRaw)
+    const transformedData = buildSamgovPayload(allItems, wantsUpdatedFilter, updatedWithinDays, updatedFromRaw, updatedToRaw)
     if (!transformedData.length) {
       return res.status(404).json({
         error: 'No opportunities found',
@@ -204,10 +228,10 @@ router.get('/samgov/live', requireSamgovKey, async (req, res) => {
       dateColumns,
       rowCount: processedData.length,
       source: 'SAM.gov Opportunities API (Real-time)',
-      filters: { postedFrom, postedTo, rdlfrom, rdlto, limit, offset, ptype, title, state, ncode, updatedWithinDays, updatedFrom: updatedFromRaw, updatedTo: updatedToRaw },
+      filters: { postedFrom, postedTo, rdlfrom, rdlto, limit: requestedLimit, offset, ptype, title, state, ncode, updatedWithinDays, updatedFrom: updatedFromRaw, updatedTo: updatedToRaw },
       notes: wantsUpdatedFilter ? ['SAM.gov Get Opportunities Public API v2 does not expose an explicit "Updated Date" field; "updatedDate" is best-effort and may fall back to postedDate.'] : undefined,
     }
-    samgovCache.set(cacheKey, { ts: Date.now(), payload })
+    if (useCache) samgovCache.set(cacheKey, { ts: Date.now(), payload })
     return res.json(payload)
   } catch (error) {
     console.error('Error fetching SAM.gov opportunities:', error.message)

@@ -560,6 +560,8 @@ export default function Feed() {
                       <div className="absolute right-0 top-full mt-1 z-20 w-52 py-1 bg-white border border-gray-200 rounded-xl shadow-lg">
                         <Link to="/studio/chat" onClick={() => setCreateMenuOpen(false)} className="flex items-center gap-2 w-full px-3 py-2.5 text-left text-sm text-gray-900 hover:bg-blue-50 rounded-t-xl">Upload data & create dashboard</Link>
                         <button type="button" onClick={() => { setCreateMenuOpen(false); openCompose() }} className="flex items-center gap-2 w-full px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 border-t border-gray-100">Share existing dashboard</button>
+                        <Link to="/publish/link?template=hospital-bed" onClick={() => setCreateMenuOpen(false)} className="flex items-center gap-2 w-full px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 border-t border-gray-100">Add Hospital Bed Command Center</Link>
+                        <Link to="/publish/link?template=federal-entry" onClick={() => setCreateMenuOpen(false)} className="flex items-center gap-2 w-full px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 border-t border-gray-100">Add Federal Entry Report</Link>
                       </div>
                     </>
                   )}

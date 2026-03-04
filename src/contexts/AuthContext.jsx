@@ -178,6 +178,21 @@ export const AuthProvider = ({ children }) => {
     }
   }
 
+  const signInWithGoogle = async () => {
+    try {
+      const redirectTo = `${window.location.origin}/feed`
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo },
+      })
+      if (error) throw error
+      // Supabase redirects to Google, then back to redirectTo with session
+    } catch (error) {
+      console.error('Google sign in error:', error)
+      throw error
+    }
+  }
+
   const signIn = async (email, password) => {
     try {
       // Trim email to remove any whitespace
@@ -252,6 +267,7 @@ export const AuthProvider = ({ children }) => {
     refreshUserProfile,
     signUp,
     signIn,
+    signInWithGoogle,
     signOut,
     resetPassword,
     loading,

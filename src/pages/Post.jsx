@@ -441,6 +441,21 @@ export default function Post() {
             )}
           </section>
         </>
+      ) : dashboard?.type === 'link' && dashboard?.linkUrl ? (
+        <section className="mb-8 rounded-xl border border-gray-200 bg-white overflow-hidden shadow-sm">
+          <div className="p-8 text-center">
+            <p className="text-gray-600 mb-4">This post links to a shared page.</p>
+            <a
+              href={dashboard.linkUrl}
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 transition-colors"
+            >
+              View page
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+            </a>
+          </div>
+        </section>
       ) : (
         <section className="mb-8 rounded-lg border border-gray-200 bg-white overflow-hidden">
           {spec && rows.length > 0 ? (
