@@ -397,9 +397,10 @@ async function getPostDashboard(req, res) {
     if (post.visibility !== 'public' && post.author_id !== (req.user && req.user.id)) {
       return res.status(404).json({ error: 'Post not found' })
     }
-    // Link posts: return synthetic payload
-    if (post.dashboard_id === 'link' && post.link_url) {
-      return res.json({ type: 'link', linkUrl: post.link_url })
+    // Link posts: return synthetic payload (fallback to /feed if link_url missing)
+    if (String(post.dashboard_id || '').toLowerCase() === 'link') {
+      const url = post.link_url && String(post.link_url).trim() ? post.link_url : '/feed'
+      return res.json({ type: 'link', linkUrl: url })
     }
     const { data: dashboard, error: dashErr } = await db
       .from('shorts_dashboards')

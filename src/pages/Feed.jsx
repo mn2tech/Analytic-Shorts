@@ -69,6 +69,11 @@ function openFacebookShare() {
   window.open(`https://www.facebook.com/sharer/sharer.php?u=${url}`, '_blank', 'noopener,noreferrer,width=600,height=400')
 }
 
+function getPostShareUrl(postId) {
+  if (typeof window === 'undefined' || !postId) return ''
+  return `${window.location.origin}/post/${postId}`
+}
+
 const VISIBILITY_LABELS = { public: 'Public', private: 'Private', org: 'Org', unlisted: 'Unlisted' }
 
 function getRelativeTime(dateStr) {
@@ -101,7 +106,7 @@ function isPostByCurrentUser(post, user) {
   return String(authorId).toLowerCase() === String(user.id).toLowerCase()
 }
 
-function PostCard({ post, onLike, onSave, onGoLive, onDelete, onFollow, isAuthenticated, isAuthor, navigate, currentUserId }) {
+function PostCard({ post, onLike, onSave, onGoLive, onDelete, onFollow, onNotify, isAuthenticated, isAuthor, navigate, currentUserId }) {
   const [liked, setLiked] = useState(post.liked_by_me)
   const [likeCount, setLikeCount] = useState(post.like_count ?? 0)
   const [saved, setSaved] = useState(post.saved_by_me)
@@ -109,6 +114,7 @@ function PostCard({ post, onLike, onSave, onGoLive, onDelete, onFollow, isAuthen
   const [followLoading, setFollowLoading] = useState(false)
   const [liveLoading, setLiveLoading] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [shareOpen, setShareOpen] = useState(false)
 
   const handleLike = async (e) => {
     e.preventDefault()
@@ -295,6 +301,71 @@ function PostCard({ post, onLike, onSave, onGoLive, onDelete, onFollow, isAuthen
           <span className="text-lg">{saved ? '🔖' : '📑'}</span>
           <span>Save</span>
         </button>
+        <div className="relative flex-shrink-0">
+          <button
+            type="button"
+            onClick={() => setShareOpen((o) => !o)}
+            className="flex items-center gap-1.5 px-3 py-3 text-sm text-gray-500 hover:bg-gray-50 hover:text-gray-700 rounded-lg transition-colors"
+            title="Share post"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+            </svg>
+            <span>Share</span>
+          </button>
+          {shareOpen && (
+            <>
+              <div className="fixed inset-0 z-10" aria-hidden="true" onClick={() => setShareOpen(false)} />
+              <div className="absolute right-0 bottom-full mb-1 z-20 w-48 py-1 bg-white border border-gray-200 rounded-xl shadow-lg">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const url = getPostShareUrl(post.id)
+                    if (navigator.clipboard?.writeText) {
+                      await navigator.clipboard.writeText(url)
+                      onNotify?.('Link copied', 'success')
+                    }
+                    setShareOpen(false)
+                  }}
+                  className="flex items-center gap-2 w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 rounded-t-xl"
+                >
+                  Copy link
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.open(`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(getPostShareUrl(post.id))}`, '_blank', 'noopener,noreferrer,width=600,height=600')
+                    setShareOpen(false)
+                  }}
+                  className="flex items-center gap-2 w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  LinkedIn
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const url = getPostShareUrl(post.id)
+                    window.open(`https://twitter.com/intent/tweet?url=${encodeURIComponent(url)}&text=${encodeURIComponent(post.title || 'Check out this post')}`, '_blank', 'noopener,noreferrer,width=550,height=420')
+                    setShareOpen(false)
+                  }}
+                  className="flex items-center gap-2 w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  𝕏 X
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(getPostShareUrl(post.id))}`, '_blank', 'noopener,noreferrer,width=600,height=400')
+                    setShareOpen(false)
+                  }}
+                  className="flex items-center gap-2 w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 rounded-b-xl"
+                >
+                  Facebook
+                </button>
+              </div>
+            </>
+          )}
+        </div>
         <button
           type="button"
           onClick={handleGoLive}
@@ -680,6 +751,7 @@ export default function Feed() {
                 onGoLive={handleGoLive}
                 onDelete={handleDelete}
                 onFollow={handleFollow}
+                onNotify={notify}
                 isAuthenticated={!!user}
                 isAuthor={!!user && (isPostByCurrentUser(post, user) || scope === 'mine')}
                 navigate={navigate}
