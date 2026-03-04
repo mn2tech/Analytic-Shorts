@@ -20,7 +20,8 @@ export const PLANS = {
       fileSizeMB: 5,
       aiInsights: 5,
       exports: 10,
-      forecasting: false
+      forecasting: false,
+      federalEntryReport: false
     },
     popular: false
   },
@@ -39,7 +40,8 @@ export const PLANS = {
       'Export to PDF/Excel',
       'Priority support',
       'Larger file sizes (50MB)',
-      '100 AI insights/month'
+      '100 AI insights/month',
+      'Federal Entry Intelligence Report'
     ],
     limits: {
       dashboards: -1, // unlimited
@@ -47,7 +49,8 @@ export const PLANS = {
       fileSizeMB: 50,
       aiInsights: 100,
       exports: -1, // unlimited
-      forecasting: true
+      forecasting: true,
+      federalEntryReport: true
     },
     popular: true
   },
@@ -67,7 +70,8 @@ export const PLANS = {
       'Custom integrations (Coming Soon)',
       '500MB file sizes',
       'Unlimited AI insights',
-      'Custom branding (Coming Soon)'
+      'Custom branding (Coming Soon)',
+      'Federal Entry Intelligence Report'
     ],
     limits: {
       dashboards: -1, // unlimited
@@ -75,11 +79,15 @@ export const PLANS = {
       fileSizeMB: 500,
       aiInsights: -1, // unlimited
       exports: -1, // unlimited
-      forecasting: true
+      forecasting: true,
+      federalEntryReport: true
     },
     popular: false
   }
 }
+
+// Federal Entry Report: free users get this many minutes before paywall
+export const FEDERAL_ENTRY_FREE_MINUTES = 10
 
 // Helper function to get plan by ID
 export const getPlan = (planId) => {
@@ -97,6 +105,8 @@ export const hasFeature = (subscription, feature) => {
       return plan.limits.dashboards === -1
     case 'unlimited_uploads':
       return plan.limits.uploadsPerMonth === -1
+    case 'federalEntryReport':
+      return !!plan.limits.federalEntryReport
     default:
       return false
   }
