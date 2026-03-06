@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-function Navbar({ onOpenSidebar }) {
+function Navbar({ onOpenSidebar, onOpenMessaging, messagesUnreadCount = 0 }) {
   const { user, userProfile, signOut } = useAuth()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const menuRef = useRef(null)
@@ -55,6 +55,24 @@ function Navbar({ onOpenSidebar }) {
           </Link>
           <div className="flex-1 min-w-0" />
           <div className="flex items-center space-x-4 shrink-0">
+            {user && typeof onOpenMessaging === 'function' && (
+              <button
+                type="button"
+                onClick={onOpenMessaging}
+                className="relative p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+                aria-label="Messages"
+                title="Messages"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+                {messagesUnreadCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 min-w-[1.125rem] h-[1.125rem] flex items-center justify-center text-[10px] font-bold text-white bg-red-500 rounded-full px-1">
+                    {messagesUnreadCount > 99 ? '99+' : messagesUnreadCount}
+                  </span>
+                )}
+              </button>
+            )}
             <Link
               to="/help"
               className="text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium transition-colors"

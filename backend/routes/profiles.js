@@ -99,6 +99,41 @@ router.post('/ensure', requireAuth, async (req, res) => {
   }
 })
 
+// Search users by name (for messaging panel - start new conversations)
+// GET /api/profiles/search?q=... - returns users matching name, excludes current user
+router.get('/search', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user?.id
+    const q = (req.query.q || '').trim()
+    if (!userId || !supabase) {
+      return res.status(400).json({ error: 'Invalid request' })
+    }
+    if (q.length < 2) {
+      return res.json({ users: [] })
+    }
+    const { data, error } = await supabase
+      .from('shorts_user_profiles')
+      .select('user_id, name, avatar_url')
+      .neq('user_id', userId)
+      .ilike('name', `%${q}%`)
+      .limit(15)
+
+    if (error) {
+      console.error('profiles search:', error)
+      return res.status(500).json({ error: 'Search failed' })
+    }
+    const users = (data || []).map((p) => ({
+      user_id: p.user_id,
+      name: p.name || 'Anonymous',
+      avatar_url: p.avatar_url || null
+    }))
+    return res.json({ users })
+  } catch (e) {
+    console.error('profiles search:', e)
+    return res.status(500).json({ error: 'Search failed' })
+  }
+})
+
 // Public profile by user id (name, avatar) for profile page and links
 // Table may use id or user_id as lookup (both are set to auth user id)
 router.get('/:userId', async (req, res) => {

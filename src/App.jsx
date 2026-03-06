@@ -37,6 +37,9 @@ import FederalEntryReport from './pages/FederalEntryReport'
 import HospitalBedCommandCenter from './pages/HospitalBedCommandCenter'
 import FederalEntryBrief from './pages/FederalEntryBrief'
 import Contact from './pages/Contact'
+import ExecutionApi from './pages/ExecutionApi'
+import Scoring from './pages/Scoring'
+import AnalyticsApps from './pages/AnalyticsApps'
 
 /** Redirect /studio to /studio/chat, preserving search (e.g. ?open=:id). */
 function StudioIndexRedirect() {
@@ -77,6 +80,12 @@ function App() {
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
             <Route path="/dashboard/shared/:shareId" element={<SharedDashboard />} />
+            <Route path="/apps/execution-api" element={<AppLayout />}>
+              <Route index element={<ExecutionApi />} />
+            </Route>
+            <Route path="/apps/scoring" element={<AppLayout />}>
+              <Route index element={<Scoring />} />
+            </Route>
             <Route path="/apps/:id" element={<StudioAppView />} />
             <Route path="/apps/:id/:pageId" element={<StudioAppView />} />
             <Route path="/ai-visual-builder" element={<Navigate to="/studio" replace />} />
@@ -87,6 +96,7 @@ function App() {
               <Route path="/" element={<Home />} />
               <Route path="/pricing" element={<Pricing />} />
               <Route path="/advanced-analytics" element={<AdvancedAnalytics />} />
+              <Route path="/apps" element={<AnalyticsApps />} />
               <Route path="/govcon-4pack" element={<GovCon4Pack />} />
               <Route path="/hospital-bed-command-center" element={<HospitalBedCommandCenter />} />
               <Route path="/federal-entry-brief" element={<FederalEntryBrief />} />

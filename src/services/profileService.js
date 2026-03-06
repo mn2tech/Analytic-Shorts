@@ -1,4 +1,18 @@
 import { supabase } from '../lib/supabase'
+import apiClient from '../config/api'
+
+// Search users by name (for messaging - start new conversation)
+export async function searchUsers(query) {
+  const q = (query || '').trim()
+  if (q.length < 2) return []
+  try {
+    const { data } = await apiClient.get('/api/profiles/search', { params: { q } })
+    return data?.users ?? []
+  } catch (err) {
+    console.error('searchUsers:', err)
+    return []
+  }
+}
 
 // Get user profile from shorts_user_profiles table
 export const getUserProfile = async (userId) => {

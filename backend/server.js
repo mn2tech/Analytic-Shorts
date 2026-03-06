@@ -35,6 +35,7 @@ const careersRoutes = require('./routes/careers')
 const followRoutes = require('./routes/follow')
 const liveRoutes = require('./routes/live')
 const reportsRoutes = require('./routes/reports')
+const v1Routes = require('./routes/v1')
 const accessLogger = require('./middleware/accessLogger')
 
 const app = express()
@@ -259,6 +260,7 @@ app.use('/api/analytics', analyticsRoutes)
 app.use('/api/profiles', profilesRoutes)
 app.use('/api/studio', studioRoutes)
 app.use('/api/reports', reportsRoutes)
+app.use('/api/v1', v1Routes)
 // POST /api/ai/dashboard-spec — register first so it always matches (avoids 404)
 const handleDashboardSpec = aiDashboardSpecRoutes.handleDashboardSpec
 if (typeof handleDashboardSpec !== 'function') {
@@ -354,7 +356,15 @@ app.use((req, res) => {
       'POST /api/posts/:id/comments',
       'POST /api/posts/:id/live-sessions',
       'GET /api/live/:sessionId',
-      'POST /api/live/:sessionId/end'
+      'POST /api/live/:sessionId/end',
+      'POST /api/v1/jobs',
+      'GET /api/v1/jobs/:id',
+      'POST /api/v1/models',
+      'POST /api/v1/models/upload',
+      'POST /api/v1/models/:id/confirm',
+      'GET /api/v1/models',
+      'POST /api/v1/score',
+      'POST /api/v1/run'
     ]
   })
 })

@@ -9,6 +9,7 @@ import { Outlet, NavLink, Link, useLocation, useNavigate } from 'react-router-do
 import Navbar from '../components/Navbar'
 import Footer from '../components/Footer'
 import ChatBot from '../components/ChatBot'
+import MessagingPanel from '../components/MessagingPanel'
 import { useAuth } from '../contexts/AuthContext'
 import { getUnreadCount } from '../services/messagesService'
 import apiClient from '../config/api'
@@ -45,6 +46,9 @@ const PATH_TO_LABEL = [
   { path: '/hospital-bed-command-center', label: 'Hospital Bed Command Center' },
   { path: '/federal-entry-brief', label: 'Federal Entry Brief' },
   { path: '/reports/federal-entry', label: 'Federal Entry Report' },
+  { path: '/apps/execution-api', label: 'Execution API' },
+  { path: '/apps/scoring', label: 'Scoring' },
+  { path: '/apps', label: 'Analytics Apps' },
   { path: '/feed', label: 'Feed' },
   { path: '/messages', label: 'Messages' },
   { path: '/careers', label: 'Careers' },
@@ -154,6 +158,7 @@ function AppLayout() {
   const [hasAdminAccess, setHasAdminAccess] = useState(false)
   const [samgovQuickActionVisible, setSamgovQuickActionVisible] = useState(true)
   const [messagesUnreadCount, setMessagesUnreadCount] = useState(0)
+  const [messagingPanelOpen, setMessagingPanelOpen] = useState(false)
   const showAdminLink = isAdminByProfile(user, userProfile) || isDefaultAdminEmail(user) || hasAdminAccess
 
   const refreshMessagesUnread = useCallback(() => {
@@ -519,6 +524,12 @@ function AppLayout() {
             </button>
             {sectionOpen.apps && (
               <>
+                <SidebarTooltip show={!sidebarOpen} label="Analytics Apps">
+                  <NavLink to="/apps" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
+                    <span>📦</span>
+                    <span className={sidebarOpen ? '' : 'lg:hidden'}>Analytics Apps</span>
+                  </NavLink>
+                </SidebarTooltip>
                 <SidebarTooltip show={!sidebarOpen} label="GovCon 4-Pack">
                   <NavLink to="/govcon-4pack" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
                     <span>🏛️</span>
@@ -541,6 +552,18 @@ function AppLayout() {
                   <NavLink to="/reports/federal-entry" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
                     <span>📋</span>
                     <span className={sidebarOpen ? '' : 'lg:hidden'}>Federal Entry Report</span>
+                  </NavLink>
+                </SidebarTooltip>
+                <SidebarTooltip show={!sidebarOpen} label="Execution API">
+                  <NavLink to="/apps/execution-api" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
+                    <span>▶️</span>
+                    <span className={sidebarOpen ? '' : 'lg:hidden'}>Execution API</span>
+                  </NavLink>
+                </SidebarTooltip>
+                <SidebarTooltip show={!sidebarOpen} label="Scoring">
+                  <NavLink to="/apps/scoring" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
+                    <span>🎯</span>
+                    <span className={sidebarOpen ? '' : 'lg:hidden'}>Scoring (Beta)</span>
                   </NavLink>
                 </SidebarTooltip>
               </>
@@ -580,7 +603,11 @@ function AppLayout() {
                 </SidebarTooltip>
                 {user && (
                   <SidebarTooltip show={!sidebarOpen} label="Messages">
-                    <NavLink to="/messages" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
+                    <button
+                      type="button"
+                      onClick={() => { setMessagingPanelOpen(true); setMobileMenuOpen(false) }}
+                      className={navLinkClass}
+                    >
                       <span className="relative">
                         ✉️
                         {messagesUnreadCount > 0 && (
@@ -593,7 +620,7 @@ function AppLayout() {
                         )}
                       </span>
                       <span className={sidebarOpen ? '' : 'lg:hidden'}>Messages</span>
-                    </NavLink>
+                    </button>
                   </SidebarTooltip>
                 )}
                 <SidebarTooltip show={!sidebarOpen} label="My Dashboards">
@@ -652,7 +679,7 @@ function AppLayout() {
       <div className={`flex flex-1 flex-col min-w-0 relative ${!sidebarOpen ? 'lg:z-0' : ''}`}>
         <header className="shrink-0">
           <div className="border-b border-gray-200 bg-white">
-            <Navbar onOpenSidebar={() => setMobileMenuOpen(true)} />
+            <Navbar onOpenSidebar={() => setMobileMenuOpen(true)} onOpenMessaging={() => setMessagingPanelOpen(true)} messagesUnreadCount={messagesUnreadCount} />
           </div>
         </header>
         <main className="flex-1 min-h-0">
@@ -661,6 +688,9 @@ function AppLayout() {
         {!hideFooter && <Footer />}
       </div>
       <ChatBot />
+      {user && (
+        <MessagingPanel open={messagingPanelOpen} onClose={() => setMessagingPanelOpen(false)} />
+      )}
     </div>
   )
 }
