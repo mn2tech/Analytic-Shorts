@@ -44,6 +44,10 @@ const PATH_TO_LABEL = [
   { path: '/advanced-analytics', label: 'Advanced Analytics' },
   { path: '/govcon-4pack', label: 'GovCon 4-Pack' },
   { path: '/hospital-bed-command-center', label: 'Hospital Bed Command Center' },
+  { path: '/ed-bed-map', label: 'ED Bed Map' },
+  { path: '/predictive-bed-map', label: 'Predictive Bed Map' },
+  { path: '/er-command-map', label: 'ER Command Map' },
+  { path: '/floormap-ai', label: 'FloorMap AI' },
   { path: '/federal-entry-brief', label: 'Federal Entry Brief' },
   { path: '/reports/federal-entry', label: 'Federal Entry Report' },
   { path: '/apps/execution-api', label: 'Execution API' },
@@ -540,6 +544,30 @@ function AppLayout() {
                   <NavLink to="/hospital-bed-command-center" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
                     <span>🏥</span>
                     <span className={sidebarOpen ? '' : 'lg:hidden'}>Hospital Bed Command Center</span>
+                  </NavLink>
+                </SidebarTooltip>
+                <SidebarTooltip show={!sidebarOpen} label="ED Bed Map">
+                  <NavLink to="/ed-bed-map" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
+                    <span>🩺</span>
+                    <span className={sidebarOpen ? '' : 'lg:hidden'}>ED Bed Map</span>
+                  </NavLink>
+                </SidebarTooltip>
+                <SidebarTooltip show={!sidebarOpen} label="Predictive Bed Map">
+                  <NavLink to="/predictive-bed-map" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
+                    <span>📊</span>
+                    <span className={sidebarOpen ? '' : 'lg:hidden'}>Predictive Bed Map</span>
+                  </NavLink>
+                </SidebarTooltip>
+                <SidebarTooltip show={!sidebarOpen} label="ER Command Map">
+                  <NavLink to="/er-command-map" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
+                    <span>🏥</span>
+                    <span className={sidebarOpen ? '' : 'lg:hidden'}>ER Command Map</span>
+                  </NavLink>
+                </SidebarTooltip>
+                <SidebarTooltip show={!sidebarOpen} label="FloorMap AI">
+                  <NavLink to="/floormap-ai" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
+                    <span>🗺️</span>
+                    <span className={sidebarOpen ? '' : 'lg:hidden'}>FloorMap AI</span>
                   </NavLink>
                 </SidebarTooltip>
                 <SidebarTooltip show={!sidebarOpen} label="Federal Entry Brief">

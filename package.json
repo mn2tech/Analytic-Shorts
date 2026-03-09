@@ -8,6 +8,7 @@
     "preview": "vite preview",
     "server": "node backend/server.js",
     "dev:all": "concurrently \"npm run dev\" \"npm run server\"",
+    "server:floormap": "cd backend-floormap && uvicorn main:app --reload --port 8000",
     "test:ui": "vitest run"
   },
   "dependencies": {

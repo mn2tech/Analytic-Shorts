@@ -94,6 +94,12 @@ export default defineConfig({
     port: 3000,
     host: '0.0.0.0', // Listen on all interfaces to allow external access
     proxy: {
+      // FloorMap AI must come BEFORE /api (otherwise /api matches /api-floormap)
+      '/api-floormap': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api-floormap/, '/api')
+      },
       '/api': {
         // Use API_PROXY_TARGET if backend runs on a different port (e.g. set API_PROXY_TARGET=http://localhost:5001)
         target: process.env.API_PROXY_TARGET || 'http://localhost:5000',

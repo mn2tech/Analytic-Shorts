@@ -235,6 +235,15 @@ body {
   background: #fff !important;
 }
 
+/* Hospital Command Center: visible pulse for critical LOS rooms */
+@keyframes pressurePulse {
+  0%, 100% { stroke-opacity: 1; opacity: 1; }
+  50% { stroke-opacity: 0.5; opacity: 0.45; }
+}
+.animate-pressure-pulse {
+  animation: pressurePulse 2s ease-in-out infinite;
+}
+
 
 
 

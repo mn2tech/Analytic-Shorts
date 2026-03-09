@@ -35,6 +35,10 @@ import AdvancedAnalytics from './pages/AdvancedAnalytics'
 import GovCon4Pack from './pages/GovCon4Pack'
 import FederalEntryReport from './pages/FederalEntryReport'
 import HospitalBedCommandCenter from './pages/HospitalBedCommandCenter'
+import EDBedMapPage from './pages/EDBedMapPage'
+import PredictiveBedMapPage from './pages/PredictiveBedMapPage'
+import ERCommandMapPage from './pages/ERCommandMapPage'
+import FloorMapAIPage from './pages/FloorMapAIPage'
 import FederalEntryBrief from './pages/FederalEntryBrief'
 import Contact from './pages/Contact'
 import ExecutionApi from './pages/ExecutionApi'
@@ -99,6 +103,10 @@ function App() {
               <Route path="/apps" element={<AnalyticsApps />} />
               <Route path="/govcon-4pack" element={<GovCon4Pack />} />
               <Route path="/hospital-bed-command-center" element={<HospitalBedCommandCenter />} />
+              <Route path="/ed-bed-map" element={<EDBedMapPage />} />
+              <Route path="/predictive-bed-map" element={<PredictiveBedMapPage />} />
+              <Route path="/er-command-map" element={<ERCommandMapPage />} />
+              <Route path="/floormap-ai" element={<FloorMapAIPage />} />
               <Route path="/federal-entry-brief" element={<FederalEntryBrief />} />
               <Route path="/reports/federal-entry" element={<FederalEntryReport />} />
               <Route path="/contact" element={<Contact />} />

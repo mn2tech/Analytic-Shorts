@@ -8,12 +8,23 @@ import { useAuth } from '../contexts/AuthContext'
 import { useNotification } from '../contexts/NotificationContext'
 import { createPost } from '../services/postsService'
 
+/** Command center blueprint image - used as thumbnail when sharing to feed */
+const HOSPITAL_BLUEPRINT_IMAGE = (() => {
+  const base = (import.meta.env.BASE_URL || '/').replace(/\/$/, '') || ''
+  const path = `${base}/hospital-blueprint.png`
+  if (typeof window !== 'undefined') {
+    return new URL(path, window.location.origin).href
+  }
+  return path
+})()
+
 const TEMPLATES = {
   'hospital-bed': {
     title: 'Hospital Bed Command Center',
     caption: 'Visual blueprint of hospital rooms — color-coded by bed status',
     linkUrl: '/hospital-bed-command-center',
     tags: ['hospital', 'healthcare', 'command-center'],
+    thumbnailUrl: HOSPITAL_BLUEPRINT_IMAGE,
   },
   'federal-entry': {
     title: 'Federal Entry Intelligence Report',
@@ -35,7 +46,7 @@ export default function PublishLink() {
   const [caption, setCaption] = useState(template.caption)
   const [tagsStr, setTagsStr] = useState(template.tags.join(', '))
   const [visibility, setVisibility] = useState('public')
-  const [thumbnailUrl, setThumbnailUrl] = useState('')
+  const [thumbnailUrl, setThumbnailUrl] = useState(template.thumbnailUrl || '')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(null)
 

@@ -15,6 +15,7 @@ A modern, fast, and mobile-friendly web application for uploading CSV/Excel file
 - **Responsive Design**: Mobile-first design with TailwindCSS
 - **Smooth Animations**: Optimized for video demos with fade-in and loading animations
 - **AI Visual Builder Studio** (at `/studio`): Create dashboards from natural-language prompts; save, share, and get public view-only links. See [STUDIO.md](./STUDIO.md) for a short guide. For full spec storage, run the migration in **database/migration_add_dashboard_schema_column.sql** (see database/README.md).
+- **FloorMap AI** (at `/floormap-ai`): Upload hospital floor plans, detect rooms with OpenCV, edit labels/coordinates, and export JSON for ER bed maps. Requires Python + FastAPI backend (see below).
 
 ## 📋 Prerequisites
 
@@ -113,6 +114,29 @@ The **Social Analytics** MVP adds a shareable feed of dashboard posts, likes/com
 4. Click **Go Live** on a post to create or join a Jitsi session; use **Copy link** on the Live page to invite others. Only the host can **End session**.
 
 **Video cutting off after ~5 minutes:** The default server (`meet.jit.si`) may disconnect after a short time. **Recommended:** use **8x8 JaaS** (free tier, e.g. 30 users): create an app at [8x8.vc](https://8x8.vc), then set **`VITE_JITSI_8X8_APP_ID`** (full AppID, e.g. `vpaas-magic-cookie-5e91fefe740644f2c8f3840e535a64ea6`) or **`VITE_JITSI_8X8_TENANT`** (tenant ID only) in the frontend env. The app will then use 8x8 for Go Live with no 5‑minute limit. Alternatively, set **`VITE_JITSI_DOMAIN`** to a self‑hosted Jitsi server and load its `external_api.js` in `index.html`.
+
+### FloorMap AI (Floor Plan Room Detection)
+
+**FloorMap AI** (at `/floormap-ai`) lets you upload a hospital floor plan image, detect room boxes with OpenCV, edit labels and coordinates, and export JSON for ER bed map applications. It runs as a separate FastAPI backend and does not affect the main Node.js backend.
+
+**To use FloorMap AI:**
+
+1. **Start the FloorMap backend** (Python 3.10+, requires OpenCV):
+   ```bash
+   npm run server:floormap
+   ```
+   Or manually: `cd backend-floormap && pip install -r requirements.txt && uvicorn main:app --reload --port 8000`
+
+2. **Start the main app** (frontend + Node backend):
+   ```bash
+   npm run dev:all
+   ```
+
+3. Open **http://localhost:3000/floormap-ai** or use the sidebar: **Apps → FloorMap AI**.
+
+**Auto-detect room labels (ER-1, TRAUMA ROOM, etc.):** Install [Tesseract OCR](https://github.com/tesseract-ocr/tesseract) and add `pytesseract` to the backend. Then "Detect Rooms" will use OCR to extract labels from the floor plan. Without Tesseract, rooms are labeled "Room 1", "Room 2", etc., and you can edit them manually.
+
+The frontend proxies `/api-floormap` to the FastAPI backend on port 8000. The main `/api` routes continue to go to the Node backend on port 5000.
 
 ## 📁 Project Structure
 

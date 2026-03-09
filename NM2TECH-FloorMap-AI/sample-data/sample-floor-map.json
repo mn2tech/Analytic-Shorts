@@ -1,0 +1,33 @@
+{
+  "file_id": "sample-floor-plan",
+  "rooms": [
+    {
+      "room_id": "ROOM_001",
+      "label": "Room 1",
+      "type": "patient_room",
+      "status": "available",
+      "bbox": { "x": 120, "y": 240, "width": 80, "height": 60 },
+      "center": { "x": 160, "y": 270 },
+      "polygon": [[120, 240], [200, 240], [200, 300], [120, 300]]
+    },
+    {
+      "room_id": "ROOM_002",
+      "label": "Room 2",
+      "type": "patient_room",
+      "status": "occupied",
+      "bbox": { "x": 220, "y": 240, "width": 80, "height": 60 },
+      "center": { "x": 260, "y": 270 },
+      "polygon": [[220, 240], [300, 240], [300, 300], [220, 300]]
+    },
+    {
+      "room_id": "ROOM_003",
+      "label": "Nurse Station",
+      "type": "nurse_station",
+      "status": "available",
+      "bbox": { "x": 120, "y": 120, "width": 120, "height": 80 },
+      "center": { "x": 180, "y": 160 },
+      "polygon": [[120, 120], [240, 120], [240, 200], [120, 200]]
+    }
+  ],
+  "save_to_file": false
+}
