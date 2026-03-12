@@ -1,12 +1,49 @@
 /**
  * FloorMap AI API client.
- * Uses /api-floormap proxy (Vite) to reach FastAPI backend on port 8000.
+ * Dev: Vite proxies /api-floormap → localhost:8000.
+ * Prod: Set VITE_FLOORMAP_API_URL to your deployed FloorMap backend (e.g. http://98.90.130.74:8000).
+ * Backend routes are under /api/, so we append that when using a full URL.
  */
-const API_BASE = '/api-floormap'
+const _base = import.meta.env.VITE_FLOORMAP_API_URL || ''
+const API_BASE = _base
+  ? (_base.replace(/\/$/, '') + (_base.includes('/api') ? '' : '/api'))
+  : '/api-floormap'
 
-/** Rewrite /api/ to /api-floormap/ for image URLs (proxied to FloorMap backend) */
+if (import.meta.env.PROD && typeof console !== 'undefined') {
+  console.log('VITE_FLOORMAP_API_URL:', _base || 'Not set (uploads will 404)')
+}
+
+/** Rewrite image URL - proxy path in dev, full URL when VITE_FLOORMAP_API_URL is set */
 export function rewriteImageUrl(url) {
   if (!url || typeof url !== 'string') return url
+  
+  // If already a full URL, return as-is
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    return url
+  }
+  
+  const base = import.meta.env.VITE_FLOORMAP_API_URL
+  if (base) {
+    // In production with backend URL set, rewrite to full URL
+    const cleanBase = base.replace(/\/$/, '')
+    let path = url.startsWith('/') ? url : `/${url}`
+    
+    // If base already ends with /api and path starts with /api/, remove /api from path to avoid duplication
+    if (cleanBase.endsWith('/api') && path.startsWith('/api/')) {
+      path = path.replace(/^\/api/, '')
+    }
+    
+    const finalUrl = `${cleanBase}${path}`
+    
+    // Debug logging in production
+    if (import.meta.env.PROD && typeof console !== 'undefined') {
+      console.log('[FloorMap] Rewriting image URL:', { original: url, base: cleanBase, path, final: finalUrl })
+    }
+    
+    return finalUrl
+  }
+  
+  // In dev, rewrite /api/ to /api-floormap/ for Vite proxy
   return url.replace(/^\/api\//, '/api-floormap/')
 }
 

@@ -1,5 +1,6 @@
 import { useRef, useCallback, useState, useEffect } from 'react';
 import { RoomOverlay } from './RoomOverlay';
+import { rewriteImageUrl } from '../../api/floormapClient';
 
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 4;
@@ -122,6 +123,9 @@ export function FloorPlanCanvas({
     );
   }
 
+  // Ensure image URL is properly rewritten for production
+  const finalImageUrl = rewriteImageUrl(imageUrl);
+
   return (
     <div
       ref={containerRef}
@@ -138,7 +142,7 @@ export function FloorPlanCanvas({
         }}
       >
         <img
-          src={imageUrl}
+          src={finalImageUrl}
           alt="Floor plan"
           className="floor-image max-w-none max-h-none object-contain"
           draggable={false}
