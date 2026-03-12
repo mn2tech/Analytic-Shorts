@@ -60,6 +60,13 @@ export const BLUEPRINT_IMAGE_PATH =
 /** ROOM_011 = WAITING AREA - excluded from predictions */
 const WAITING_ROOM_ID = 'ROOM_011'
 
+/** Waiting room slots (WR) - synthetic overlay positions for patient flow. Placed near ROOM_011 (x743,y87,w83,h128). */
+export const WAITING_ROOM_SLOTS = [
+  { id: 'WR01', x: 750, y: 100, width: 28, height: 32, unit: 'WAITING', type: 'waiting_slot', label: 'WR01' },
+  { id: 'WR02', x: 780, y: 100, width: 28, height: 32, unit: 'WAITING', type: 'waiting_slot', label: 'WR02' },
+  { id: 'WR03', x: 810, y: 100, width: 28, height: 32, unit: 'WAITING', type: 'waiting_slot', label: 'WR03' },
+]
+
 /** Elevators, stairs, corridors, nurse stations, storage, lobby/waiting, lab - no occupancy status; rendered neutral on map */
 export const INFRASTRUCTURE_ROOM_IDS = new Set([
   'ROOM_011', 'ROOM_022', // Lobby / reception / waiting area
@@ -129,7 +136,8 @@ export function computeRoomMetrics(rooms, opts = {}) {
   const cleaning = list.filter((r) => r.status === 'cleaning').length
   const reserved = list.filter((r) => r.status === 'reserved').length
   const total = list.length
-  const utilizationPct = total > 0 ? Math.round((occupied / total) * 100) : 0
+  // Include reserved rooms in utilization calculation to match alert calculation
+  const utilizationPct = total > 0 ? Math.round(((occupied + reserved) / total) * 100) : 0
   const predictedAvailable = list.filter((r) => r.predictedInMinutes != null || r.predicted_in_minutes != null).length
   const avgLOS = calculateAvgLOS(list)
   const { high: highPressureRooms, critical: criticalRooms } = countPressureRooms(list)

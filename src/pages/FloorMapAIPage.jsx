@@ -31,9 +31,21 @@ export default function FloorMapAIPage() {
 
   const handleImageUpload = useCallback(
     async (file) => {
-      const result = await floormapApi.uploadFloorplan(file)
-      setFloorPlanImage(result)
-      setImageDimensions({ width: result.width, height: result.height })
+      try {
+        const result = await floormapApi.uploadFloorplan(file)
+        setFloorPlanImage(result)
+        setImageDimensions({ width: result.width, height: result.height })
+      } catch (err) {
+        const isProd = import.meta.env.PROD
+        const hasBackendUrl = !!(import.meta.env.VITE_FLOORMAP_API_URL || '').trim()
+        if (isProd && !hasBackendUrl) {
+          throw new Error(
+            'FloorMap AI backend is not available in production. ' +
+            'Deploy the backend-floormap service and set VITE_FLOORMAP_API_URL in your build environment.'
+          )
+        }
+        throw err
+      }
     },
     [setFloorPlanImage]
   )

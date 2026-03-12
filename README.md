@@ -138,6 +138,13 @@ The **Social Analytics** MVP adds a shareable feed of dashboard posts, likes/com
 
 The frontend proxies `/api-floormap` to the FastAPI backend on port 8000. The main `/api` routes continue to go to the Node backend on port 5000.
 
+**Production:** The FloorMap AI upload will fail in production unless you deploy the FloorMap backend and configure it:
+
+1. Deploy `backend-floormap` (Python FastAPI + OpenCV) to Railway, Render, Fly.io, or an EC2/VM.
+2. On the FloorMap backend, set `CORS_ORIGINS` to your frontend URL (e.g. `https://analytics-shorts.nm2tech-sas.com`).
+3. Set `VITE_FLOORMAP_API_URL` in your build environment (e.g. Amplify) to the deployed URL (e.g. `https://floormap-api.yourdomain.com`).
+4. Rebuild the frontend so the env var is baked into the bundle.
+
 ## 📁 Project Structure
 
 ```

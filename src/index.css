@@ -244,6 +244,14 @@ body {
   animation: pressurePulse 2s ease-in-out infinite;
 }
 
+@keyframes transferGlow {
+  0% { opacity: 1; }
+  100% { opacity: 0.15; }
+}
+.animate-transfer-glow {
+  animation: transferGlow 2s ease-out forwards;
+}
+
 
 
 

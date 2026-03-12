@@ -15,6 +15,15 @@ from services.room_detector import RoomDetector
 from services.label_extractor import assign_labels_to_rooms
 from services.storage import StorageService
 from models.schemas import FloorPlanUploadResponse, RoomDetectionRequest, RoomDetectionResponse, ExportMapRequest
+import os
+
+# CORS: allow production frontend origins (comma-separated, e.g. https://analytics-shorts.nm2tech-sas.com)
+_CORS_ORIGINS = os.getenv("CORS_ORIGINS", "").strip().split(",") if os.getenv("CORS_ORIGINS") else []
+_DEFAULT_ORIGINS = [
+    "http://localhost:5173", "http://localhost:5174", "http://localhost:3000",
+    "http://127.0.0.1:3000", "http://127.0.0.1:5173", "http://127.0.0.1:5174",
+]
+CORS_ORIGINS = [o.strip() for o in _CORS_ORIGINS if o.strip()] or _DEFAULT_ORIGINS
 
 app = FastAPI(
     title="NM2TECH FloorMap AI API",
@@ -24,7 +33,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:5174", "http://localhost:3000", "http://127.0.0.1:3000", "http://127.0.0.1:5173", "http://127.0.0.1:5174"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

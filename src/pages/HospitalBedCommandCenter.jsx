@@ -13,6 +13,7 @@ import {
   DEFAULT_ROOM_FILL,
   INFRASTRUCTURE_ROOM_IDS,
   NON_PATIENT_ROOM_TYPES,
+  WAITING_ROOM_SLOTS,
   isInfrastructureByLabel,
   addMockPredictions,
   computeRoomMetrics,
@@ -26,6 +27,32 @@ import {
 } from '../utils/losPressure'
 import LiveStatus from '../components/LiveStatus'
 import KpiGroupCard from '../components/KpiGroupCard'
+import TimelinePlayback from '../components/TimelinePlayback'
+import PatientFlowPanel from '../components/PatientFlowPanel'
+import OperationalAlerts from '../components/OperationalAlerts'
+import TransferSummary from '../components/TransferSummary'
+import WaitingRoomMetrics from '../components/WaitingRoomMetrics'
+import ZoneHeatOverlay from '../components/ZoneHeatOverlay'
+import WaitingRoomWidget from '../components/WaitingRoomWidget'
+import InboundArrivalsWidget from '../components/InboundArrivalsWidget'
+import SmartHoverCard from '../components/SmartHoverCard'
+import AlertBanner from '../components/AlertBanner'
+import CommandCenterSummary from '../components/CommandCenterSummary'
+import AmbulanceIcon from '../components/AmbulanceIcon'
+import RotatingMetricsPanel from '../components/RotatingMetricsPanel'
+import { roomStatusHistory, timelineTimes } from '../data/roomStatusHistory'
+import { getPatientInRoomAtTime, getTransferRoomsAtTime, getTransfersInTimeWindow, getRoomCenter, patientMovements, parseTime } from '../data/patientMovements'
+import PatientMovementAnimation from '../components/PatientMovementAnimation'
+import EROccupancyPrediction from '../components/EROccupancyPrediction'
+import EROccupancyTrendChart from '../components/EROccupancyTrendChart'
+import { calculateEROccupancyPrediction } from '../utils/erOccupancyPrediction'
+import { getInboundArrivalsAtTime } from '../data/hospitalDemoData'
+import TransferAnimation from '../components/TransferAnimation'
+import ScenarioControlPanel from '../components/ScenarioControlPanel'
+import ScenarioNarrativePanel from '../components/ScenarioNarrativePanel'
+import ZoneHighlightOverlay from '../components/ZoneHighlightOverlay'
+import { createScenarioEngine, applyScenarioUpdates } from '../utils/scenarioEngine'
+import { getBaselineDemoState, getScenarioById, demoScenarios } from '../data/demoScenarios'
 
 /** Short status labels for room overlays (fit in small rooms) */
 const STATUS_SHORT = {
@@ -172,9 +199,12 @@ function formatPredictionMins(mins) {
 /** Minutes ago for demo LOS - LOS derived dynamically from admitted_at_iso */
 const DEMO_LOS = { ROOM_006: 25, ROOM_009: 95, ROOM_027: 220, ROOM_023: 320, ROOM_038: 360 }
 
-function RoomTooltip({ roomData, tooltipPos, showPressureLabel = true, unit }) {
+function RoomTooltip({ roomData, tooltipPos, showPressureLabel = true, unit, patientFlow }) {
   if (!roomData) return null
-  const statusLabel = STATUS_LABELS[roomData.status] || roomData.status
+  const isWaitingSlot = unit === 'WAITING'
+  const statusLabel = isWaitingSlot
+    ? (patientFlow ? 'Waiting for ER room' : STATUS_LABELS[roomData.status] || roomData.status)
+    : (STATUS_LABELS[roomData.status] || roomData.status)
   const waitingProvider = unit === 'ER' && roomData.status === 'occupied' && !roomData.provider_seen_time
   const admittedDisplay = roomData.admitted_at ?? (roomData.admitted_at_iso ? new Date(roomData.admitted_at_iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : null)
   const { level: pressureLevel, losLabel } = getRoomPressureLevel(roomData)
@@ -210,9 +240,15 @@ function RoomTooltip({ roomData, tooltipPos, showPressureLabel = true, unit }) {
           </div>
         )}
         <div className="flex justify-between gap-4">
-          <span className="text-slate-400">Admitted</span>
-          <span className="font-medium text-right">{admittedDisplay || '—'}</span>
+          <span className="text-slate-400">{isWaitingSlot ? 'Arrival' : 'Admitted'}</span>
+          <span className="font-medium text-right">{(patientFlow?.arrivalTime ?? admittedDisplay) || '—'}</span>
         </div>
+        {isWaitingSlot && patientFlow?.waitMins != null && (
+          <div className="flex justify-between gap-4">
+            <span className="text-slate-400">Current Wait</span>
+            <span className="font-semibold text-amber-400">{patientFlow.waitMins < 60 ? `${patientFlow.waitMins}m` : `${Math.floor(patientFlow.waitMins / 60)}h ${patientFlow.waitMins % 60}m`}</span>
+          </div>
+        )}
         {losLabel && (
           <div className="flex justify-between gap-4">
             <span className="text-slate-400">LOS</span>
@@ -235,6 +271,14 @@ function RoomTooltip({ roomData, tooltipPos, showPressureLabel = true, unit }) {
             </span>
           </div>
         )}
+        {patientFlow && (
+          <div className="space-y-1.5 pt-2 border-t border-white/10">
+            {patientFlow.patientId && <div className="flex justify-between gap-4"><span className="text-slate-400">Patient ID</span><span className="font-medium">{patientFlow.patientId}</span></div>}
+            {patientFlow.previous && <div className="flex justify-between gap-4"><span className="text-slate-400">Previous</span><span className="font-medium">{patientFlow.previous}</span></div>}
+            {patientFlow.next && <div className="flex justify-between gap-4"><span className="text-slate-400">Next</span><span className="font-medium">{patientFlow.next}{patientFlow.nextEvent?.action === 'post_op_transfer' ? ' (Reserved)' : patientFlow.nextEvent?.action === 'roomed' ? ' (Rooming)' : ''}</span></div>}
+            {patientFlow.nextTime && <div className="flex justify-between gap-4"><span className="text-slate-400">ETA</span><span className="font-medium text-amber-400">~20 min</span></div>}
+          </div>
+        )}
         {showPressureLabel && pressureLabel && (
           <div className="flex justify-between gap-4 items-center pt-1 border-t border-white/10 mt-2">
             <span className="text-slate-400">Pressure</span>
@@ -252,7 +296,7 @@ function RoomTooltip({ roomData, tooltipPos, showPressureLabel = true, unit }) {
   )
 }
 
-function BlueprintImage({ roomOverlays, roomStatusMap, onRoomHover, onRoomClick, hoveredRoom, statusFilter, unitFilters = new Set(), imageDimensions: jsonImageDimensions, manualDimensions, showPressureLayer = true }) {
+function BlueprintImage({ roomOverlays, roomStatusMap, onRoomHover, onRoomClick, hoveredRoom, statusFilter, unitFilters = new Set(), imageDimensions: jsonImageDimensions, manualDimensions, showPressureLayer = true, highlightedTransferRooms = new Set(), activeTransfers = [], onTransferComplete, showTransferAnimations = true, activePatientTransitions = [], onPatientTransitionComplete, showPatientMovements = true, inboundImpact = 'Low', highlightedZone = null, roomIdToUnit = new Map() }) {
   const [imageError, setImageError] = useState(false)
   const [pathIndex, setPathIndex] = useState(0)
   const [loadedDimensions, setLoadedDimensions] = useState(null)
@@ -334,15 +378,30 @@ function BlueprintImage({ roomOverlays, roomStatusMap, onRoomHover, onRoomClick,
           preserveAspectRatio="xMidYMid meet"
           style={{ objectFit: 'contain' }}
         >
+          <ZoneHeatOverlay
+            roomOverlays={roomOverlays}
+            roomStatusMap={roomStatusMap}
+            roomIdToUnit={roomIdToUnit}
+            showPressureLayer={showPressureLayer}
+          />
+          <ZoneHighlightOverlay
+            highlightedZone={highlightedZone}
+            roomOverlays={roomOverlays}
+            roomIdToUnit={roomIdToUnit}
+          />
+          <AmbulanceIcon x={680} y={110} impact={inboundImpact} />
           {roomOverlays.map((r, idx) => {
-            const isInfrastructure = INFRASTRUCTURE_ROOM_IDS.has(r.id) || NON_PATIENT_ROOM_TYPES.has(r.type) || isInfrastructureByLabel(r.label)
+            const isWaitingSlot = r.unit === 'WAITING'
+            const isInfrastructure = !isWaitingSlot && (INFRASTRUCTURE_ROOM_IDS.has(r.id) || NON_PATIENT_ROOM_TYPES.has(r.type) || isInfrastructureByLabel(r.label))
             const roomData = roomStatusMap[r.id]
             const status = roomData?.status ?? ['available', 'occupied', 'cleaning', 'reserved'][idx % 4]
-            const fill = isInfrastructure ? 'rgba(148, 163, 184, 0.2)' : (STATUS_FILL_COLORS[status] || STATUS_COLORS[idx % 4])
+            const fill = isWaitingSlot
+              ? (status === 'occupied' ? 'rgba(245, 158, 11, 0.5)' : 'rgba(245, 158, 11, 0.2)')
+              : isInfrastructure ? 'rgba(148, 163, 184, 0.2)' : (STATUS_FILL_COLORS[status] || STATUS_COLORS[idx % 4])
             const waitingProvider = r.unit === 'ER' && status === 'occupied' && !roomData?.provider_seen_time
             // Dot always uses a status color (never gray) - cycle through colors if status unknown. No dot for infrastructure.
-            const dotFill = isInfrastructure ? null : (STATUS_FILL_COLORS[status] || ['#2ECC71', '#E74C3C', '#F1C40F', '#3498DB'][idx % 4])
-            const statusLabel = STATUS_SHORT[status] || status || '—'
+            const dotFill = isInfrastructure ? null : (isWaitingSlot ? (status === 'occupied' ? '#f59e0b' : '#94A3B8') : (STATUS_FILL_COLORS[status] || ['#2ECC71', '#E74C3C', '#F1C40F', '#3498DB'][idx % 4]))
+            const statusLabel = isWaitingSlot ? (status === 'occupied' ? 'Wait' : 'Avail') : (STATUS_SHORT[status] || status || '—')
             const predMins = roomData?.predictedInMinutes ?? roomData?.predicted_in_minutes
             const predText = predMins != null ? (predMins >= 60 ? `${Math.floor(predMins / 60)}h` : `${predMins}m`) : null
             const isHovered = hoveredRoom === r.id
@@ -352,7 +411,7 @@ function BlueprintImage({ roomOverlays, roomStatusMap, onRoomHover, onRoomClick,
             const cy = r.y + (r.height ?? 50) / 2
             const roomH = r.height ?? 50
             const roomW = r.width ?? 50
-            const showStatus = !isInfrastructure && roomH >= 28
+            const showStatus = (!isInfrastructure || isWaitingSlot) && roomH >= 28
             const showPred = !isInfrastructure && predText && roomH >= 50
             const dotColor = dotFill || '#94A3B8'
             const matchesStatus = isInfrastructure ? true : !statusFilter
@@ -394,6 +453,18 @@ function BlueprintImage({ roomOverlays, roomStatusMap, onRoomHover, onRoomClick,
                     className="animate-pressure-pulse pointer-events-none"
                   />
                 )}
+                {highlightedTransferRooms.has(r.id) && (
+                  <rect
+                    x={r.x - 3}
+                    y={r.y - 3}
+                    width={(r.width ?? 50) + 6}
+                    height={(r.height ?? 50) + 6}
+                    fill="none"
+                    stroke="#22d3ee"
+                    strokeWidth={3}
+                    className="animate-transfer-glow pointer-events-none"
+                  />
+                )}
                 {waitingProvider && (
                   <>
                     <rect
@@ -428,7 +499,7 @@ function BlueprintImage({ roomOverlays, roomStatusMap, onRoomHover, onRoomClick,
                   stroke={isHovered ? '#fff' : (isInfrastructure ? 'rgba(148,163,184,0.4)' : (pressureLevel !== 'normal' ? pressureStyle.stroke : (isFilterActive ? fill : 'rgba(15,23,42,0.6)')))}
                   strokeWidth={isHovered ? 2.5 : (isInfrastructure ? 1 : (pressureLevel !== 'normal' ? pressureStyle.strokeWidth : (isFilterActive ? 2 : 1)))}
                   className={!isInfrastructure && pressureLevel === 'critical' ? pressureStyle.className : undefined}
-                  style={{ transition: 'stroke 0.2s ease, stroke-width 0.2s ease' }}
+                  style={{ transition: 'fill 0.35s ease, stroke 0.2s ease, stroke-width 0.2s ease' }}
                 />
                 {!isInfrastructure && (
                 <circle
@@ -446,9 +517,9 @@ function BlueprintImage({ roomOverlays, roomStatusMap, onRoomHover, onRoomClick,
                   y={r.y + roomH * 0.35}
                   textAnchor="end"
                   className="select-none pointer-events-none"
-                  style={{ fontSize: roomW < 45 ? 8 : 10, fill: '#0f172a', fontWeight: 700 }}
+                  style={{ fontSize: roomW < 45 ? 8 : 10, fill: isWaitingSlot ? '#78350f' : '#0f172a', fontWeight: 700 }}
                 >
-                  {r.id.replace('ROOM_', '')}
+                  {r.id.replace(/^ROOM_/, '')}
                 </text>
                 {showStatus && (
                   <text
@@ -475,6 +546,19 @@ function BlueprintImage({ roomOverlays, roomStatusMap, onRoomHover, onRoomClick,
               </g>
             )
           })}
+          {showTransferAnimations && activeTransfers?.length > 0 && (
+            <TransferAnimation
+              activeTransfers={activeTransfers}
+              onTransferComplete={onTransferComplete}
+              showTrail
+            />
+          )}
+          <PatientMovementAnimation
+            activeTransitions={activePatientTransitions}
+            roomOverlays={roomOverlays}
+            onTransitionComplete={onPatientTransitionComplete}
+            enabled={showPatientMovements}
+          />
         </svg>
       )}
       {imageError && (
@@ -520,15 +604,71 @@ function HospitalBedCommandCenter() {
   const [scale, setScale] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [isFullscreen, setIsFullscreen] = useState(false)
-  const [customOverlays, setCustomOverlays] = useState(null)
-  const [customImageDimensions, setCustomImageDimensions] = useState(null)
-  const [manualDimensions, setManualDimensions] = useState(null) // { width, height } for calibration
+  // Load persisted floor map data from localStorage
+  const [customOverlays, setCustomOverlays] = useState(() => {
+    try {
+      const saved = localStorage.getItem('hospital-floormap-overlays')
+      return saved ? JSON.parse(saved) : null
+    } catch {
+      return null
+    }
+  })
+  const [customImageDimensions, setCustomImageDimensions] = useState(() => {
+    try {
+      const saved = localStorage.getItem('hospital-floormap-dimensions')
+      return saved ? JSON.parse(saved) : null
+    } catch {
+      return null
+    }
+  })
+  const [manualDimensions, setManualDimensions] = useState(() => {
+    try {
+      const saved = localStorage.getItem('hospital-floormap-manual-dimensions')
+      return saved ? JSON.parse(saved) : null
+    } catch {
+      return null
+    }
+  })
+  const [hideAlignmentMessage, setHideAlignmentMessage] = useState(() => {
+    try {
+      return localStorage.getItem('hospital-floormap-hide-alignment') === 'true'
+    } catch {
+      return false
+    }
+  })
+  const [selectedTime, setSelectedTime] = useState(null)
+  const [isTimelinePlaying, setIsTimelinePlaying] = useState(false)
+  const [highlightedTransferRooms, setHighlightedTransferRooms] = useState(new Set())
+  const [roomSearch, setRoomSearch] = useState('')
+  const [activeTransfers, setActiveTransfers] = useState([])
+  const [showTransferAnimations, setShowTransferAnimations] = useState(true)
+  const [showPatientMovements, setShowPatientMovements] = useState(true)
+  const [activePatientTransitions, setActivePatientTransitions] = useState([])
+  const [erOccupancyPrediction, setErOccupancyPrediction] = useState(null)
+  const [commandCenterMode, setCommandCenterMode] = useState(false)
+  // Scenario Demo Mode state
+  const [currentScenarioId, setCurrentScenarioId] = useState(null)
+  const [scenarioState, setScenarioState] = useState(null)
+  const [scenarioStep, setScenarioStep] = useState(0)
+  const [scenarioTotalSteps, setScenarioTotalSteps] = useState(0)
+  const [scenarioNarrative, setScenarioNarrative] = useState('')
+  const [isScenarioPlaying, setIsScenarioPlaying] = useState(false)
+  const [isScenarioPaused, setIsScenarioPaused] = useState(false)
+  const [highlightedZone, setHighlightedZone] = useState(null)
+  const [focusRoom, setFocusRoom] = useState(null)
+  const scenarioEngineRef = useRef(null)
+  const baselineStateRef = useRef(null)
+  const prevSelectedTimeRef = useRef(null)
   const importInputRef = useRef(null)
   const containerRef = useRef(null)
+  const fullscreenRef = useRef(null)
   const isDragging = useRef(false)
   const lastPan = useRef({ x: 0, y: 0 })
 
-  const roomOverlays = customOverlays ?? ROOM_OVERLAY_COORDINATES
+  const roomOverlays = useMemo(() => {
+    const base = customOverlays ?? ROOM_OVERLAY_COORDINATES
+    return [...base, ...WAITING_ROOM_SLOTS]
+  }, [customOverlays])
 
   // Bounding box of rooms matching unit filter (for zoom-to-fit)
   const unitFilterBbox = useMemo(() => {
@@ -581,6 +721,54 @@ function HospitalBedCommandCenter() {
     const id = requestAnimationFrame(applyZoomToFit)
     return () => cancelAnimationFrame(id)
   }, [unitFilterBbox])
+
+  const zoomToRoom = useCallback((roomId) => {
+    const room = roomOverlays.find((r) => r.id === roomId)
+    if (!room) return
+    const el = containerRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const vw = rect.width
+    const vh = rect.height
+    if (vw <= 0 || vh <= 0) return
+    const mapW = manualDimensions?.width ?? customImageDimensions?.width ?? 1320
+    const mapH = manualDimensions?.height ?? customImageDimensions?.height ?? 720
+    const w = room.width ?? 50
+    const h = room.height ?? 50
+    const cx = room.x + w / 2
+    const cy = room.y + h / 2
+    const pad = 80
+    const newScale = Math.min(3, Math.max(1.2, Math.min(vw / (w + pad), vh / (h + pad))))
+    const contentScale = Math.min(vw / mapW, vh / mapH)
+    const contentW = mapW * contentScale
+    const contentH = mapH * contentScale
+    const panX = -contentW * (cx / mapW - 0.5) * newScale
+    const panY = -contentH * (cy / mapH - 0.5) * newScale
+    setScale(newScale)
+    setPan({ x: panX, y: panY })
+    setSelectedRoom(roomId)
+  }, [roomOverlays, manualDimensions, customImageDimensions])
+
+  const roomSearchMatches = useMemo(() => {
+    const q = roomSearch.trim()
+    if (!q) return []
+    const qLower = q.toLowerCase()
+    const qNum = parseInt(q.replace(/\D/g, ''), 10)
+    return roomOverlays.filter((r) => {
+      if (r.id.toLowerCase().includes(qLower)) return true
+      const roomNum = parseInt(r.id.replace(/room_?/i, '').replace(/\D/g, ''), 10)
+      return !isNaN(qNum) && roomNum === qNum
+    })
+  }, [roomOverlays, roomSearch])
+
+  const handleRoomSearch = useCallback(() => {
+    if (roomSearchMatches.length === 1) {
+      zoomToRoom(roomSearchMatches[0].id)
+      setRoomSearch('')
+    } else if (roomSearchMatches.length > 1) {
+      zoomToRoom(roomSearchMatches[0].id)
+    }
+  }, [roomSearchMatches, zoomToRoom])
 
   const getFallbackRoomDataForOverlays = useCallback((overlays) => {
     const statuses = ['available', 'occupied', 'cleaning', 'reserved']
@@ -659,25 +847,327 @@ function HospitalBedCommandCenter() {
     return () => clearInterval(interval)
   }, [fetchRoomStatus])
 
+  // Initialize scenario engine
+  useEffect(() => {
+    if (!scenarioEngineRef.current) {
+      scenarioEngineRef.current = createScenarioEngine()
+      scenarioEngineRef.current.onStepChange = (stepData) => {
+        setScenarioStep(stepData.step)
+        setScenarioTotalSteps(stepData.totalSteps)
+        setScenarioNarrative(stepData.narrative)
+        
+        // Apply scenario updates - accumulate from baseline through current step
+        if (baselineStateRef.current) {
+          // Start with baseline
+          let accumulatedState = { ...baselineStateRef.current }
+          
+          // Apply all steps up to and including current step (cumulative)
+          // stepData.step is 1-indexed (1, 2, 3, 4), steps array is 0-indexed
+          for (let i = 0; i < stepData.step; i++) {
+            const step = stepData.scenario.steps[i]
+            if (step && step.updates) {
+              accumulatedState = applyScenarioUpdates(accumulatedState, step.updates)
+            }
+          }
+          
+          setScenarioState(accumulatedState)
+          
+          // Update highlighted zone and focus room from current step
+          const currentStepUpdates = stepData.updates || {}
+          setHighlightedZone(currentStepUpdates.highlightedZone || accumulatedState.highlightedZone || null)
+          setFocusRoom(currentStepUpdates.focusRoom || accumulatedState.focusRoom || null)
+          
+          // Auto-focus on room if specified
+          if (currentStepUpdates.focusRoom || accumulatedState.focusRoom) {
+            setHoveredRoom(currentStepUpdates.focusRoom || accumulatedState.focusRoom)
+          }
+        }
+      }
+      scenarioEngineRef.current.onScenarioEnd = () => {
+        setIsScenarioPlaying(false)
+        setIsScenarioPaused(false)
+      }
+    }
+    
+    return () => {
+      if (scenarioEngineRef.current) {
+        scenarioEngineRef.current.destroy()
+        scenarioEngineRef.current = null
+      }
+    }
+  }, [])
+
+  // Initialize baseline state when room overlays are ready
+  useEffect(() => {
+    if (roomOverlays.length > 0 && !baselineStateRef.current) {
+      baselineStateRef.current = getBaselineDemoState(roomOverlays)
+    }
+  }, [roomOverlays])
+
+  // Apply scenario updates to room data if scenario is active
+  const roomDataWithScenario = useMemo(() => {
+    if (!currentScenarioId || !scenarioState) return roomData
+    
+    // Merge scenario room updates with actual room data
+    const updated = roomData.map((r) => {
+      const scenarioRoom = scenarioState.rooms[r.room]
+      if (scenarioRoom) {
+        return {
+          ...r,
+          ...scenarioRoom,
+        }
+      }
+      return r
+    })
+    
+    // Add any new rooms from scenario
+    Object.entries(scenarioState.rooms).forEach(([roomId, roomData]) => {
+      if (!updated.find((r) => r.room === roomId)) {
+        updated.push({
+          room: roomId,
+          ...roomData,
+        })
+      }
+    })
+    
+    return updated
+  }, [roomData, currentScenarioId, scenarioState])
+
   const roomStatusMap = useMemo(() => {
     const map = {}
-    roomData.forEach((r) => { map[r.room] = r })
+    roomDataWithScenario.forEach((r) => { map[r.room] = r })
     return map
-  }, [roomData])
+  }, [roomDataWithScenario])
+
+  const roomStatusMapWithTimeline = useMemo(() => {
+    const time = selectedTime ?? timelineTimes[0]
+    const merged = { ...roomStatusMap }
+    
+    // When scenario is active, scenario data takes precedence over timeline
+    // Only apply timeline data if no scenario is active
+    if (selectedTime && !currentScenarioId) {
+      const snapshot = roomStatusHistory.find((s) => s.time === selectedTime)
+      if (snapshot?.rooms) {
+        Object.entries(snapshot.rooms).forEach(([roomId, status]) => {
+          merged[roomId] = { ...(merged[roomId] || { room: roomId }), status }
+        })
+      }
+    }
+    WAITING_ROOM_SLOTS.forEach((wr) => {
+      const patient = getPatientInRoomAtTime(wr.id, time)
+      merged[wr.id] = {
+        ...(merged[wr.id] || { room: wr.id }),
+        status: patient ? 'occupied' : 'available',
+        patient_name: patient?.name ?? null,
+        admitted_at: patient?.lastEvent?.time ?? null,
+      }
+    })
+    return merged
+  }, [roomStatusMap, selectedTime])
 
   const roomIdToUnit = useMemo(
     () => new Map((roomOverlays || []).filter((r) => r.unit).map((r) => [r.id, r.unit])),
     [roomOverlays]
   )
+
+  const roomsForMetrics = useMemo(() => {
+    // Use scenario data if available, otherwise use base roomData
+    const baseData = roomDataWithScenario || roomData
+    if (!selectedTime) return baseData
+    const merged = baseData.map((r) => ({
+      ...r,
+      status: roomStatusMapWithTimeline[r.room]?.status ?? r.status,
+    }))
+    const seen = new Set(merged.map((r) => r.room))
+    Object.entries(roomStatusMapWithTimeline).forEach(([roomId, data]) => {
+      if (!seen.has(roomId) && data?.status) {
+        merged.push({ room: roomId, status: data.status, ...data })
+        seen.add(roomId)
+      }
+    })
+    return merged
+  }, [roomDataWithScenario, roomData, selectedTime, roomStatusMapWithTimeline])
+
   const metrics = useMemo(
-    () => computeRoomMetrics(roomData, { unitFilters, roomIdToUnit }),
-    [roomData, unitFilters, roomIdToUnit]
+    () => computeRoomMetrics(roomsForMetrics, { unitFilters, roomIdToUnit }),
+    [roomsForMetrics, unitFilters, roomIdToUnit]
   )
+
+  // Get inbound impact from scenario state or computed data
+  const inboundImpact = useMemo(() => {
+    if (scenarioState?.inboundArrivals?.impact) {
+      return scenarioState.inboundArrivals.impact
+    }
+    const inboundData = getInboundArrivalsAtTime(selectedTime)
+    return inboundData.impact
+  }, [scenarioState, selectedTime])
 
   const activeRoomId = selectedRoom ?? hoveredRoom
   const hoveredRoomData = activeRoomId
-    ? (roomStatusMap[activeRoomId] ?? { room: activeRoomId, status: '—', patient_name: null, doctor: null, admitted_at: null })
+    ? (roomStatusMapWithTimeline[activeRoomId] ?? { room: activeRoomId, status: '—', patient_name: null, doctor: null, admitted_at: null })
     : null
+
+  // Scenario handlers
+  const handleScenarioSelect = useCallback((scenarioId) => {
+    if (scenarioId === 'normal') {
+      // Reset to normal operations
+      setCurrentScenarioId(null)
+      setScenarioState(null)
+      setScenarioStep(0)
+      setScenarioTotalSteps(0)
+      setScenarioNarrative('')
+      setIsScenarioPlaying(false)
+      setIsScenarioPaused(false)
+      setHighlightedZone(null)
+      setFocusRoom(null)
+      
+      if (scenarioEngineRef.current) {
+        scenarioEngineRef.current.resetScenario()
+      }
+    } else {
+      // Load scenario
+      const scenario = getScenarioById(scenarioId)
+      if (scenario && scenarioEngineRef.current && baselineStateRef.current) {
+        setCurrentScenarioId(scenarioId)
+        const stepData = scenarioEngineRef.current.loadScenario(scenario, baselineStateRef.current)
+        if (stepData) {
+          setScenarioStep(stepData.step)
+          setScenarioTotalSteps(stepData.totalSteps)
+          setScenarioNarrative(stepData.narrative)
+          const initialState = applyScenarioUpdates(baselineStateRef.current, stepData.updates)
+          setScenarioState(initialState)
+          setHighlightedZone(initialState.highlightedZone || null)
+          setFocusRoom(initialState.focusRoom || null)
+        }
+      }
+    }
+  }, [])
+
+  const handleScenarioPlay = useCallback(() => {
+    if (!scenarioEngineRef.current || !currentScenarioId) {
+      console.warn('Cannot play: scenario engine or scenario ID missing', {
+        hasEngine: !!scenarioEngineRef.current,
+        scenarioId: currentScenarioId,
+      })
+      return
+    }
+    
+    // Ensure scenario is loaded
+    if (!scenarioEngineRef.current.currentScenario) {
+      const scenario = getScenarioById(currentScenarioId)
+      if (scenario && baselineStateRef.current) {
+        const stepData = scenarioEngineRef.current.loadScenario(scenario, baselineStateRef.current)
+        if (stepData) {
+          setScenarioStep(stepData.step)
+          setScenarioTotalSteps(stepData.totalSteps)
+          setScenarioNarrative(stepData.narrative)
+          const initialState = applyScenarioUpdates(baselineStateRef.current, stepData.updates)
+          setScenarioState(initialState)
+        }
+      } else {
+        console.warn('Cannot play: scenario not found or baseline state missing', {
+          scenario: !!scenario,
+          baseline: !!baselineStateRef.current,
+        })
+        return
+      }
+    }
+    
+    // Start playing
+    scenarioEngineRef.current.playScenario()
+    setIsScenarioPlaying(true)
+    setIsScenarioPaused(false)
+  }, [currentScenarioId])
+
+  const handleScenarioPause = useCallback(() => {
+    if (scenarioEngineRef.current) {
+      scenarioEngineRef.current.pauseScenario()
+      setIsScenarioPaused(true)
+    }
+  }, [])
+
+  const handleScenarioReset = useCallback(() => {
+    if (scenarioEngineRef.current && baselineStateRef.current) {
+      const stepData = scenarioEngineRef.current.resetScenario()
+      if (stepData) {
+        setScenarioStep(stepData.step)
+        setScenarioTotalSteps(stepData.totalSteps)
+        setScenarioNarrative(stepData.narrative)
+        const initialState = applyScenarioUpdates(baselineStateRef.current, stepData.updates)
+        setScenarioState(initialState)
+        setHighlightedZone(initialState.highlightedZone || null)
+        setFocusRoom(initialState.focusRoom || null)
+      }
+      setIsScenarioPlaying(false)
+      setIsScenarioPaused(false)
+    }
+  }, [])
+
+  const handleScenarioNextStep = useCallback(() => {
+    if (scenarioEngineRef.current) {
+      const stepData = scenarioEngineRef.current.nextScenarioStep()
+      if (stepData) {
+        setScenarioStep(stepData.step)
+        setScenarioTotalSteps(stepData.totalSteps)
+        setScenarioNarrative(stepData.narrative)
+        if (baselineStateRef.current) {
+          // Apply all steps up to and including current step (cumulative)
+          // stepData.step is 1-indexed (1, 2, 3, 4), steps array is 0-indexed
+          let accumulatedState = { ...baselineStateRef.current }
+          for (let i = 0; i < stepData.step; i++) {
+            const step = stepData.scenario.steps[i]
+            if (step && step.updates) {
+              accumulatedState = applyScenarioUpdates(accumulatedState, step.updates)
+            }
+          }
+          setScenarioState(accumulatedState)
+          
+          // Update highlighted zone and focus room from current step
+          const currentStepUpdates = stepData.updates || {}
+          setHighlightedZone(currentStepUpdates.highlightedZone || accumulatedState.highlightedZone || null)
+          setFocusRoom(currentStepUpdates.focusRoom || accumulatedState.focusRoom || null)
+          
+          // Auto-focus on room if specified
+          if (currentStepUpdates.focusRoom || accumulatedState.focusRoom) {
+            setHoveredRoom(currentStepUpdates.focusRoom || accumulatedState.focusRoom)
+          }
+        }
+      }
+    }
+  }, [])
+
+  const handleScenarioPreviousStep = useCallback(() => {
+    if (scenarioEngineRef.current) {
+      const stepData = scenarioEngineRef.current.previousScenarioStep()
+      if (stepData) {
+        setScenarioStep(stepData.step)
+        setScenarioTotalSteps(stepData.totalSteps)
+        setScenarioNarrative(stepData.narrative)
+        if (baselineStateRef.current) {
+          // Apply all steps up to and including current step (cumulative)
+          // stepData.step is 1-indexed (1, 2, 3, 4), steps array is 0-indexed
+          let accumulatedState = { ...baselineStateRef.current }
+          for (let i = 0; i < stepData.step; i++) {
+            const step = stepData.scenario.steps[i]
+            if (step && step.updates) {
+              accumulatedState = applyScenarioUpdates(accumulatedState, step.updates)
+            }
+          }
+          setScenarioState(accumulatedState)
+          
+          // Update highlighted zone and focus room from current step
+          const currentStepUpdates = stepData.updates || {}
+          setHighlightedZone(currentStepUpdates.highlightedZone || accumulatedState.highlightedZone || null)
+          setFocusRoom(currentStepUpdates.focusRoom || accumulatedState.focusRoom || null)
+          
+          // Auto-focus on room if specified
+          if (currentStepUpdates.focusRoom || accumulatedState.focusRoom) {
+            setHoveredRoom(currentStepUpdates.focusRoom || accumulatedState.focusRoom)
+          }
+        }
+      }
+    }
+  }, [])
 
   const handleRoomHover = useCallback((roomId, entering, e) => {
     setHoveredRoom(entering ? roomId : null)
@@ -722,14 +1212,26 @@ function HospitalBedCommandCenter() {
     return () => c.removeEventListener('wheel', handleWheel)
   }, [handleWheel])
 
-  const toggleFullscreen = useCallback(() => {
-    const el = containerRef.current
-    if (!el) return
-    if (!document.fullscreenElement) {
-      el.requestFullscreen?.().then(() => setIsFullscreen(true)).catch(() => {})
-    } else {
+  const toggleFullscreenMap = useCallback(() => {
+    if (document.fullscreenElement) {
       document.exitFullscreen?.().then(() => setIsFullscreen(false)).catch(() => {})
+    } else {
+      const el = containerRef.current
+      if (el) el.requestFullscreen?.().then(() => setIsFullscreen(true)).catch(() => {})
     }
+  }, [])
+
+  const toggleFullscreenPanel = useCallback(() => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen?.().then(() => setIsFullscreen(false)).catch(() => {})
+    } else {
+      const el = fullscreenRef.current
+      if (el) el.requestFullscreen?.().then(() => setIsFullscreen(true)).catch(() => {})
+    }
+  }, [])
+
+  const exitFullscreen = useCallback(() => {
+    document.exitFullscreen?.().then(() => setIsFullscreen(false)).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -737,6 +1239,58 @@ function HospitalBedCommandCenter() {
     document.addEventListener('fullscreenchange', onFullscreenChange)
     return () => document.removeEventListener('fullscreenchange', onFullscreenChange)
   }, [])
+
+  // Persist custom overlays to localStorage
+  useEffect(() => {
+    if (customOverlays) {
+      try {
+        localStorage.setItem('hospital-floormap-overlays', JSON.stringify(customOverlays))
+      } catch (err) {
+        console.warn('Failed to save overlays to localStorage:', err)
+      }
+    } else {
+      localStorage.removeItem('hospital-floormap-overlays')
+    }
+  }, [customOverlays])
+
+  // Persist image dimensions to localStorage
+  useEffect(() => {
+    if (customImageDimensions) {
+      try {
+        localStorage.setItem('hospital-floormap-dimensions', JSON.stringify(customImageDimensions))
+      } catch (err) {
+        console.warn('Failed to save dimensions to localStorage:', err)
+      }
+    } else {
+      localStorage.removeItem('hospital-floormap-dimensions')
+    }
+  }, [customImageDimensions])
+
+  // Persist manual dimensions to localStorage
+  useEffect(() => {
+    if (manualDimensions) {
+      try {
+        localStorage.setItem('hospital-floormap-manual-dimensions', JSON.stringify(manualDimensions))
+      } catch (err) {
+        console.warn('Failed to save manual dimensions to localStorage:', err)
+      }
+    } else {
+      localStorage.removeItem('hospital-floormap-manual-dimensions')
+    }
+  }, [manualDimensions])
+
+  // Persist hide alignment message preference
+  useEffect(() => {
+    try {
+      if (hideAlignmentMessage) {
+        localStorage.setItem('hospital-floormap-hide-alignment', 'true')
+      } else {
+        localStorage.removeItem('hospital-floormap-hide-alignment')
+      }
+    } catch (err) {
+      console.warn('Failed to save alignment message preference:', err)
+    }
+  }, [hideAlignmentMessage])
 
   const handleLoadFloorMapClick = () => importInputRef.current?.click()
   const handleLoadFloorMapFile = (e) => {
@@ -748,11 +1302,13 @@ function HospitalBedCommandCenter() {
         const json = JSON.parse(reader.result)
         const rooms = json.rooms ?? json.map?.rooms ?? []
         if (Array.isArray(rooms) && rooms.length > 0) {
-          setCustomOverlays(roomsToOverlays(rooms))
+          const overlays = roomsToOverlays(rooms)
+          setCustomOverlays(overlays)
           // Use image dimensions from export so overlays align (coordinates are in that image's pixel space)
           const w = json.image_width ?? json.imageWidth
           const h = json.image_height ?? json.imageHeight
-          setCustomImageDimensions(w && h ? { width: w, height: h } : null)
+          const dimensions = w && h ? { width: w, height: h } : null
+          setCustomImageDimensions(dimensions)
         } else {
           alert('No rooms found. Expected a FloorMap AI export with a "rooms" array.')
         }
@@ -764,10 +1320,235 @@ function HospitalBedCommandCenter() {
     e.target.value = ''
   }
 
+  const displayTime = selectedTime ?? timelineTimes[0]
+  const patientFlowForTooltip = activeRoomId ? getPatientInRoomAtTime(activeRoomId, displayTime) : null
+
+  useEffect(() => {
+    if (commandCenterMode) {
+      setSelectedTime(timelineTimes[0])
+      setIsTimelinePlaying(true)
+      setShowTransferAnimations(true)
+      setStatusFilter(null)
+      setUnitFilters(new Set())
+    } else {
+      setIsTimelinePlaying(false)
+    }
+  }, [commandCenterMode])
+
+  useEffect(() => {
+    if (!selectedTime) return
+    const rooms = getTransferRoomsAtTime(selectedTime)
+    if (rooms.size > 0) {
+      setHighlightedTransferRooms(rooms)
+      const t = setTimeout(() => setHighlightedTransferRooms(new Set()), 2000)
+      return () => clearTimeout(t)
+    }
+  }, [selectedTime])
+
+  useEffect(() => {
+    if (!selectedTime) {
+      prevSelectedTimeRef.current = null
+      return
+    }
+    if (!showTransferAnimations) {
+      prevSelectedTimeRef.current = selectedTime
+      return
+    }
+    const prev = prevSelectedTimeRef.current
+    prevSelectedTimeRef.current = selectedTime
+    if (!prev) return
+    const transfers = getTransfersInTimeWindow(prev, selectedTime)
+    if (transfers.length === 0) return
+    const roomById = new Map(roomOverlays.map((r) => [r.id, r]))
+    const withCoords = transfers
+      .map((t, i) => {
+        const fromRoom = roomById.get(t.from)
+        const toRoom = roomById.get(t.to)
+        const start = getRoomCenter(fromRoom)
+        const end = getRoomCenter(toRoom)
+        if (!start || !end) return null
+        return {
+          ...t,
+          startX: start.x,
+          startY: start.y,
+          endX: end.x,
+          endY: end.y,
+          staggerMs: i * 200,
+        }
+      })
+      .filter(Boolean)
+    if (withCoords.length === 0) return
+    setActiveTransfers((curr) => [...curr, ...withCoords])
+  }, [selectedTime, showTransferAnimations, roomOverlays])
+
+  const handleTransferComplete = useCallback((transferId) => {
+    setActiveTransfers((curr) => curr.filter((t) => t.id !== transferId))
+  }, [])
+
+  // Calculate active patient transitions for movement animation
+  const prevPatientTimeRef = useRef(null)
+  useEffect(() => {
+    if (!showPatientMovements || !selectedTime) {
+      setActivePatientTransitions([])
+      prevPatientTimeRef.current = null
+      return
+    }
+
+    const currentTime = parseTime(selectedTime)
+    const prevTime = prevPatientTimeRef.current
+    prevPatientTimeRef.current = currentTime
+
+    if (!prevTime) {
+      // First time, don't show transitions yet
+      return
+    }
+
+    // Get transitions that occurred in the time window (similar to getTransfersInTimeWindow)
+    const transitions = []
+    for (const patient of patientMovements) {
+      for (const event of patient.events) {
+        const eventTime = parseTime(event.time)
+        // Show transitions that occurred between prevTime and currentTime
+        if (eventTime > prevTime && eventTime <= currentTime && event.from && event.to) {
+          transitions.push({
+            id: `${patient.patientId}-${event.time}-${event.from}-${event.to}`,
+            patientId: patient.patientId,
+            name: patient.name,
+            from: event.from,
+            to: event.to,
+            timestamp: event.time,
+            action: event.action,
+            department: event.department,
+          })
+        }
+      }
+    }
+
+    if (transitions.length > 0) {
+      setActivePatientTransitions((curr) => [...curr, ...transitions])
+    }
+  }, [selectedTime, showPatientMovements])
+
+  const handlePatientTransitionComplete = useCallback((transitionId) => {
+    setActivePatientTransitions((curr) => curr.filter((t) => t.id !== transitionId))
+  }, [])
+
+  // Calculate and update ER occupancy prediction every 30 seconds
+  useEffect(() => {
+    if (!roomOverlays.length || !roomIdToUnit.size) {
+      setErOccupancyPrediction(null)
+      return
+    }
+
+    const calculatePrediction = () => {
+      try {
+        const currentTime = selectedTime || null
+        const prediction = calculateEROccupancyPrediction(
+          roomsForMetrics,
+          roomIdToUnit,
+          currentTime
+        )
+        setErOccupancyPrediction(prediction)
+      } catch (error) {
+        console.error('Error calculating ER occupancy prediction:', error)
+        setErOccupancyPrediction(null)
+      }
+    }
+
+    // Calculate immediately
+    calculatePrediction()
+
+    // Update every 30 seconds (only when not in timeline mode)
+    if (!selectedTime) {
+      const interval = setInterval(calculatePrediction, 30000)
+      return () => clearInterval(interval)
+    }
+  }, [roomsForMetrics, roomIdToUnit, selectedTime, roomOverlays.length])
+
   return (
-    <div className="min-h-screen bg-slate-900 text-white" data-testid="hospital-command-center">
-      <div className="max-w-[1800px] mx-auto px-4 py-6 space-y-6">
-        {/* Header */}
+    <div className={`bg-slate-900 text-white ${commandCenterMode ? 'flex flex-col flex-1 min-h-0 overflow-hidden' : 'min-h-screen'}`} data-testid="hospital-command-center">
+      <div
+        ref={fullscreenRef}
+        className={`mx-auto w-full flex flex-col ${commandCenterMode && !isFullscreen ? 'flex-1 min-h-0 max-w-[100%] px-3 pt-0 gap-0 overflow-hidden' : 'max-w-[1800px] px-4 py-6 space-y-6'} ${isFullscreen ? 'min-h-screen overflow-y-auto bg-slate-900' : ''} ${commandCenterMode && isFullscreen ? 'pt-0 py-1 gap-1' : ''}`}
+      >
+        {/* Mode Toggle + Fullscreen (Command Center Mode) - compact single row with metrics in CC mode */}
+        {commandCenterMode ? (
+          <div className="flex items-center justify-between gap-4 shrink-0 py-1 px-1">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setCommandCenterMode(false)}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors bg-slate-700/60 text-slate-400 hover:bg-slate-700 hover:text-white"
+              >
+                Normal Mode
+              </button>
+              <button
+                type="button"
+                onClick={() => setCommandCenterMode(true)}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors bg-teal-600 text-white"
+              >
+                Command Center Mode
+              </button>
+              <button
+                type="button"
+                onClick={toggleFullscreenPanel}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-700/80 hover:bg-slate-600 text-white border border-white/20 transition-colors"
+                title={isFullscreen ? 'Exit full screen (Esc)' : 'Full screen'}
+                aria-label={isFullscreen ? 'Exit full screen' : 'Full screen'}
+              >
+                {isFullscreen ? '✕ Exit' : '⛶ Full screen'}
+              </button>
+            </div>
+            <div className="shrink-0">
+              <RotatingMetricsPanel selectedTime={displayTime} metrics={metrics} />
+            </div>
+          </div>
+        ) : (
+        <div className="flex items-center justify-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => setCommandCenterMode(false)}
+            className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors bg-teal-600 text-white"
+          >
+            Normal Mode
+          </button>
+          <button
+            type="button"
+            onClick={() => setCommandCenterMode(true)}
+            className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors bg-slate-700/60 text-slate-400 hover:bg-slate-700 hover:text-white"
+          >
+            Command Center Mode
+          </button>
+        </div>
+        )}
+
+        {!commandCenterMode && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <TransferSummary selectedTime={displayTime} />
+          <WaitingRoomMetrics selectedTime={displayTime} />
+        </div>
+        )}
+
+        {/* ER Occupancy Prediction - Top Dashboard Area (when in live mode) */}
+        {erOccupancyPrediction && !selectedTime && !commandCenterMode && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <EROccupancyPrediction
+              rooms={roomsForMetrics}
+              roomIdToUnit={roomIdToUnit}
+              currentTime={selectedTime}
+            />
+            <EROccupancyTrendChart
+              roomStatusHistory={roomStatusHistory}
+              roomOverlays={roomOverlays}
+              roomIdToUnit={roomIdToUnit}
+              currentRooms={roomsForMetrics}
+              currentScenarioId={currentScenarioId}
+            />
+          </div>
+        )}
+
+        {/* Header - hidden in Command Center Mode */}
+        {!commandCenterMode && (
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-xl bg-slate-700 flex items-center justify-center text-2xl border border-white/10">
@@ -815,9 +1596,44 @@ function HospitalBedCommandCenter() {
             >
               {loading ? 'Refreshing…' : 'Refresh'}
             </button>
+            {isFullscreen ? (
+              <button
+                type="button"
+                onClick={exitFullscreen}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-white/20 bg-slate-800 hover:bg-slate-700 text-sm font-semibold transition-colors"
+                title="Exit full screen (Esc)"
+                aria-label="Exit full screen"
+              >
+                ✕ Exit full screen
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={toggleFullscreenMap}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-white/20 bg-slate-800 hover:bg-slate-700 text-sm font-semibold transition-colors"
+                  title="Full screen map only"
+                  aria-label="Full screen map"
+                >
+                  ⛶ Map
+                </button>
+                <button
+                  type="button"
+                  onClick={toggleFullscreenPanel}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-white/20 bg-slate-800 hover:bg-slate-700 text-sm font-semibold transition-colors"
+                  title="Full screen entire panel (filters, timeline, etc.)"
+                  aria-label="Full screen panel"
+                >
+                  ⛶ Panel
+                </button>
+              </>
+            )}
           </div>
         </div>
+        )}
 
+        {/* Metrics - KpiPanels + filters in normal (CC mode: map + timeline fill space) */}
+        {!commandCenterMode && (
         <div className="space-y-3">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <KpiPanels
@@ -826,6 +1642,33 @@ function HospitalBedCommandCenter() {
               onFilterChange={setStatusFilter}
             />
             <div className="flex flex-wrap items-center gap-3 shrink-0 ml-auto">
+              <div className="flex items-center gap-2 sm:border-r sm:border-white/20 sm:pr-3">
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={roomSearch}
+                    onChange={(e) => setRoomSearch(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleRoomSearch()}
+                    placeholder="Search room (e.g. 12, 037)"
+                    className="w-36 sm:w-44 px-2.5 py-1.5 pl-8 rounded border border-white/20 bg-slate-800 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-teal-500/50"
+                    aria-label="Search room number"
+                  />
+                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 text-xs" aria-hidden="true">🔍</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleRoomSearch}
+                  disabled={roomSearchMatches.length === 0}
+                  className="px-2.5 py-1.5 rounded border border-white/20 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed text-xs font-medium"
+                >
+                  Go
+                </button>
+                {roomSearch.trim() && (
+                  <span className="text-[10px] text-slate-400 hidden sm:inline">
+                    {roomSearchMatches.length === 0 ? 'None' : roomSearchMatches.length === 1 ? roomSearchMatches[0].id : `${roomSearchMatches.length} found`}
+                  </span>
+                )}
+              </div>
               <LiveStatus lastUpdated={lastUpdated} className="px-3 py-2 rounded-lg border border-white/10 bg-slate-800/80" />
               <div className="flex items-center gap-2">
                 <span className="text-slate-400 text-xs">Layer:</span>
@@ -845,6 +1688,7 @@ function HospitalBedCommandCenter() {
               <div className="flex flex-wrap items-center gap-2 sm:border-l sm:border-white/20 sm:pl-3">
                 <span className="text-slate-400 text-xs">Unit:</span>
               {[
+                { value: 'WAITING', label: 'WR' },
                 { value: 'ER', label: 'ER' },
                 { value: 'General Ward', label: 'GW' },
                 { value: 'OR', label: 'OR' },
@@ -891,8 +1735,9 @@ function HospitalBedCommandCenter() {
             Click a metric to filter map • Unit filters zoom to section
           </p>
         </div>
+        )}
 
-        {statusFilter && (
+        {!commandCenterMode && statusFilter && (
           <div className="flex items-center gap-2 text-sm">
             <span className="text-slate-400">Filter:</span>
             <span className="px-3 py-1.5 rounded-lg bg-slate-700/90 border border-white/20 font-medium text-white capitalize">
@@ -909,7 +1754,7 @@ function HospitalBedCommandCenter() {
           </div>
         )}
 
-        {customOverlays && (
+        {!commandCenterMode && customOverlays && !hideAlignmentMessage && !customImageDimensions && !manualDimensions && (
           <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-4 py-2 text-sm text-blue-200 flex flex-wrap items-center gap-4">
             <span>
               <strong>Floor map loaded.</strong> Overlays not aligning? Try re-exporting from FloorMap AI (new exports include image dimensions), or enter dimensions manually:
@@ -924,7 +1769,14 @@ function HospitalBedCommandCenter() {
                 value={manualDimensions?.width ?? ''}
                 onChange={(e) => {
                   const w = e.target.value ? Number(e.target.value) : null
-                  setManualDimensions((prev) => (w != null ? { ...prev, width: w } : prev ? { ...prev, width: undefined } : null))
+                  setManualDimensions((prev) => {
+                    const updated = w != null ? { ...(prev || {}), width: w } : prev ? { ...prev, width: undefined } : null
+                    // Remove if both width and height are undefined
+                    if (updated && updated.width === undefined && updated.height === undefined) {
+                      return null
+                    }
+                    return updated
+                  })
                 }}
               />
               <span className="text-slate-400">×</span>
@@ -937,7 +1789,14 @@ function HospitalBedCommandCenter() {
                 value={manualDimensions?.height ?? ''}
                 onChange={(e) => {
                   const h = e.target.value ? Number(e.target.value) : null
-                  setManualDimensions((prev) => (h != null ? { ...prev, height: h } : prev ? { ...prev, height: undefined } : null))
+                  setManualDimensions((prev) => {
+                    const updated = h != null ? { ...(prev || {}), height: h } : prev ? { ...prev, height: undefined } : null
+                    // Remove if both width and height are undefined
+                    if (updated && updated.width === undefined && updated.height === undefined) {
+                      return null
+                    }
+                    return updated
+                  })
                 }}
               />
               <button
@@ -947,28 +1806,41 @@ function HospitalBedCommandCenter() {
               >
                 Reset
               </button>
+              <button
+                type="button"
+                onClick={() => setHideAlignmentMessage(true)}
+                className="text-xs px-2 py-1 rounded bg-slate-700 hover:bg-slate-600"
+                title="Dismiss this message"
+              >
+                ✕
+              </button>
             </div>
           </div>
         )}
 
+        {/* Main content: Map + Side Panel - centered block in Command Center Mode for wide displays */}
+        <div className={`flex flex-col flex-1 min-h-0 w-full ${commandCenterMode ? 'lg:flex-row gap-3 lg:gap-4 lg:max-w-[1920px] lg:mx-auto lg:self-center' : 'lg:flex-row gap-4'}`}>
         {/* Blueprint image with Zoom/Pan */}
         <div
           ref={containerRef}
-          className="relative rounded-2xl border border-white/10 overflow-hidden bg-slate-900 cursor-grab active:cursor-grabbing"
-          style={{ minHeight: 500 }}
-          onMouseDown={handleMouseDown}
+          className={`relative rounded-xl border border-white/10 overflow-hidden bg-slate-900 flex-1 min-w-0 min-h-0 flex flex-col ${commandCenterMode ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'}`}
+          onMouseDown={commandCenterMode ? undefined : handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
-          onClick={(e) => { if (!e.target.closest('[data-room-id]')) setSelectedRoom(null) }}
+          onClick={commandCenterMode ? undefined : (e) => { if (!e.target.closest('[data-room-id]')) setSelectedRoom(null) }}
         >
+          {selectedTime && (
+            <div className="absolute top-2 left-1/2 -translate-x-1/2 z-20 px-4 py-2 rounded-lg bg-slate-800/95 border border-white/20 text-sm font-medium shadow-lg">
+              Hospital Status at: <span className="text-teal-400">{selectedTime}</span>
+            </div>
+          )}
           <div
-            className="w-full flex items-stretch justify-center"
+            className="w-full flex-1 min-h-0 flex items-center justify-center"
             style={{
               transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})`,
               transformOrigin: 'center center',
-              minHeight: 480,
-              height: 'min(80vh, 800px)',
+              minHeight: commandCenterMode ? 280 : 480,
             }}
           >
             {error ? (
@@ -985,23 +1857,36 @@ function HospitalBedCommandCenter() {
             ) : loading && roomData.length === 0 ? (
               <div className="text-slate-400">Loading floor map…</div>
             ) : (
-              <div className="w-full h-full min-h-[400px] flex items-center justify-center">
-                <BlueprintImage
-                  roomOverlays={roomOverlays}
-                  roomStatusMap={roomStatusMap}
-                  onRoomHover={handleRoomHover}
-                  onRoomClick={handleRoomClick}
-                  hoveredRoom={hoveredRoom}
-                  statusFilter={statusFilter}
-                  unitFilters={unitFilters}
-                  imageDimensions={customImageDimensions}
-                  manualDimensions={manualDimensions}
-                  showPressureLayer={showPressureLayer}
-                />
-              </div>
+              <>
+                <div className="w-full h-full min-h-0 flex items-center justify-center">
+                  <BlueprintImage
+                    roomOverlays={roomOverlays}
+                    roomStatusMap={roomStatusMapWithTimeline}
+                    onRoomHover={handleRoomHover}
+                    onRoomClick={commandCenterMode ? undefined : handleRoomClick}
+                    hoveredRoom={focusRoom || hoveredRoom}
+                    statusFilter={statusFilter}
+                    unitFilters={unitFilters}
+                    imageDimensions={customImageDimensions}
+                    manualDimensions={manualDimensions}
+                    showPressureLayer={showPressureLayer && !selectedTime}
+                    highlightedTransferRooms={highlightedTransferRooms}
+                    activeTransfers={activeTransfers}
+                    onTransferComplete={handleTransferComplete}
+                    showTransferAnimations={showTransferAnimations}
+                    activePatientTransitions={activePatientTransitions}
+                    onPatientTransitionComplete={handlePatientTransitionComplete}
+                    showPatientMovements={showPatientMovements}
+                    inboundImpact={inboundImpact}
+                    highlightedZone={highlightedZone}
+                    roomIdToUnit={roomIdToUnit}
+                  />
+                </div>
+              </>
             )}
           </div>
-          {/* Zoom controls */}
+          {/* Zoom controls - hidden in Command Center Mode */}
+          {!commandCenterMode && (
           <div className="absolute bottom-4 right-4 flex flex-col gap-1">
             <button
               type="button"
@@ -1019,19 +1904,181 @@ function HospitalBedCommandCenter() {
             </button>
             <button
               type="button"
-              onClick={toggleFullscreen}
+              onClick={toggleFullscreenMap}
               className="w-10 h-10 rounded-lg bg-slate-800/90 border border-white/10 flex items-center justify-center text-sm hover:bg-slate-700"
-              title={isFullscreen ? 'Exit full screen (Esc)' : 'Full screen'}
-              aria-label={isFullscreen ? 'Exit full screen' : 'Full screen'}
+              title={isFullscreen ? 'Exit full screen (Esc)' : 'Full screen map'}
+              aria-label={isFullscreen ? 'Exit full screen' : 'Full screen map'}
             >
               {isFullscreen ? '✕' : '⛶'}
             </button>
           </div>
-          {hoveredRoomData && (
-            <RoomTooltip roomData={hoveredRoomData} tooltipPos={tooltipPos} unit={activeRoomId ? roomIdToUnit.get(activeRoomId) : null} />
+          )}
+          {hoveredRoomData && !commandCenterMode && (
+            <RoomTooltip
+              roomData={hoveredRoomData}
+              tooltipPos={tooltipPos}
+              unit={activeRoomId ? roomIdToUnit.get(activeRoomId) : null}
+              patientFlow={patientFlowForTooltip}
+            />
           )}
         </div>
 
+        {/* Side Panel: Scenario Controls + Patient Flow + Alerts */}
+        <div className={`flex flex-col gap-3 shrink-0 order-first lg:order-last ${commandCenterMode ? 'w-full lg:w-56 min-w-0' : 'w-full lg:w-72'}`}>
+          {/* Scenario Demo Mode Controls */}
+          <div className="space-y-3">
+            <ScenarioControlPanel
+              currentScenarioId={currentScenarioId}
+              isPlaying={isScenarioPlaying}
+              isPaused={isScenarioPaused}
+              currentStep={scenarioStep}
+              totalSteps={scenarioTotalSteps}
+              onScenarioSelect={handleScenarioSelect}
+              onPlay={handleScenarioPlay}
+              onPause={handleScenarioPause}
+              onReset={handleScenarioReset}
+              onPreviousStep={handleScenarioPreviousStep}
+              onNextStep={handleScenarioNextStep}
+            />
+            <ScenarioNarrativePanel
+              scenarioName={currentScenarioId ? getScenarioById(currentScenarioId)?.name : null}
+              currentStep={scenarioStep}
+              totalSteps={scenarioTotalSteps}
+              narrative={scenarioNarrative}
+              isVisible={!!currentScenarioId}
+            />
+          </div>
+
+          {/* ER Occupancy Prediction - Show in both normal and command center mode */}
+          {erOccupancyPrediction && !selectedTime && (
+            <div className="space-y-2">
+              <EROccupancyPrediction
+                rooms={roomsForMetrics}
+                roomIdToUnit={roomIdToUnit}
+                currentTime={selectedTime}
+              />
+              <EROccupancyTrendChart
+                roomStatusHistory={roomStatusHistory}
+                roomOverlays={roomOverlays}
+                roomIdToUnit={roomIdToUnit}
+                currentRooms={roomsForMetrics}
+                currentScenarioId={currentScenarioId}
+              />
+            </div>
+          )}
+
+          {!commandCenterMode && <PatientFlowPanel selectedRoomId={selectedRoom} selectedTime={displayTime} />}
+          <OperationalAlerts
+            selectedTime={displayTime}
+            roomOverlays={roomOverlays}
+            roomStatusMap={roomStatusMapWithTimeline}
+            roomIdToUnit={roomIdToUnit}
+            highlightAlerts={commandCenterMode}
+            scenarioAlerts={scenarioState?.alerts}
+            erOccupancyPrediction={erOccupancyPrediction}
+          />
+        </div>
+        </div>
+
+        {/* Timeline Playback */}
+        <div className={`shrink-0 ${commandCenterMode ? 'py-1' : 'space-y-2'}`}>
+          {!commandCenterMode && (
+            <div className="flex flex-wrap items-center gap-3 text-xs">
+              {selectedTime && (
+                <>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={showTransferAnimations}
+                      onChange={(e) => setShowTransferAnimations(e.target.checked)}
+                      className="rounded border-white/30 bg-slate-800 text-teal-500 focus:ring-teal-500/50"
+                    />
+                    <span className="text-slate-400">Show transfer animations</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={showPatientMovements}
+                      onChange={(e) => setShowPatientMovements(e.target.checked)}
+                      className="rounded border-white/30 bg-slate-800 text-blue-500 focus:ring-blue-500/50"
+                    />
+                    <span className="text-slate-400">Show patient movements</span>
+                  </label>
+                  <span className="text-slate-500">• Animated markers = patient flow between departments</span>
+                </>
+              )}
+              {!selectedTime && (
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={showPatientMovements}
+                    onChange={(e) => setShowPatientMovements(e.target.checked)}
+                    className="rounded border-white/30 bg-slate-800 text-blue-500 focus:ring-blue-500/50"
+                  />
+                  <span className="text-slate-400">Show patient movements</span>
+                </label>
+              )}
+            </div>
+          )}
+          <TimelinePlayback
+            times={timelineTimes}
+            selectedTime={selectedTime ?? timelineTimes[0]}
+            onTimeChange={setSelectedTime}
+            isPlaying={isTimelinePlaying}
+            onPlayPause={() => {
+              if (!selectedTime) setSelectedTime(timelineTimes[0])
+              setIsTimelinePlaying((p) => !p)
+            }}
+            onBackToLive={() => {
+              setSelectedTime(null)
+              setIsTimelinePlaying(false)
+            }}
+            isLive={!selectedTime}
+            compact={commandCenterMode}
+            playbackIntervalMs={commandCenterMode ? 5000 : 2000}
+          />
+          {!commandCenterMode && (
+          <div className="flex flex-wrap items-center gap-4">
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedTime(null)
+              setIsTimelinePlaying(false)
+            }}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+              !selectedTime ? 'bg-emerald-600/80 text-white' : 'bg-slate-700/60 text-slate-400 hover:bg-slate-600 hover:text-white'
+            }`}
+          >
+            Live
+          </button>
+          {selectedTime && (
+            <div className="flex items-center gap-4 text-xs text-slate-400">
+              {(() => {
+                const snapshot = roomStatusHistory.find((s) => s.time === selectedTime)
+                if (!snapshot?.rooms) return null
+                const byUnit = { ER: { total: 0, occupied: 0 }, ICU: { total: 0, occupied: 0 } }
+                roomOverlays.forEach((r) => {
+                  const unit = r.unit
+                  if (unit === 'ER' || unit === 'ICU') {
+                    if (INFRASTRUCTURE_ROOM_IDS.has(r.id) || NON_PATIENT_ROOM_TYPES.has(r.type)) return
+                    byUnit[unit].total++
+                    if (snapshot.rooms[r.id] === 'occupied') byUnit[unit].occupied++
+                  }
+                })
+                return (
+                  <>
+                    <span>ER Occupancy: {byUnit.ER.total ? Math.round((byUnit.ER.occupied / byUnit.ER.total) * 100) : 0}%</span>
+                    <span>ICU Occupancy: {byUnit.ICU.total ? Math.round((byUnit.ICU.occupied / byUnit.ICU.total) * 100) : 0}%</span>
+                  </>
+                )
+              })()}
+            </div>
+          )}
+          </div>
+          )}
+        </div>
+
+        {!commandCenterMode && (
         <div className="rounded-lg border border-white/10 bg-slate-800/40 px-4 py-3 flex flex-wrap items-center gap-x-6 gap-y-2">
           <div className="flex items-center gap-x-4">
             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Status</span>
@@ -1054,6 +2101,7 @@ function HospitalBedCommandCenter() {
           </div>
           <span className="text-[10px] text-slate-500 ml-auto">Scroll zoom • Drag pan</span>
         </div>
+        )}
       </div>
     </div>
   )

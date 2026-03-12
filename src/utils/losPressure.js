@@ -112,6 +112,18 @@ export function getRoomPressureLevel(room) {
   const status = room.status
   if (status !== 'occupied') return { level: 'normal' }
 
+  // Check if room is explicitly marked as critical
+  if (room.critical === true) {
+    let losMinutes = room.length_of_stay_minutes ?? room.los_minutes ?? null
+    if (losMinutes == null && (room.admitted_at_iso || room.patient?.admitted_at)) {
+      const admitted = room.admitted_at_iso ?? room.patient?.admitted_at
+      const los = calculateLOS(admitted)
+      if (los) losMinutes = los.losMinutes
+    }
+    const losLabel = losMinutes != null ? formatMinutesToLOS(losMinutes) : null
+    return { level: 'critical', losMinutes, losLabel }
+  }
+
   let losMinutes = room.length_of_stay_minutes ?? room.los_minutes ?? null
 
   if (losMinutes == null && (room.admitted_at_iso || room.patient?.admitted_at)) {

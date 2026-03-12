@@ -48,6 +48,7 @@ const PATH_TO_LABEL = [
   { path: '/predictive-bed-map', label: 'Predictive Bed Map' },
   { path: '/er-command-map', label: 'ER Command Map' },
   { path: '/floormap-ai', label: 'FloorMap AI' },
+  { path: '/motel-command-center', label: 'Motel Command Center' },
   { path: '/federal-entry-brief', label: 'Federal Entry Brief' },
   { path: '/reports/federal-entry', label: 'Federal Entry Report' },
   { path: '/apps/execution-api', label: 'Execution API' },
@@ -570,6 +571,12 @@ function AppLayout() {
                     <span className={sidebarOpen ? '' : 'lg:hidden'}>FloorMap AI</span>
                   </NavLink>
                 </SidebarTooltip>
+                <SidebarTooltip show={!sidebarOpen} label="Motel Command Center">
+                  <NavLink to="/motel-command-center" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
+                    <span>🏨</span>
+                    <span className={sidebarOpen ? '' : 'lg:hidden'}>Motel Command Center</span>
+                  </NavLink>
+                </SidebarTooltip>
                 <SidebarTooltip show={!sidebarOpen} label="Federal Entry Brief">
                   <NavLink to="/federal-entry-brief" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
                     <span>📑</span>
@@ -710,7 +717,7 @@ function AppLayout() {
             <Navbar onOpenSidebar={() => setMobileMenuOpen(true)} onOpenMessaging={() => setMessagingPanelOpen(true)} messagesUnreadCount={messagesUnreadCount} />
           </div>
         </header>
-        <main className="flex-1 min-h-0">
+        <main className="flex-1 min-h-0 flex flex-col">
           <Outlet />
         </main>
         {!hideFooter && <Footer />}

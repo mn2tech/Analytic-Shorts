@@ -11,6 +11,9 @@ frontend:
     # Backend API URL - Update with your production backend URL
     VITE_API_URL: https://api.nm2tech-sas.com  # ← Update this with your actual backend URL
     
+    # FloorMap AI backend - add if you deploy backend-floormap (e.g. https://floormap-api.nm2tech-sas.com)
+    # VITE_FLOORMAP_API_URL: https://your-floormap-backend.com
+    
     # Production Stripe Publishable Key
     VITE_STRIPE_PUBLISHABLE_KEY: pk_live_51RilIPCAL4InIKRQlas1xaG2odzZNj70YikLjKe1Jvf8qU2pKtx4HzLLm2Y5NP0FF4tJaf20nA08FOKAXPNB2awU00HXHdOVz8
     
