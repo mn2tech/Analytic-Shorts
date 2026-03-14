@@ -7,7 +7,7 @@ frontend:
         # AWS Amplify uses Amazon Linux 2 - install git-lfs via yum
         - |
           if ! command -v git-lfs &> /dev/null; then
-            yum install -y git-lfs || {
+            sudo yum install -y git-lfs 2>/dev/null || {
               # Fallback: Download and install Git LFS binary manually
               curl -L https://github.com/git-lfs/git-lfs/releases/download/v3.6.1/git-lfs-linux-amd64-v3.6.1.tar.gz -o /tmp/git-lfs.tar.gz
               tar -xzf /tmp/git-lfs.tar.gz -C /tmp
