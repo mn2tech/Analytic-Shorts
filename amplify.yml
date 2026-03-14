@@ -3,6 +3,9 @@ frontend:
   phases:
     preBuild:
       commands:
+        # Install Git LFS and pull LFS files (needed for large blueprint images)
+        - git lfs install
+        - git lfs pull
         - npm ci
     build:
       commands:
