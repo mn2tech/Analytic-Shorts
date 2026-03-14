@@ -3,7 +3,18 @@ frontend:
   phases:
     preBuild:
       commands:
-        # Install Git LFS and pull LFS files (needed for large blueprint images)
+        # Install Git LFS (needed for large blueprint images)
+        # AWS Amplify uses Amazon Linux 2 - install git-lfs via yum
+        - |
+          if ! command -v git-lfs &> /dev/null; then
+            yum install -y git-lfs || {
+              # Fallback: Download and install Git LFS binary manually
+              curl -L https://github.com/git-lfs/git-lfs/releases/download/v3.6.1/git-lfs-linux-amd64-v3.6.1.tar.gz -o /tmp/git-lfs.tar.gz
+              tar -xzf /tmp/git-lfs.tar.gz -C /tmp
+              /tmp/git-lfs install
+              export PATH="/tmp:$PATH"
+            }
+          fi
         - git lfs install
         - git lfs pull
         - npm ci
