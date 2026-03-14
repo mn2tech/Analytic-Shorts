@@ -3,33 +3,6 @@ frontend:
   phases:
     preBuild:
       commands:
-        # Install Git LFS (needed for large blueprint images)
-        # AWS Amplify uses Amazon Linux 2 - install git-lfs via yum
-        - |
-          if ! command -v git-lfs &> /dev/null; then
-            sudo yum install -y git-lfs 2>/dev/null || {
-              # Fallback: Download and install Git LFS binary manually
-              curl -L https://github.com/git-lfs/git-lfs/releases/download/v3.6.1/git-lfs-linux-amd64-v3.6.1.tar.gz -o /tmp/git-lfs.tar.gz
-              tar -xzf /tmp/git-lfs.tar.gz -C /tmp
-              /tmp/git-lfs install
-              export PATH="/tmp:$PATH"
-            }
-          fi
-        - git lfs install
-        - git lfs pull
-        # Verify LFS files were pulled correctly
-        - |
-          if [ -f "public/motel-blueprint.png" ]; then
-            file_size=$(stat -f%z "public/motel-blueprint.png" 2>/dev/null || stat -c%s "public/motel-blueprint.png" 2>/dev/null || echo "0")
-            if [ "$file_size" -lt 1000 ]; then
-              echo "WARNING: motel-blueprint.png appears to be a pointer file, not the actual image"
-              echo "File size: $file_size bytes"
-            else
-              echo "SUCCESS: motel-blueprint.png is a real file ($file_size bytes)"
-            fi
-          else
-            echo "ERROR: public/motel-blueprint.png not found"
-          fi
         - npm ci
     build:
       commands:
