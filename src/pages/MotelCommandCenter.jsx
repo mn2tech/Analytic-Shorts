@@ -342,9 +342,38 @@ function MotelCommandCenter() {
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 })
   const [scale, setScale] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
-  const [customOverlays, setCustomOverlays] = useState(null)
-  const [customImageDimensions, setCustomImageDimensions] = useState(null)
-  const [manualDimensions, setManualDimensions] = useState(null)
+  // Load persisted floor map data from localStorage
+  const [customOverlays, setCustomOverlays] = useState(() => {
+    try {
+      const saved = localStorage.getItem('motel-floormap-overlays')
+      return saved ? JSON.parse(saved) : null
+    } catch {
+      return null
+    }
+  })
+  const [customImageDimensions, setCustomImageDimensions] = useState(() => {
+    try {
+      const saved = localStorage.getItem('motel-floormap-dimensions')
+      return saved ? JSON.parse(saved) : null
+    } catch {
+      return null
+    }
+  })
+  const [manualDimensions, setManualDimensions] = useState(() => {
+    try {
+      const saved = localStorage.getItem('motel-floormap-manual-dimensions')
+      return saved ? JSON.parse(saved) : null
+    } catch {
+      return null
+    }
+  })
+  const [hideAlignmentMessage, setHideAlignmentMessage] = useState(() => {
+    try {
+      return localStorage.getItem('motel-floormap-hide-alignment') === 'true'
+    } catch {
+      return false
+    }
+  })
   const [roomSearch, setRoomSearch] = useState('')
   const [selectedTime, setSelectedTime] = useState(null)
   const [isTimelinePlaying, setIsTimelinePlaying] = useState(false)
@@ -367,29 +396,52 @@ function MotelCommandCenter() {
     [manualDimensions, customImageDimensions]
   )
 
-  // Initial fit-to-viewport and when container resizes (no floor filter)
+  // Fit to viewport function - fills entire window without padding
+  const fitToViewport = useCallback(() => {
+    const el = containerRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const vw = rect.width
+    const vh = rect.height
+    if (vw <= 0 || vh <= 0) return
+    const { width: mapW, height: mapH } = mapDimensions
+    
+    // Calculate scale to fill the entire viewport (no padding)
+    const scaleX = vw / mapW
+    const scaleY = vh / mapH
+    const newScale = Math.min(scaleX, scaleY) // Use the smaller scale to fit entirely
+    
+    // With transform-origin: center center, pan of (0,0) centers the content
+    setScale(newScale)
+    setPan({ x: 0, y: 0 })
+  }, [mapDimensions])
+
+  // Initial fit-to-viewport and when container resizes
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
     const applyFit = () => {
-      const rect = el.getBoundingClientRect()
-      const vw = rect.width
-      const vh = rect.height
-      if (vw <= 0 || vh <= 0) return
-      const { width: mapW, height: mapH } = mapDimensions
-      const contentScale = Math.min(vw / mapW, vh / mapH)
-      const newScale = Math.min(2, Math.max(0.5, contentScale))
-      setScale(newScale)
-      setPan({ x: 0, y: 0 })
+      fitToViewport()
     }
-    const id = requestAnimationFrame(applyFit)
+    // Delay initial fit to ensure container is fully rendered
+    const timeoutId = setTimeout(() => {
+      requestAnimationFrame(applyFit)
+    }, 100)
     const ro = new ResizeObserver(applyFit)
     ro.observe(el)
     return () => {
-      cancelAnimationFrame(id)
+      clearTimeout(timeoutId)
       ro.disconnect()
     }
-  }, [mapDimensions])
+  }, [mapDimensions, fitToViewport])
+
+  // Fit to viewport when command center mode is enabled or component mounts
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      fitToViewport()
+    }, 200) // Increased delay to ensure layout is complete
+    return () => clearTimeout(timeoutId)
+  }, [commandCenterMode, fitToViewport, roomOverlays])
 
   const zoomToRoom = useCallback(
     (roomId) => {
@@ -615,6 +667,58 @@ function MotelCommandCenter() {
     return () => document.removeEventListener('fullscreenchange', onFullscreenChange)
   }, [])
 
+  // Persist custom overlays to localStorage
+  useEffect(() => {
+    if (customOverlays) {
+      try {
+        localStorage.setItem('motel-floormap-overlays', JSON.stringify(customOverlays))
+      } catch (err) {
+        console.warn('Failed to save overlays to localStorage:', err)
+      }
+    } else {
+      localStorage.removeItem('motel-floormap-overlays')
+    }
+  }, [customOverlays])
+
+  // Persist image dimensions to localStorage
+  useEffect(() => {
+    if (customImageDimensions) {
+      try {
+        localStorage.setItem('motel-floormap-dimensions', JSON.stringify(customImageDimensions))
+      } catch (err) {
+        console.warn('Failed to save dimensions to localStorage:', err)
+      }
+    } else {
+      localStorage.removeItem('motel-floormap-dimensions')
+    }
+  }, [customImageDimensions])
+
+  // Persist manual dimensions to localStorage
+  useEffect(() => {
+    if (manualDimensions) {
+      try {
+        localStorage.setItem('motel-floormap-manual-dimensions', JSON.stringify(manualDimensions))
+      } catch (err) {
+        console.warn('Failed to save manual dimensions to localStorage:', err)
+      }
+    } else {
+      localStorage.removeItem('motel-floormap-manual-dimensions')
+    }
+  }, [manualDimensions])
+
+  // Persist hide alignment message preference
+  useEffect(() => {
+    try {
+      if (hideAlignmentMessage) {
+        localStorage.setItem('motel-floormap-hide-alignment', 'true')
+      } else {
+        localStorage.removeItem('motel-floormap-hide-alignment')
+      }
+    } catch (err) {
+      console.warn('Failed to save alignment message preference:', err)
+    }
+  }, [hideAlignmentMessage])
+
   const handleLoadFloorMapClick = () => importInputRef.current?.click()
   const handleLoadFloorMapFile = (e) => {
     const file = e.target?.files?.[0]
@@ -752,7 +856,7 @@ function MotelCommandCenter() {
           </div>
         )}
 
-        {!commandCenterMode && customOverlays && (
+        {!commandCenterMode && customOverlays && !hideAlignmentMessage && !customImageDimensions && !manualDimensions && (
           <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-4 py-2 text-sm text-blue-200 flex flex-wrap items-center gap-4">
             <span><strong>Floor map loaded.</strong> Enter manual dimensions if overlays don&apos;t align:</span>
             <div className="flex items-center gap-2">
@@ -782,6 +886,14 @@ function MotelCommandCenter() {
                 }}
               />
               <button type="button" onClick={() => setManualDimensions(null)} className="text-xs px-2 py-1 rounded bg-slate-700 hover:bg-slate-600">Reset</button>
+              <button
+                type="button"
+                onClick={() => setHideAlignmentMessage(true)}
+                className="text-xs px-2 py-1 rounded bg-slate-700 hover:bg-slate-600"
+                title="Hide this message"
+              >
+                ✕ Hide
+              </button>
             </div>
           </div>
         )}
