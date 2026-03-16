@@ -1,70 +1,1513 @@
 {
-  "file_id": "890617cf-e673-44bc-8af1-597b03a9287d",
+  "file_id": "0c2faedb-d20e-4581-9c42-840c94b374d9",
   "rooms": [
-    { "room_id": "ROOM_009", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 1262, "y": 173, "width": 79, "height": 62 } },
-    { "room_id": "ROOM_011", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 244, "y": 174, "width": 80, "height": 64 } },
-    { "room_id": "ROOM_013", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 670, "y": 174, "width": 78, "height": 62 } },
-    { "room_id": "ROOM_014", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 755, "y": 174, "width": 79, "height": 64 } },
-    { "room_id": "ROOM_015", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 841, "y": 174, "width": 78, "height": 64 } },
-    { "room_id": "ROOM_018", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 244, "y": 301, "width": 80, "height": 75 } },
-    { "room_id": "ROOM_019", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 331, "y": 301, "width": 77, "height": 75 } },
-    { "room_id": "ROOM_020", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 415, "y": 301, "width": 77, "height": 75 } },
-    { "room_id": "ROOM_021", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 500, "y": 301, "width": 77, "height": 75 } },
-    { "room_id": "ROOM_022", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 585, "y": 301, "width": 78, "height": 75 } },
-    { "room_id": "ROOM_023", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 755, "y": 301, "width": 78, "height": 76 } },
-    { "room_id": "ROOM_024", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 840, "y": 301, "width": 79, "height": 75 } },
-    { "room_id": "ROOM_025", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 1011, "y": 301, "width": 76, "height": 75 } },
-    { "room_id": "ROOM_026", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 1095, "y": 301, "width": 76, "height": 75 } },
-    { "room_id": "ROOM_027", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 671, "y": 302, "width": 77, "height": 75 } },
-    { "room_id": "ROOM_028", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 927, "y": 302, "width": 75, "height": 74 } },
-    { "room_id": "ROOM_029", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 1179, "y": 302, "width": 74, "height": 73 } },
-    { "room_id": "ROOM_032", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 399, "y": 495, "width": 86, "height": 64 } },
-    { "room_id": "ROOM_033", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 670, "y": 496, "width": 77, "height": 62 } },
-    { "room_id": "ROOM_034", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 840.5, "y": 499, "width": 77, "height": 59 } },
-    { "room_id": "ROOM_035", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 925.5, "y": 499, "width": 76, "height": 58 } },
-    { "room_id": "ROOM_036", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 1009, "y": 496.5, "width": 77, "height": 61 } },
-    { "room_id": "ROOM_037", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 1092.5, "y": 497, "width": 78, "height": 62 } },
-    { "room_id": "ROOM_039", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 296, "y": 496, "width": 94, "height": 64 } },
-    { "room_id": "ROOM_040", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 495.5, "y": 494.5, "width": 80, "height": 65 } },
-    { "room_id": "ROOM_041", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 585, "y": 496, "width": 78, "height": 60 } },
-    { "room_id": "ROOM_042", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 755, "y": 496.5, "width": 77, "height": 62 } },
-    { "room_id": "ROOM_046", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 670, "y": 622, "width": 78, "height": 64 } },
-    { "room_id": "ROOM_047", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 196, "y": 623, "width": 93, "height": 64 } },
-    { "room_id": "ROOM_048", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 297, "y": 623, "width": 95, "height": 64 } },
-    { "room_id": "ROOM_049", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 400, "y": 623, "width": 88, "height": 64 } },
-    { "room_id": "ROOM_050", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 496, "y": 623, "width": 81, "height": 64 } },
-    { "room_id": "ROOM_051", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 585, "y": 623, "width": 77, "height": 64 } },
-    { "room_id": "ROOM_052", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 756, "y": 623, "width": 77, "height": 63 } },
-    { "room_id": "ROOM_053", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 841, "y": 623, "width": 77, "height": 64 } },
-    { "room_id": "ROOM_054", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 926, "y": 623, "width": 76, "height": 64 } },
-    { "room_id": "ROOM_055", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 1009, "y": 623, "width": 77, "height": 64 } },
-    { "room_id": "ROOM_056", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 1094, "y": 623, "width": 75, "height": 64 } },
-    { "room_id": "ROOM_057", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 1176, "y": 623, "width": 77, "height": 64 } },
-    { "room_id": "ROOM_058", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 1261, "y": 623, "width": 79, "height": 64 } },
-    { "room_id": "ROOM_063", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 355, "y": 774, "width": 77, "height": 56 } },
-    { "room_id": "ROOM_064", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 527, "y": 774, "width": 83, "height": 53 } },
-    { "room_id": "ROOM_065", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 617, "y": 774, "width": 79, "height": 51 } },
-    { "room_id": "ROOM_066", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 703, "y": 774, "width": 80, "height": 51 } },
-    { "room_id": "ROOM_067", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 791, "y": 774, "width": 75, "height": 52 } },
-    { "room_id": "ROOM_068", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 875, "y": 774, "width": 77, "height": 55 } },
-    { "room_id": "ROOM_069", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 1042, "y": 774, "width": 76, "height": 51 } },
-    { "room_id": "ROOM_070", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 1125, "y": 774, "width": 76, "height": 51 } },
-    { "room_id": "ROOM_071", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 1209, "y": 774, "width": 77, "height": 51 } },
-    { "room_id": "ROOM_072", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 441, "y": 775, "width": 79, "height": 50 } },
-    { "room_id": "ROOM_073", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 959, "y": 775, "width": 76, "height": 50 } },
-    { "room_id": "ROOM_074", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 1293, "y": 775, "width": 80, "height": 52 } },
-    { "room_id": "ROOM_001", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 331, "y": 175, "width": 76, "height": 62 } },
-    { "room_id": "ROOM_002", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 415, "y": 175, "width": 80, "height": 60 } },
-    { "room_id": "ROOM_003", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 499, "y": 174, "width": 80, "height": 60 } },
-    { "room_id": "ROOM_004", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 585, "y": 174, "width": 80, "height": 60 } },
-    { "room_id": "ROOM_005", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 926, "y": 173, "width": 80, "height": 60 } },
-    { "room_id": "ROOM_006", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 1012, "y": 174, "width": 77, "height": 60 } },
-    { "room_id": "ROOM_007", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 1094, "y": 175, "width": 80, "height": 60 } },
-    { "room_id": "ROOM_008", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 1180, "y": 171, "width": 76, "height": 60 } },
-    { "room_id": "ROOM_010", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 1260, "y": 303, "width": 80, "height": 72 } },
-    { "room_id": "ROOM_012", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 1173, "y": 495, "width": 80, "height": 60 } },
-    { "room_id": "ROOM_016", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 1261, "y": 496, "width": 80, "height": 60 } }
+    {
+      "room_id": "ROOM_005",
+      "label": "Room 211",
+      "type": "patient_room",
+      "status": "available",
+      "unit": null,
+      "bbox": {
+        "x": 1085,
+        "y": 166,
+        "width": 66,
+        "height": 63
+      },
+      "center": {
+        "x": 1118,
+        "y": 197.5
+      },
+      "polygon": [
+        [
+          1085,
+          166
+        ],
+        [
+          1151,
+          166
+        ],
+        [
+          1151,
+          229
+        ],
+        [
+          1085,
+          229
+        ]
+      ]
+    },
+    {
+      "room_id": "ROOM_006",
+      "label": "Room 202",
+      "type": "patient_room",
+      "status": "available",
+      "unit": null,
+      "bbox": {
+        "x": 330,
+        "y": 167,
+        "width": 77,
+        "height": 61
+      },
+      "center": {
+        "x": 368.5,
+        "y": 197.5
+      },
+      "polygon": [
+        [
+          330,
+          167
+        ],
+        [
+          407,
+          167
+        ],
+        [
+          407,
+          228
+        ],
+        [
+          330,
+          228
+        ]
+      ]
+    },
+    {
+      "room_id": "ROOM_007",
+      "label": "Room 203",
+      "type": "patient_room",
+      "status": "available",
+      "unit": null,
+      "bbox": {
+        "x": 413,
+        "y": 167,
+        "width": 78,
+        "height": 61
+      },
+      "center": {
+        "x": 452,
+        "y": 197.5
+      },
+      "polygon": [
+        [
+          413,
+          167
+        ],
+        [
+          491,
+          167
+        ],
+        [
+          491,
+          228
+        ],
+        [
+          413,
+          228
+        ]
+      ]
+    },
+    {
+      "room_id": "ROOM_008",
+      "label": "Room 204",
+      "type": "patient_room",
+      "status": "available",
+      "unit": null,
+      "bbox": {
+        "x": 497,
+        "y": 167,
+        "width": 80,
+        "height": 71
+      },
+      "center": {
+        "x": 537,
+        "y": 202.5
+      },
+      "polygon": [
+        [
+          497,
+          167
+        ],
+        [
+          577,
+          167
+        ],
+        [
+          577,
+          238
+        ],
+        [
+          497,
+          238
+        ]
+      ]
+    },
+    {
+      "room_id": "ROOM_009",
+      "label": "Room 205",
+      "type": "patient_room",
+      "status": "available",
+      "unit": null,
+      "bbox": {
+        "x": 584,
+        "y": 167,
+        "width": 78,
+        "height": 62
+      },
+      "center": {
+        "x": 623,
+        "y": 198
+      },
+      "polygon": [
+        [
+          584,
+          167
+        ],
+        [
+          662,
+          167
+        ],
+        [
+          662,
+          229
+        ],
+        [
+          584,
+          229
+        ]
+      ]
+    },
+    {
+      "room_id": "ROOM_010",
+      "label": "Room 206",
+      "type": "patient_room",
+      "status": "available",
+      "unit": null,
+      "bbox": {
+        "x": 668,
+        "y": 167,
+        "width": 79,
+        "height": 62
+      },
+      "center": {
+        "x": 707.5,
+        "y": 198
+      },
+      "polygon": [
+        [
+          668,
+          167
+        ],
+        [
+          747,
+          167
+        ],
+        [
+          747,
+          229
+        ],
+        [
+          668,
+          229
+        ]
+      ]
+    },
+    {
+      "room_id": "ROOM_011",
+      "label": "Room 207",
+      "type": "patient_room",
+      "status": "available",
+      "unit": null,
+      "bbox": {
+        "x": 753,
+        "y": 167,
+        "width": 78,
+        "height": 62
+      },
+      "center": {
+        "x": 792,
+        "y": 198
+      },
+      "polygon": [
+        [
+          753,
+          167
+        ],
+        [
+          831,
+          167
+        ],
+        [
+          831,
+          229
+        ],
+        [
+          753,
+          229
+        ]
+      ]
+    },
+    {
+      "room_id": "ROOM_012",
+      "label": "Room 207",
+      "type": "patient_room",
+      "status": "available",
+      "unit": null,
+      "bbox": {
+        "x": 837,
+        "y": 167,
+        "width": 78,
+        "height": 61
+      },
+      "center": {
+        "x": 876,
+        "y": 197.5
+      },
+      "polygon": [
+        [
+          837,
+          167
+        ],
+        [
+          915,
+          167
+        ],
+        [
+          915,
+          228
+        ],
+        [
+          837,
+          228
+        ]
+      ]
+    },
+    {
+      "room_id": "ROOM_013",
+      "label": "Room 209",
+      "type": "patient_room",
+      "status": "available",
+      "unit": null,
+      "bbox": {
+        "x": 922,
+        "y": 167,
+        "width": 76,
+        "height": 61
+      },
+      "center": {
+        "x": 960,
+        "y": 197.5
+      },
+      "polygon": [
+        [
+          922,
+          167
+        ],
+        [
+          998,
+          167
+        ],
+        [
+          998,
+          228
+        ],
+        [
+          922,
+          228
+        ]
+      ]
+    },
+    {
+      "room_id": "ROOM_014",
+      "label": "Room 210",
+      "type": "patient_room",
+      "status": "available",
+      "unit": null,
+      "bbox": {
+        "x": 1005,
+        "y": 167,
+        "width": 73,
+        "height": 60
+      },
+      "center": {
+        "x": 1041.5,
+        "y": 197
+      },
+      "polygon": [
+        [
+          1005,
+          167
+        ],
+        [
+          1078,
+          167
+        ],
+        [
+          1078,
+          227
+        ],
+        [
+          1005,
+          227
+        ]
+      ]
+    },
+    {
+      "room_id": "ROOM_015",
+      "label": "Room 215",
+      "type": "patient_room",
+      "status": "available",
+      "unit": null,
+      "bbox": {
+        "x": 1321,
+        "y": 167,
+        "width": 75,
+        "height": 62
+      },
+      "center": {
+        "x": 1358.5,
+        "y": 198
+      },
+      "polygon": [
+        [
+          1321,
+          167
+        ],
+        [
+          1396,
+          167
+        ],
+        [
+          1396,
+          229
+        ],
+        [
+          1321,
+          229
+        ]
+      ]
+    },
+    {
+      "room_id": "ROOM_016",
+      "label": "Room 216",
+      "type": "patient_room",
+      "status": "available",
+      "unit": null,
+      "bbox": {
+        "x": 1402,
+        "y": 167,
+        "width": 72,
+        "height": 62
+      },
+      "center": {
+        "x": 1438,
+        "y": 198
+      },
+      "polygon": [
+        [
+          1402,
+          167
+        ],
+        [
+          1474,
+          167
+        ],
+        [
+          1474,
+          229
+        ],
+        [
+          1402,
+          229
+        ]
+      ]
+    },
+    {
+      "room_id": "ROOM_017",
+      "label": "Room 219",
+      "type": "patient_room",
+      "status": "available",
+      "unit": null,
+      "bbox": {
+        "x": 1642,
+        "y": 167,
+        "width": 75,
+        "height": 62
+      },
+      "center": {
+        "x": 1679.5,
+        "y": 198
+      },
+      "polygon": [
+        [
+          1642,
+          167
+        ],
+        [
+          1717,
+          167
+        ],
+        [
+          1717,
+          229
+        ],
+        [
+          1642,
+          229
+        ]
+      ]
+    },
+    {
+      "room_id": "ROOM_018",
+      "label": "Room 220",
+      "type": "patient_room",
+      "status": "available",
+      "unit": null,
+      "bbox": {
+        "x": 1723,
+        "y": 167,
+        "width": 77,
+        "height": 62
+      },
+      "center": {
+        "x": 1761.5,
+        "y": 198
+      },
+      "polygon": [
+        [
+          1723,
+          167
+        ],
+        [
+          1800,
+          167
+        ],
+        [
+          1800,
+          229
+        ],
+        [
+          1723,
+          229
+        ]
+      ]
+    },
+    {
+      "room_id": "ROOM_019",
+      "label": "Room 105",
+      "type": "patient_room",
+      "status": "available",
+      "unit": null,
+      "bbox": {
+        "x": 586.5,
+        "y": 342.5,
+        "width": 79,
+        "height": 65
+      },
+      "center": {
+        "x": 626,
+        "y": 375
+      },
+      "polygon": [
+        [
+          586.5,
+          342.5
+        ],
+        [
+          665.5,
+          342.5
+        ],
+        [
+          665.5,
+          407.5
+        ],
+        [
+          586.5,
+          407.5
+        ]
+      ]
+    },
+    {
+      "room_id": "ROOM_020",
+      "label": "SUITE",
+      "type": "patient_room",
+      "status": "available",
+      "unit": null,
+      "bbox": {
+        "x": 66,
+        "y": 168,
+        "width": 166,
+        "height": 86
+      },
+      "center": {
+        "x": 149,
+        "y": 211
+      },
+      "polygon": [
+        [
+          66,
+          168
+        ],
+        [
+          232,
+          168
+        ],
+        [
+          232,
+          254
+        ],
+        [
+          66,
+          254
+        ]
+      ]
+    },
+    {
+      "room_id": "ROOM_021",
+      "label": "Room 212",
+      "type": "patient_room",
+      "status": "available",
+      "unit": null,
+      "bbox": {
+        "x": 1157,
+        "y": 168,
+        "width": 72,
+        "height": 61
+      },
+      "center": {
+        "x": 1193,
+        "y": 198.5
+      },
+      "polygon": [
+        [
+          1157,
+          168
+        ],
+        [
+          1229,
+          168
+        ],
+        [
+          1229,
+          229
+        ],
+        [
+          1157,
+          229
+        ]
+      ]
+    },
+    {
+      "room_id": "ROOM_022",
+      "label": "Room 214",
+      "type": "patient_room",
+      "status": "available",
+      "unit": null,
+      "bbox": {
+        "x": 1237,
+        "y": 168,
+        "width": 78,
+        "height": 63
+      },
+      "center": {
+        "x": 1276,
+        "y": 199.5
+      },
+      "polygon": [
+        [
+          1237,
+          168
+        ],
+        [
+          1315,
+          168
+        ],
+        [
+          1315,
+          231
+        ],
+        [
+          1237,
+          231
+        ]
+      ]
+    },
+    {
+      "room_id": "ROOM_023",
+      "label": "Room 218",
+      "type": "patient_room",
+      "status": "available",
+      "unit": null,
+      "bbox": {
+        "x": 1560,
+        "y": 168,
+        "width": 76,
+        "height": 63
+      },
+      "center": {
+        "x": 1598,
+        "y": 199.5
+      },
+      "polygon": [
+        [
+          1560,
+          168
+        ],
+        [
+          1636,
+          168
+        ],
+        [
+          1636,
+          231
+        ],
+        [
+          1560,
+          231
+        ]
+      ]
+    },
+    {
+      "room_id": "ROOM_024",
+      "label": "Room 221",
+      "type": "patient_room",
+      "status": "available",
+      "unit": null,
+      "bbox": {
+        "x": 1806,
+        "y": 168,
+        "width": 72,
+        "height": 61
+      },
+      "center": {
+        "x": 1842,
+        "y": 198.5
+      },
+      "polygon": [
+        [
+          1806,
+          168
+        ],
+        [
+          1878,
+          168
+        ],
+        [
+          1878,
+          229
+        ],
+        [
+          1806,
+          229
+        ]
+      ]
+    },
+    {
+      "room_id": "ROOM_025",
+      "label": "Room 217",
+      "type": "patient_room",
+      "status": "available",
+      "unit": null,
+      "bbox": {
+        "x": 1481,
+        "y": 169,
+        "width": 70,
+        "height": 59
+      },
+      "center": {
+        "x": 1516,
+        "y": 198.5
+      },
+      "polygon": [
+        [
+          1481,
+          169
+        ],
+        [
+          1551,
+          169
+        ],
+        [
+          1551,
+          228
+        ],
+        [
+          1481,
+          228
+        ]
+      ]
+    },
+    {
+      "room_id": "ROOM_026",
+      "label": "Room 201",
+      "type": "patient_room",
+      "status": "available",
+      "unit": null,
+      "bbox": {
+        "x": 244.5,
+        "y": 166.5,
+        "width": 78,
+        "height": 64
+      },
+      "center": {
+        "x": 283.5,
+        "y": 198.5
+      },
+      "polygon": [
+        [
+          244.5,
+          166.5
+        ],
+        [
+          322.5,
+          166.5
+        ],
+        [
+          322.5,
+          230.5
+        ],
+        [
+          244.5,
+          230.5
+        ]
+      ]
+    },
+    {
+      "room_id": "ROOM_028",
+      "label": "Room 107",
+      "type": "patient_room",
+      "status": "available",
+      "unit": null,
+      "bbox": {
+        "x": 757,
+        "y": 344,
+        "width": 79,
+        "height": 63
+      },
+      "center": {
+        "x": 796.5,
+        "y": 375.5
+      },
+      "polygon": [
+        [
+          757,
+          344
+        ],
+        [
+          836,
+          344
+        ],
+        [
+          836,
+          407
+        ],
+        [
+          757,
+          407
+        ]
+      ]
+    },
+    {
+      "room_id": "ROOM_029",
+      "label": "LAUNDRY",
+      "type": "patient_room",
+      "status": "available",
+      "unit": null,
+      "bbox": {
+        "x": 238.5,
+        "y": 341,
+        "width": 61,
+        "height": 68
+      },
+      "center": {
+        "x": 269,
+        "y": 375
+      },
+      "polygon": [
+        [
+          238.5,
+          341
+        ],
+        [
+          299.5,
+          341
+        ],
+        [
+          299.5,
+          409
+        ],
+        [
+          238.5,
+          409
+        ]
+      ]
+    },
+    {
+      "room_id": "ROOM_030",
+      "label": "Room 115",
+      "type": "patient_room",
+      "status": "available",
+      "unit": null,
+      "bbox": {
+        "x": 1313.5,
+        "y": 343,
+        "width": 82,
+        "height": 62
+      },
+      "center": {
+        "x": 1354.5,
+        "y": 374
+      },
+      "polygon": [
+        [
+          1313.5,
+          343
+        ],
+        [
+          1395.5,
+          343
+        ],
+        [
+          1395.5,
+          405
+        ],
+        [
+          1313.5,
+          405
+        ]
+      ]
+    },
+    {
+      "room_id": "ROOM_031",
+      "label": "Room 117",
+      "type": "patient_room",
+      "status": "available",
+      "unit": null,
+      "bbox": {
+        "x": 1486,
+        "y": 343,
+        "width": 74,
+        "height": 63
+      },
+      "center": {
+        "x": 1523,
+        "y": 374.5
+      },
+      "polygon": [
+        [
+          1486,
+          343
+        ],
+        [
+          1560,
+          343
+        ],
+        [
+          1560,
+          406
+        ],
+        [
+          1486,
+          406
+        ]
+      ]
+    },
+    {
+      "room_id": "ROOM_032",
+      "label": "Room 118",
+      "type": "patient_room",
+      "status": "available",
+      "unit": null,
+      "bbox": {
+        "x": 1565,
+        "y": 343,
+        "width": 74,
+        "height": 61
+      },
+      "center": {
+        "x": 1602,
+        "y": 373.5
+      },
+      "polygon": [
+        [
+          1565,
+          343
+        ],
+        [
+          1639,
+          343
+        ],
+        [
+          1639,
+          404
+        ],
+        [
+          1565,
+          404
+        ]
+      ]
+    },
+    {
+      "room_id": "ROOM_033",
+      "label": "Room 119",
+      "type": "patient_room",
+      "status": "available",
+      "unit": null,
+      "bbox": {
+        "x": 1646,
+        "y": 343,
+        "width": 73,
+        "height": 62
+      },
+      "center": {
+        "x": 1682.5,
+        "y": 374
+      },
+      "polygon": [
+        [
+          1646,
+          343
+        ],
+        [
+          1719,
+          343
+        ],
+        [
+          1719,
+          405
+        ],
+        [
+          1646,
+          405
+        ]
+      ]
+    },
+    {
+      "room_id": "ROOM_034",
+      "label": "OFFICE",
+      "type": "patient_room",
+      "status": "available",
+      "unit": null,
+      "bbox": {
+        "x": 63,
+        "y": 344,
+        "width": 103,
+        "height": 63
+      },
+      "center": {
+        "x": 114.5,
+        "y": 375.5
+      },
+      "polygon": [
+        [
+          63,
+          344
+        ],
+        [
+          166,
+          344
+        ],
+        [
+          166,
+          407
+        ],
+        [
+          63,
+          407
+        ]
+      ]
+    },
+    {
+      "room_id": "ROOM_035",
+      "label": "Room 102",
+      "type": "patient_room",
+      "status": "available",
+      "unit": null,
+      "bbox": {
+        "x": 310,
+        "y": 344,
+        "width": 82,
+        "height": 64
+      },
+      "center": {
+        "x": 351,
+        "y": 376
+      },
+      "polygon": [
+        [
+          310,
+          344
+        ],
+        [
+          392,
+          344
+        ],
+        [
+          392,
+          408
+        ],
+        [
+          310,
+          408
+        ]
+      ]
+    },
+    {
+      "room_id": "ROOM_036",
+      "label": "Room 103",
+      "type": "patient_room",
+      "status": "available",
+      "unit": null,
+      "bbox": {
+        "x": 400.5,
+        "y": 344,
+        "width": 89,
+        "height": 63
+      },
+      "center": {
+        "x": 445,
+        "y": 375.5
+      },
+      "polygon": [
+        [
+          400.5,
+          344
+        ],
+        [
+          489.5,
+          344
+        ],
+        [
+          489.5,
+          407
+        ],
+        [
+          400.5,
+          407
+        ]
+      ]
+    },
+    {
+      "room_id": "ROOM_037",
+      "label": "Room 106",
+      "type": "patient_room",
+      "status": "available",
+      "unit": null,
+      "bbox": {
+        "x": 671,
+        "y": 344,
+        "width": 79,
+        "height": 70
+      },
+      "center": {
+        "x": 710.5,
+        "y": 379
+      },
+      "polygon": [
+        [
+          671,
+          344
+        ],
+        [
+          750,
+          344
+        ],
+        [
+          750,
+          414
+        ],
+        [
+          671,
+          414
+        ]
+      ]
+    },
+    {
+      "room_id": "ROOM_038",
+      "label": "Room 104",
+      "type": "patient_room",
+      "status": "available",
+      "unit": null,
+      "bbox": {
+        "x": 496.5,
+        "y": 342.5,
+        "width": 82,
+        "height": 65
+      },
+      "center": {
+        "x": 537.5,
+        "y": 375
+      },
+      "polygon": [
+        [
+          496.5,
+          342.5
+        ],
+        [
+          578.5,
+          342.5
+        ],
+        [
+          578.5,
+          407.5
+        ],
+        [
+          496.5,
+          407.5
+        ]
+      ]
+    },
+    {
+      "room_id": "ROOM_039",
+      "label": "Room 108",
+      "type": "patient_room",
+      "status": "available",
+      "unit": null,
+      "bbox": {
+        "x": 842,
+        "y": 344,
+        "width": 76,
+        "height": 63
+      },
+      "center": {
+        "x": 880,
+        "y": 375.5
+      },
+      "polygon": [
+        [
+          842,
+          344
+        ],
+        [
+          918,
+          344
+        ],
+        [
+          918,
+          407
+        ],
+        [
+          842,
+          407
+        ]
+      ]
+    },
+    {
+      "room_id": "ROOM_040",
+      "label": "Room 114",
+      "type": "patient_room",
+      "status": "available",
+      "unit": null,
+      "bbox": {
+        "x": 1232,
+        "y": 344,
+        "width": 71,
+        "height": 59
+      },
+      "center": {
+        "x": 1267.5,
+        "y": 373.5
+      },
+      "polygon": [
+        [
+          1232,
+          344
+        ],
+        [
+          1303,
+          344
+        ],
+        [
+          1303,
+          403
+        ],
+        [
+          1232,
+          403
+        ]
+      ]
+    },
+    {
+      "room_id": "ROOM_041",
+      "label": "Room 120",
+      "type": "patient_room",
+      "status": "available",
+      "unit": null,
+      "bbox": {
+        "x": 1726,
+        "y": 344,
+        "width": 71,
+        "height": 62
+      },
+      "center": {
+        "x": 1761.5,
+        "y": 375
+      },
+      "polygon": [
+        [
+          1726,
+          344
+        ],
+        [
+          1797,
+          344
+        ],
+        [
+          1797,
+          406
+        ],
+        [
+          1726,
+          406
+        ]
+      ]
+    },
+    {
+      "room_id": "ROOM_042",
+      "label": "Room 121",
+      "type": "patient_room",
+      "status": "available",
+      "unit": null,
+      "bbox": {
+        "x": 1804,
+        "y": 344,
+        "width": 72,
+        "height": 72
+      },
+      "center": {
+        "x": 1840,
+        "y": 380
+      },
+      "polygon": [
+        [
+          1804,
+          344
+        ],
+        [
+          1876,
+          344
+        ],
+        [
+          1876,
+          416
+        ],
+        [
+          1804,
+          416
+        ]
+      ]
+    },
+    {
+      "room_id": "ROOM_043",
+      "label": "Room 109",
+      "type": "patient_room",
+      "status": "available",
+      "unit": null,
+      "bbox": {
+        "x": 926,
+        "y": 345,
+        "width": 73,
+        "height": 71
+      },
+      "center": {
+        "x": 962.5,
+        "y": 380.5
+      },
+      "polygon": [
+        [
+          926,
+          345
+        ],
+        [
+          999,
+          345
+        ],
+        [
+          999,
+          416
+        ],
+        [
+          926,
+          416
+        ]
+      ]
+    },
+    {
+      "room_id": "ROOM_044",
+      "label": "Room 110",
+      "type": "patient_room",
+      "status": "available",
+      "unit": null,
+      "bbox": {
+        "x": 1004,
+        "y": 347.5,
+        "width": 68,
+        "height": 59
+      },
+      "center": {
+        "x": 1038,
+        "y": 377
+      },
+      "polygon": [
+        [
+          1004,
+          347.5
+        ],
+        [
+          1072,
+          347.5
+        ],
+        [
+          1072,
+          406.5
+        ],
+        [
+          1004,
+          406.5
+        ]
+      ]
+    },
+    {
+      "room_id": "ROOM_045",
+      "label": "Room 111",
+      "type": "patient_room",
+      "status": "available",
+      "unit": null,
+      "bbox": {
+        "x": 1083,
+        "y": 345,
+        "width": 68,
+        "height": 59
+      },
+      "center": {
+        "x": 1117,
+        "y": 374.5
+      },
+      "polygon": [
+        [
+          1083,
+          345
+        ],
+        [
+          1151,
+          345
+        ],
+        [
+          1151,
+          404
+        ],
+        [
+          1083,
+          404
+        ]
+      ]
+    },
+    {
+      "room_id": "ROOM_046",
+      "label": "Room 112",
+      "type": "patient_room",
+      "status": "available",
+      "unit": null,
+      "bbox": {
+        "x": 1159,
+        "y": 345,
+        "width": 64,
+        "height": 59
+      },
+      "center": {
+        "x": 1191,
+        "y": 374.5
+      },
+      "polygon": [
+        [
+          1159,
+          345
+        ],
+        [
+          1223,
+          345
+        ],
+        [
+          1223,
+          404
+        ],
+        [
+          1159,
+          404
+        ]
+      ]
+    },
+    {
+      "room_id": "ROOM_001",
+      "label": "Room 116",
+      "type": "patient_room",
+      "status": "available",
+      "unit": null,
+      "bbox": {
+        "x": 1402,
+        "y": 344,
+        "width": 80,
+        "height": 60
+      },
+      "center": {
+        "x": 1442,
+        "y": 374
+      },
+      "polygon": [
+        [
+          1402,
+          344
+        ],
+        [
+          1482,
+          344
+        ],
+        [
+          1482,
+          404
+        ],
+        [
+          1402,
+          404
+        ]
+      ]
+    },
+    {
+      "room_id": "ROOM_002",
+      "label": "",
+      "type": "patient_room",
+      "status": "available",
+      "unit": null,
+      "bbox": {
+        "x": 1886,
+        "y": 168,
+        "width": 137,
+        "height": 60
+      },
+      "center": {
+        "x": 1954.5,
+        "y": 198
+      },
+      "polygon": [
+        [
+          1886,
+          168
+        ],
+        [
+          2023,
+          168
+        ],
+        [
+          2023,
+          228
+        ],
+        [
+          1886,
+          228
+        ]
+      ]
+    }
   ],
-  "image_width": 1536,
-  "image_height": 1024
+  "save_to_file": false,
+  "image_width": 2081,
+  "image_height": 633
 }
