@@ -4,8 +4,9 @@
  */
 export const patientMovements = [
   {
-    patientId: 'P001',
-    name: 'Emma Thompson',
+    patientId: 'PT-10001',
+    triageLevel: 2,
+    reasonForVisit: 'Chest Pain',
     events: [
       { time: '08:10', from: null, to: 'ROOM_003', department: 'ER', action: 'admitted' },
       { time: '10:45', from: 'ROOM_003', to: 'ROOM_012', department: 'GW', action: 'transfer' },
@@ -14,16 +15,18 @@ export const patientMovements = [
     ],
   },
   {
-    patientId: 'P002',
-    name: 'Liam O\'Brien',
+    patientId: 'PT-10002',
+    triageLevel: 3,
+    reasonForVisit: 'Abdominal Pain',
     events: [
       { time: '08:30', from: null, to: 'ROOM_006', department: 'ER', action: 'admitted' },
       { time: '11:00', from: 'ROOM_006', to: 'ROOM_013', department: 'GW', action: 'transfer' },
     ],
   },
   {
-    patientId: 'P003',
-    name: 'Sofia Rodriguez',
+    patientId: 'PT-10003',
+    triageLevel: 2,
+    reasonForVisit: 'Shortness of Breath',
     events: [
       { time: '09:00', from: null, to: 'ROOM_009', department: 'ER', action: 'admitted' },
       { time: '12:15', from: 'ROOM_009', to: 'ROOM_014', department: 'GW', action: 'transfer' },
@@ -31,8 +34,9 @@ export const patientMovements = [
     ],
   },
   {
-    patientId: 'P004',
-    name: 'Noah Kim',
+    patientId: 'PT-10004',
+    triageLevel: 4,
+    reasonForVisit: 'Laceration',
     events: [
       { time: '07:45', from: null, to: 'ROOM_001', department: 'ER', action: 'admitted' },
       { time: '09:30', from: 'ROOM_001', to: 'ROOM_015', department: 'GW', action: 'transfer' },
@@ -40,15 +44,17 @@ export const patientMovements = [
     ],
   },
   {
-    patientId: 'P005',
-    name: 'Olivia Patel',
+    patientId: 'PT-10005',
+    triageLevel: 3,
+    reasonForVisit: 'Fever',
     events: [
       { time: '10:00', from: null, to: 'ROOM_010', department: 'ER', action: 'admitted' },
     ],
   },
   {
-    patientId: 'P006',
-    name: 'Ethan Martinez',
+    patientId: 'PT-10006',
+    triageLevel: 1,
+    reasonForVisit: 'Trauma Evaluation',
     events: [
       { time: '08:00', from: null, to: 'ROOM_023', department: 'ER', action: 'admitted' },
       { time: '10:30', from: 'ROOM_023', to: 'ROOM_016', department: 'GW', action: 'transfer' },
@@ -57,8 +63,9 @@ export const patientMovements = [
     ],
   },
   {
-    patientId: 'P007',
-    name: 'Ava Chen',
+    patientId: 'PT-10007',
+    triageLevel: 3,
+    reasonForVisit: 'Headache',
     events: [
       { time: '06:30', from: null, to: 'ROOM_027', department: 'ER', action: 'admitted' },
       { time: '08:15', from: 'ROOM_027', to: 'ROOM_017', department: 'GW', action: 'transfer' },
@@ -66,16 +73,18 @@ export const patientMovements = [
     ],
   },
   {
-    patientId: 'P008',
-    name: 'Mason Williams',
+    patientId: 'PT-10008',
+    triageLevel: 2,
+    reasonForVisit: 'Syncope',
     events: [
       { time: '09:15', from: null, to: 'ROOM_030', department: 'ER', action: 'admitted' },
       { time: '11:30', from: 'ROOM_030', to: 'ROOM_041', department: 'ICU', action: 'direct_admit' },
     ],
   },
   {
-    patientId: 'P009',
-    name: 'Isabella Foster',
+    patientId: 'PT-10009',
+    triageLevel: 3,
+    reasonForVisit: 'Abdominal Pain',
     events: [
       { time: '07:50', from: null, to: 'WR01', department: 'WAITING', action: 'arrival' },
       { time: '08:25', from: 'WR01', to: 'ROOM_004', department: 'ER', action: 'roomed' },
@@ -83,8 +92,9 @@ export const patientMovements = [
     ],
   },
   {
-    patientId: 'P010',
-    name: 'James Wilson',
+    patientId: 'PT-10010',
+    triageLevel: 4,
+    reasonForVisit: 'Back Pain',
     events: [
       { time: '07:55', from: null, to: 'WR02', department: 'WAITING', action: 'arrival' },
       { time: '08:20', from: 'WR02', to: 'ROOM_005', department: 'ER', action: 'roomed' },
@@ -93,8 +103,9 @@ export const patientMovements = [
     ],
   },
   {
-    patientId: 'P011',
-    name: 'Charlotte Davis',
+    patientId: 'PT-10011',
+    triageLevel: 5,
+    reasonForVisit: 'Nausea and Vomiting',
     events: [
       { time: '08:05', from: null, to: 'WR03', department: 'WAITING', action: 'arrival' },
       { time: '09:00', from: 'WR03', to: 'ROOM_007', department: 'ER', action: 'roomed' },
@@ -104,7 +115,7 @@ export const patientMovements = [
 
 /**
  * Get patient location at a given time.
- * @param {object} patient - { patientId, name, events }
+ * @param {object} patient - { patientId, triageLevel, reasonForVisit, events }
  * @param {string} selectedTime - "HH:MM" format
  * @returns {{ patientId, department, room, previous, next, lastEvent }|null}
  */
@@ -118,7 +129,8 @@ export function getPatientLocationAtTime(patient, selectedTime) {
   const nextEvent = patient.events.find((e) => parseTime(e.time) > sel)
   return {
     patientId: patient.patientId,
-    name: patient.name,
+    triageLevel: patient.triageLevel,
+    reasonForVisit: patient.reasonForVisit,
     department: lastEvent.department,
     room: lastEvent.to,
     previous: lastEvent.from,
@@ -172,7 +184,6 @@ export function getTransfersInTimeWindow(prevTime, currTime) {
         result.push({
           id: `${p.patientId}-${e.time.replace(':', '-')}`,
           patientId: p.patientId,
-          name: p.name,
           from: e.from,
           to: e.to,
           time: e.time,

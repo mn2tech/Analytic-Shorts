@@ -164,12 +164,16 @@ export default function SmartHoverCard({
       </div>
       <div className="p-4 space-y-2 text-sm">
         <div className="flex justify-between gap-4">
-          <span className="text-slate-400">Patient</span>
-          <span className="font-medium text-right">{roomData.patient_name || '—'}</span>
+          <span className="text-slate-400">Patient ID</span>
+          <span className="font-medium text-right">{roomData.patient_id || patientFlow?.patientId || '—'}</span>
         </div>
         <div className="flex justify-between gap-4">
-          <span className="text-slate-400">Doctor</span>
-          <span className="font-medium text-right">{roomData.doctor || '—'}</span>
+          <span className="text-slate-400">Triage Level</span>
+          <span className="font-medium text-right">{roomData.triage_level != null ? `Level ${roomData.triage_level}` : '—'}</span>
+        </div>
+        <div className="flex justify-between gap-4">
+          <span className="text-slate-400">Reason for Visit</span>
+          <span className="font-medium text-right">{roomData.reason_for_visit || '—'}</span>
         </div>
         <div className="flex justify-between gap-4">
           <span className="text-slate-400">Status</span>
@@ -181,12 +185,14 @@ export default function SmartHoverCard({
             <span className="font-semibold text-amber-400">{roomData.waitingCount ?? roomData.waiting_count}</span>
           </div>
         )}
-        <div className="flex justify-between gap-4">
-          <span className="text-slate-400">{isWaitingSlot ? 'Arrival' : 'Admitted'}</span>
-          <span className="font-medium text-right">
-            {(patientFlow?.arrivalTime ?? admittedDisplay) || '—'}
-          </span>
-        </div>
+        {roomData.status !== 'reserved' && (
+          <div className="flex justify-between gap-4">
+            <span className="text-slate-400">{isWaitingSlot ? 'Arrival' : 'Admitted'}</span>
+            <span className="font-medium text-right">
+              {(patientFlow?.arrivalTime ?? admittedDisplay) || '—'}
+            </span>
+          </div>
+        )}
         {isWaitingSlot && patientFlow?.waitMins != null && (
           <div className="flex justify-between gap-4">
             <span className="text-slate-400">Current Wait</span>
@@ -199,7 +205,7 @@ export default function SmartHoverCard({
         )}
         {losLabel && (
           <div className="flex justify-between gap-4">
-            <span className="text-slate-400">LOS</span>
+            <span className="text-slate-400">Length of Stay (LOS)</span>
             <span className="font-semibold text-cyan-400">{losLabel}</span>
           </div>
         )}

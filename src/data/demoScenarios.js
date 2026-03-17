@@ -243,8 +243,9 @@ export const roomTurnoverScenario = {
           'ROOM_012': {
             status: 'occupied',
             admitted_at_iso: toAdmittedAtIso(180), // 3 hours ago
-            patient_name: 'Sarah Johnson',
-            doctor: 'Dr. Martinez',
+            patient_id: 'PT-10392',
+            triage_level: 3,
+            reason_for_visit: 'Abdominal Pain',
           },
         },
         focusRoom: 'ROOM_012',
@@ -259,8 +260,9 @@ export const roomTurnoverScenario = {
           'ROOM_012': {
             status: 'cleaning',
             predictedInMinutes: 25,
-            patient_name: null,
-            doctor: null,
+            patient_id: null,
+            triage_level: null,
+            reason_for_visit: null,
           },
         },
         alerts: [

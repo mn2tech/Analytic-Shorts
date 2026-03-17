@@ -1,25 +1,23 @@
 /**
  * Mock data for Hospital Bed Command Center
- * Diverse patient and doctor names for demo
+ * HIPAA-safe synthetic patient identifiers and operational metadata.
  */
 
-export const MOCK_PATIENT_NAMES = [
-  'Emma Thompson', 'Liam O\'Brien', 'Sofia Rodriguez', 'Noah Kim', 'Olivia Patel',
-  'Ethan Martinez', 'Ava Chen', 'Mason Williams', 'Isabella Garcia', 'Lucas Johnson',
-  'Mia Anderson', 'Alexander Taylor', 'Charlotte Lee', 'James Wilson', 'Amelia Brown',
-  'Benjamin Davis', 'Harper Moore', 'Henry Thomas', 'Evelyn Jackson', 'Sebastian White',
-  'Abigail Harris', 'Jack Martin', 'Elizabeth Clark', 'Aiden Lewis', 'Emily Robinson',
-  'Samuel Walker', 'Ella Young', 'Joseph Hall', 'Scarlett Allen', 'David King',
-  'Chloe Wright', 'Daniel Scott', 'Victoria Green', 'Matthew Adams', 'Grace Baker',
-  'Andrew Nelson', 'Ryan Campbell', 'Zoey Mitchell', 'Nathan Roberts', 'Lily Evans', 'Owen Phillips',
-]
+export const MOCK_TRIAGE_LEVELS = [1, 2, 2, 3, 3, 3, 3, 4, 4, 5]
 
-export const MOCK_DOCTOR_NAMES = [
-  'Dr. Sarah Patel', 'Dr. Michael Chen', 'Dr. Elena Rodriguez', 'Dr. David Kim', 'Dr. Jennifer Thompson',
-  'Dr. James Adams', 'Dr. Rachel Foster', 'Dr. Daniel Hayes', 'Dr. Amanda Morgan', 'Dr. Carlos Rivera',
-  'Dr. Nicole Bennett', 'Dr. Kevin Hughes', 'Dr. Laura Coleman', 'Dr. Paul Sullivan', 'Dr. Megan Brooks',
-  'Dr. Ryan Phillips', 'Dr. Christina Lee', 'Dr. Andrew Walker', 'Dr. Jessica Martinez', 'Dr. Brandon Scott',
-  'Dr. Hannah Wilson', 'Dr. Tyler Brown', 'Dr. Ashley Davis', 'Dr. Justin Moore', 'Dr. Samantha Taylor',
+export const MOCK_VISIT_REASONS = [
+  'Abdominal Pain',
+  'Chest Pain',
+  'Shortness of Breath',
+  'Headache',
+  'Fever',
+  'Back Pain',
+  'Laceration',
+  'Dizziness',
+  'Nausea and Vomiting',
+  'Trauma Evaluation',
+  'Syncope',
+  'Dehydration',
 ]
 
 /** Realistic admission times (hour 0–23, minute 0–59). LOS computed dynamically from current time. */
@@ -44,14 +42,19 @@ function hash(str) {
   return Math.abs(h)
 }
 
-export function pickPatientForRoom(roomId, index) {
-  const i = (hash(roomId) + index) % MOCK_PATIENT_NAMES.length
-  return MOCK_PATIENT_NAMES[i]
+export function pickPatientIdForRoom(roomId, index) {
+  const numeric = 10001 + ((hash(roomId) + index) % 90000)
+  return `PT-${numeric}`
 }
 
-export function pickDoctorForRoom(roomId, index) {
-  const i = (hash(roomId) + index) % MOCK_DOCTOR_NAMES.length
-  return MOCK_DOCTOR_NAMES[i]
+export function pickTriageLevelForRoom(roomId, index) {
+  const i = (hash(roomId) + index) % MOCK_TRIAGE_LEVELS.length
+  return MOCK_TRIAGE_LEVELS[i]
+}
+
+export function pickReasonForVisitForRoom(roomId, index) {
+  const i = (hash(roomId) + index) % MOCK_VISIT_REASONS.length
+  return MOCK_VISIT_REASONS[i]
 }
 
 /**
