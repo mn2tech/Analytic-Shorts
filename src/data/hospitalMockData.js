@@ -20,6 +20,18 @@ export const MOCK_VISIT_REASONS = [
   'Dehydration',
 ]
 
+// Kept to support older screens that still render provider names.
+const MOCK_DOCTORS = [
+  'Dr. Patel',
+  'Dr. Rivera',
+  'Dr. Chen',
+  'Dr. Kim',
+  'Dr. Williams',
+  'Dr. Nguyen',
+  'Dr. Martinez',
+  'Dr. Davis',
+]
+
 /** Realistic admission times (hour 0–23, minute 0–59). LOS computed dynamically from current time. */
 export const MOCK_ADMISSION_TIMES = [
   { hour: 6, minute: 20 }, { hour: 7, minute: 45 }, { hour: 8, minute: 15 }, { hour: 9, minute: 0 },
@@ -45,6 +57,22 @@ function hash(str) {
 export function pickPatientIdForRoom(roomId, index) {
   const numeric = 10001 + ((hash(roomId) + index) % 90000)
   return `PT-${numeric}`
+}
+
+/**
+ * @deprecated Backward-compatible alias for older views.
+ * Returns a HIPAA-safe patient identifier string.
+ */
+export function pickPatientForRoom(roomId, index) {
+  return pickPatientIdForRoom(roomId, index)
+}
+
+/**
+ * @deprecated Backward-compatible helper for older views.
+ */
+export function pickDoctorForRoom(roomId, index) {
+  const i = (hash(roomId) + index) % MOCK_DOCTORS.length
+  return MOCK_DOCTORS[i]
 }
 
 export function pickTriageLevelForRoom(roomId, index) {
