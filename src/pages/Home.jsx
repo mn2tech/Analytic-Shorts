@@ -61,7 +61,7 @@ function Home() {
       // Estimate data size before stringifying (rough estimate)
       const estimatedSize = JSON.stringify(data).length
       const sizeInMB = estimatedSize / (1024 * 1024)
-      
+
       // Check if data is too large for sessionStorage (usually 5-10MB limit)
       // Use 3MB as safe threshold to avoid quota issues
       if (sizeInMB > 3) {
@@ -70,7 +70,7 @@ function Home() {
         navigate('/dashboard', { state: { analyticsData: data } })
         return
       }
-      
+
       // Try to store in sessionStorage for smaller files
       const dataString = JSON.stringify(data)
       sessionStorage.setItem('analyticsData', dataString)
@@ -91,22 +91,22 @@ function Home() {
         columns: data?.columns,
         numericColumns: data?.numericColumns,
         dateColumns: data?.dateColumns,
-        categoricalColumns: data?.categoricalColumns
+        categoricalColumns: data?.categoricalColumns,
       })
-      
+
       // Validate data structure
       if (!data || !data.data || !Array.isArray(data.data)) {
         console.error('Invalid dataset format:', data)
         alert('Error: Invalid dataset format. Please try again.')
         return
       }
-      
+
       // Estimate data size before stringifying
       const estimatedSize = JSON.stringify(data).length
       const sizeInMB = estimatedSize / (1024 * 1024)
-      
+
       console.log(`Dataset size: ${sizeInMB.toFixed(2)}MB`)
-      
+
       // Check if data is too large for sessionStorage
       // Use 3MB as safe threshold
       if (sizeInMB > 3) {
@@ -114,7 +114,7 @@ function Home() {
         navigate('/dashboard', { state: { analyticsData: data } })
         return
       }
-      
+
       // Try to store in sessionStorage for smaller files
       const dataString = JSON.stringify(data)
       sessionStorage.setItem('analyticsData', dataString)
@@ -151,7 +151,7 @@ function Home() {
         onComplete={handleTourComplete}
         steps={homeTourSteps}
       />
-      
+
       {/* From-feed hint */}
       {fromFeed && user && (
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
@@ -181,7 +181,7 @@ function Home() {
           <p className="text-lg text-gray-500 mb-8 max-w-2xl mx-auto">
             No coding required. No learning curve. Just drag, drop, and analyze.
           </p>
-          
+
           <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-8">
             {!user ? (
               <>
@@ -242,7 +242,28 @@ function Home() {
               </>
             )}
           </div>
-          
+
+          <div className="mb-8 flex flex-wrap justify-center gap-3">
+            <Link
+              to="/landing"
+              className="inline-flex items-center gap-2 px-6 py-3 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors font-semibold shadow-md"
+            >
+              View New Landing Page
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+              </svg>
+            </Link>
+            <Link
+              to="/hospital-demo-request"
+              className="inline-flex items-center gap-2 px-6 py-3 bg-sky-700 text-white rounded-lg hover:bg-sky-800 transition-colors font-semibold shadow-md"
+            >
+              Request Hospital Demo
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+              </svg>
+            </Link>
+          </div>
+
           <p className="text-sm text-gray-500">
             No credit card required • Free plan available • Explore public data APIs instantly
           </p>
@@ -379,8 +400,8 @@ function Home() {
             <h2 className="text-2xl font-semibold text-gray-900 mb-6 text-center">
               Upload Your Data
             </h2>
-            <FileUploader 
-              onUploadSuccess={handleUploadSuccess} 
+            <FileUploader
+              onUploadSuccess={handleUploadSuccess}
               onError={handleError}
               onUpgradeRequired={handleUpgradeRequired}
             />

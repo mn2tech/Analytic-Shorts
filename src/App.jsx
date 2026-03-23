@@ -7,6 +7,8 @@ import BrandWatermark from './components/BrandWatermark'
 import PortraitFrame from './components/PortraitFrame'
 import AppLayout from './layouts/AppLayout'
 import Home from './pages/Home'
+import NM2TECHLandingPage from './pages/NM2TECHLandingPage'
+import HospitalDemoRequestLandingPage from './pages/HospitalDemoRequestLandingPage'
 import Login from './pages/Login'
 import Signup from './pages/Signup'
 import Dashboard from './pages/Dashboard'
@@ -99,6 +101,8 @@ function App() {
             {/* Routes WITH layout (sidebar + Navbar + Footer) */}
             <Route element={<AppLayout />}>
               <Route path="/" element={<Home />} />
+              <Route path="/landing" element={<NM2TECHLandingPage />} />
+              <Route path="/hospital-demo-request" element={<HospitalDemoRequestLandingPage />} />
               <Route path="/pricing" element={<Pricing />} />
               <Route path="/advanced-analytics" element={<AdvancedAnalytics />} />
               <Route path="/apps" element={<AnalyticsApps />} />

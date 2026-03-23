@@ -4,6 +4,8 @@
  */
 const express = require('express')
 const router = express.Router()
+const { getSupabaseAdmin } = require('../utils/supabaseAdmin')
+const { sendEmail } = require('../utils/emailNotifications')
 
 // Room IDs from FloorMap AI export (ROOM_001 through ROOM_079)
 const ALL_ROOMS = Array.from({ length: 79 }, (_, i) => `ROOM_${String(i + 1).padStart(3, '0')}`)
@@ -151,6 +153,88 @@ router.get('/rooms/status', (req, res) => {
   } catch (err) {
     console.error('Error in /api/hospital/rooms/status:', err)
     res.status(500).json({ error: 'Failed to fetch room status', message: err?.message })
+  }
+})
+
+function normalizeText(input, maxLen = 500) {
+  return String(input || '').trim().slice(0, maxLen)
+}
+
+function escapeHtml(input) {
+  return String(input || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+/**
+ * POST /api/hospital/demo-requests
+ * Stores hospital demo request in Supabase and sends an email alert.
+ */
+router.post('/demo-requests', async (req, res) => {
+  try {
+    const fullName = normalizeText(req.body?.fullName, 120)
+    const workEmail = normalizeText(req.body?.workEmail, 200).toLowerCase()
+    const organization = normalizeText(req.body?.organization, 200)
+    const role = normalizeText(req.body?.role, 200)
+    const demoFocus = normalizeText(req.body?.demoFocus, 3000)
+
+    if (!fullName || !workEmail || !organization || !role) {
+      return res.status(400).json({ error: 'fullName, workEmail, organization, and role are required' })
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(workEmail)) {
+      return res.status(400).json({ error: 'Please provide a valid work email' })
+    }
+
+    const supabase = getSupabaseAdmin()
+    if (!supabase) {
+      return res.status(503).json({ error: 'Database is not configured on the server' })
+    }
+
+    const { data, error } = await supabase
+      .from('hospital_demo_requests')
+      .insert({
+        full_name: fullName,
+        work_email: workEmail,
+        organization,
+        role,
+        demo_focus: demoFocus || null,
+        source: 'hospital-demo-request-page',
+        metadata: {
+          user_agent: String(req.get('user-agent') || '').slice(0, 500),
+          ip: String(req.ip || '').slice(0, 100),
+        },
+      })
+      .select('id, created_at')
+      .single()
+
+    if (error) {
+      console.error('[hospital] failed to store demo request:', error)
+      return res.status(500).json({ error: 'Failed to save demo request' })
+    }
+
+    const alertTo = (process.env.HOSPITAL_DEMO_ALERT_EMAIL || 'michael@nm2tech.com').trim()
+    const subject = `New Hospital Demo Request: ${organization}`
+    const html = `
+      <h3>New hospital demo request</h3>
+      <p><strong>Name:</strong> ${escapeHtml(fullName)}</p>
+      <p><strong>Email:</strong> ${escapeHtml(workEmail)}</p>
+      <p><strong>Organization:</strong> ${escapeHtml(organization)}</p>
+      <p><strong>Role:</strong> ${escapeHtml(role)}</p>
+      <p><strong>Requested focus:</strong><br/>${escapeHtml(demoFocus || 'Not provided').replace(/\n/g, '<br/>')}</p>
+      <p style="color:#666;font-size:12px;">Request ID: ${escapeHtml(data?.id || 'n/a')} | Source: hospital-demo-request-page</p>
+    `
+
+    // Fire-and-forget alert email; submission success should not depend on email provider uptime.
+    sendEmail(alertTo, subject, html).catch((emailErr) => {
+      console.error('[hospital] failed to send demo alert email:', emailErr?.message || emailErr)
+    })
+
+    return res.json({ ok: true, id: data?.id || null, createdAt: data?.created_at || null })
+  } catch (err) {
+    console.error('[hospital] /demo-requests unexpected error:', err)
+    return res.status(500).json({ error: 'Failed to submit demo request' })
   }
 })
 
