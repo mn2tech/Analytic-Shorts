@@ -6,6 +6,7 @@ import { useRef } from 'react'
 export default function Toolbar({
   onDetectRooms, onExport, onAddRoom, onClearAll, onImportJson,
   isDetecting, isExporting, hasImage, hasRooms,
+  hasDraft, lastSavedAt, onSaveDraftNow, onRestoreDraft, onClearDraft,
 }) {
   const handleAddRoom = () => onAddRoom?.({ x: 100, y: 100, width: 80, height: 60 })
   const inputRef = useRef(null)
@@ -60,6 +61,33 @@ export default function Toolbar({
         className="px-3 py-1.5 text-sm font-medium rounded-md border border-rose-200 text-rose-700 hover:bg-rose-50 disabled:opacity-50 disabled:cursor-not-allowed">
         Clear All
       </button>
+      <button
+        type="button"
+        onClick={onSaveDraftNow}
+        disabled={!hasImage && !hasRooms}
+        className="px-3 py-1.5 text-sm font-medium rounded-md border border-emerald-300 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 disabled:cursor-not-allowed"
+        title="Save in-progress floor map locally"
+      >
+        Save Draft
+      </button>
+      <button
+        type="button"
+        onClick={onRestoreDraft}
+        disabled={!hasDraft}
+        className="px-3 py-1.5 text-sm font-medium rounded-md border border-indigo-300 text-indigo-700 hover:bg-indigo-50 disabled:opacity-50 disabled:cursor-not-allowed"
+        title="Restore most recent local draft"
+      >
+        Restore Draft
+      </button>
+      <button
+        type="button"
+        onClick={onClearDraft}
+        disabled={!hasDraft}
+        className="px-3 py-1.5 text-sm font-medium rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+        title="Delete local draft"
+      >
+        Clear Draft
+      </button>
       <button type="button" onClick={handleImportClick}
         className="px-3 py-1.5 text-sm font-medium rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50 flex items-center gap-2"
         title="Load a previously exported floor map JSON">
@@ -67,6 +95,10 @@ export default function Toolbar({
         Import JSON
       </button>
       <input ref={inputRef} type="file" accept=".json,application/json" onChange={handleImportChange} className="hidden" />
+      <p className="ml-auto text-[11px] text-slate-500">
+        Local draft: {hasDraft ? 'saved' : 'not saved'}
+        {lastSavedAt ? ` (${new Date(lastSavedAt).toLocaleTimeString()})` : ''}
+      </p>
     </div>
   )
 }

@@ -2,7 +2,7 @@
  * FloorMap AI - Floor plan room detection and ER bed map export.
  * Integrated into NM2-Analytics-Shorts; uses separate FastAPI backend.
  */
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import Header from '../components/floormap/Header'
 import ImageUpload from '../components/floormap/ImageUpload'
 import { FloorPlanCanvas } from '../components/floormap/FloorPlanCanvas'
@@ -10,6 +10,8 @@ import RoomEditor from '../components/floormap/RoomEditor'
 import Toolbar from '../components/floormap/Toolbar'
 import { useFloorMap } from '../hooks/useFloorMap'
 import { floormapApi } from '../api/floormapClient'
+
+const FLOOR_MAP_DRAFT_KEY = 'nm2.floormap.draft.v1'
 
 export default function FloorMapAIPage() {
   const {
@@ -28,6 +30,69 @@ export default function FloorMapAIPage() {
   const [isDetecting, setIsDetecting] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
   const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 })
+  const [lastSavedAt, setLastSavedAt] = useState(null)
+  const [hasDraft, setHasDraft] = useState(false)
+  const didHydrateDraftRef = useRef(false)
+
+  const persistDraft = useCallback((overrideData = null) => {
+    if (typeof window === 'undefined') return false
+    const data = overrideData || {
+      floorPlanImage,
+      rooms,
+      selectedRoomId,
+      imageDimensions,
+      savedAt: Date.now(),
+    }
+    const hasAnyData = !!data.floorPlanImage || (Array.isArray(data.rooms) && data.rooms.length > 0)
+    if (!hasAnyData) {
+      window.localStorage.removeItem(FLOOR_MAP_DRAFT_KEY)
+      setHasDraft(false)
+      return false
+    }
+    window.localStorage.setItem(FLOOR_MAP_DRAFT_KEY, JSON.stringify(data))
+    setHasDraft(true)
+    setLastSavedAt(data.savedAt || Date.now())
+    return true
+  }, [floorPlanImage, imageDimensions, rooms, selectedRoomId])
+
+  const clearSavedDraft = useCallback(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.removeItem(FLOOR_MAP_DRAFT_KEY)
+    setHasDraft(false)
+    setLastSavedAt(null)
+  }, [])
+
+  const restoreSavedDraft = useCallback(() => {
+    if (typeof window === 'undefined') return false
+    const raw = window.localStorage.getItem(FLOOR_MAP_DRAFT_KEY)
+    if (!raw) return false
+    try {
+      const parsed = JSON.parse(raw)
+      setFloorPlanImage(parsed.floorPlanImage || null)
+      setRooms(Array.isArray(parsed.rooms) ? parsed.rooms : [])
+      setSelectedRoomId(parsed.selectedRoomId || null)
+      setImageDimensions(parsed.imageDimensions || { width: 0, height: 0 })
+      setHasDraft(true)
+      setLastSavedAt(parsed.savedAt || Date.now())
+      return true
+    } catch (err) {
+      console.error('Failed to restore FloorMap draft:', err)
+      return false
+    }
+  }, [setFloorPlanImage, setRooms, setSelectedRoomId])
+
+  useEffect(() => {
+    if (didHydrateDraftRef.current) return
+    didHydrateDraftRef.current = true
+    restoreSavedDraft()
+  }, [restoreSavedDraft])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      persistDraft()
+    }, 600)
+    return () => window.clearTimeout(timer)
+  }, [persistDraft])
 
   const handleImageUpload = useCallback(
     async (file) => {
@@ -134,6 +199,11 @@ export default function FloorMapAIPage() {
             isExporting={isExporting}
             hasImage={!!floorPlanImage}
             hasRooms={rooms.length > 0}
+            hasDraft={hasDraft}
+            lastSavedAt={lastSavedAt}
+            onSaveDraftNow={() => persistDraft()}
+            onRestoreDraft={restoreSavedDraft}
+            onClearDraft={clearSavedDraft}
           />
           <div className="flex-1 flex overflow-hidden">
             {floorPlanImage ? (
