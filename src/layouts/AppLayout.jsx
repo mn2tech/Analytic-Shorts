@@ -49,6 +49,8 @@ const PATH_TO_LABEL = [
   { path: '/er-command-map', label: 'ER Command Map' },
   { path: '/floormap-ai', label: 'FloorMap AI' },
   { path: '/motel-command-center', label: 'Motel Command Center' },
+  { path: '/migration-validation-studio', label: 'Migration Validation Studio' },
+  { path: '/studio/sas-to-pyspark', label: 'SAS to PySpark Studio' },
   { path: '/federal-entry-brief', label: 'Federal Entry Brief' },
   { path: '/reports/federal-entry', label: 'Federal Entry Report' },
   { path: '/apps/execution-api', label: 'Execution API' },
@@ -575,6 +577,18 @@ function AppLayout() {
                   <NavLink to="/motel-command-center" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
                     <span>🏨</span>
                     <span className={sidebarOpen ? '' : 'lg:hidden'}>Motel Command Center</span>
+                  </NavLink>
+                </SidebarTooltip>
+                <SidebarTooltip show={!sidebarOpen} label="Migration Validation Studio">
+                  <NavLink to="/migration-validation-studio" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
+                    <span>🧪</span>
+                    <span className={sidebarOpen ? '' : 'lg:hidden'}>Migration Validation Studio</span>
+                  </NavLink>
+                </SidebarTooltip>
+                <SidebarTooltip show={!sidebarOpen} label="SAS to PySpark Studio">
+                  <NavLink to="/studio/sas-to-pyspark" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
+                    <span>🔁</span>
+                    <span className={sidebarOpen ? '' : 'lg:hidden'}>SAS to PySpark Studio</span>
                   </NavLink>
                 </SidebarTooltip>
                 <SidebarTooltip show={!sidebarOpen} label="Federal Entry Brief">

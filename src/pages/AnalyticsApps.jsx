@@ -40,6 +40,18 @@ const APPS = [
     path: '/apps/scoring',
     icon: '🎯',
   },
+  {
+    name: 'Migration Validation Studio',
+    description: 'Compare SAS outputs with Python/PySpark outputs and generate audit-ready reconciliation reports.',
+    path: '/migration-validation-studio',
+    icon: '🧪',
+  },
+  {
+    name: 'SAS to PySpark Migration Studio',
+    description: 'Convert SAS code into PySpark blocks, review mappings, and send conversion context to validation.',
+    path: '/studio/sas-to-pyspark',
+    icon: '🔁',
+  },
 ]
 
 export default function AnalyticsApps() {

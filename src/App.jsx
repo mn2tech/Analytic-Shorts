@@ -42,6 +42,8 @@ import PredictiveBedMapPage from './pages/PredictiveBedMapPage'
 import ERCommandMapPage from './pages/ERCommandMapPage'
 import FloorMapAIPage from './pages/FloorMapAIPage'
 import MotelCommandCenter from './pages/MotelCommandCenter'
+import MigrationValidationStudio from './pages/MigrationValidationStudio'
+import SasToPySparkStudio from './pages/SasToPySparkStudio'
 import FederalEntryBrief from './pages/FederalEntryBrief'
 import Contact from './pages/Contact'
 import ExecutionApi from './pages/ExecutionApi'
@@ -113,6 +115,7 @@ function App() {
               <Route path="/er-command-map" element={<ERCommandMapPage />} />
               <Route path="/floormap-ai" element={<FloorMapAIPage />} />
               <Route path="/motel-command-center" element={<MotelCommandCenter />} />
+              <Route path="/migration-validation-studio" element={<MigrationValidationStudio />} />
               <Route path="/federal-entry-brief" element={<FederalEntryBrief />} />
               <Route path="/reports/federal-entry" element={<FederalEntryReport />} />
               <Route path="/contact" element={<Contact />} />
@@ -219,6 +222,14 @@ function App() {
                   element={
                     <ProtectedRoute>
                       <AAIStudio />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="sas-to-pyspark"
+                  element={
+                    <ProtectedRoute>
+                      <SasToPySparkStudio />
                     </ProtectedRoute>
                   }
                 />
