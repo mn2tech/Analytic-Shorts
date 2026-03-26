@@ -52,6 +52,12 @@ const APPS = [
     path: '/studio/sas-to-pyspark',
     icon: '🔁',
   },
+  {
+    name: 'ROI Calculator',
+    description: 'Estimate migration savings, reduced validation effort, and enterprise risk impact for SAS modernization.',
+    path: '/roi-calculator',
+    icon: '💹',
+  },
 ]
 
 export default function AnalyticsApps() {

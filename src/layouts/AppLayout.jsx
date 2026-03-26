@@ -51,6 +51,7 @@ const PATH_TO_LABEL = [
   { path: '/motel-command-center', label: 'Motel Command Center' },
   { path: '/migration-validation-studio', label: 'Migration Validation Studio' },
   { path: '/studio/sas-to-pyspark', label: 'SAS to PySpark Studio' },
+  { path: '/roi-calculator', label: 'ROI Calculator' },
   { path: '/federal-entry-brief', label: 'Federal Entry Brief' },
   { path: '/reports/federal-entry', label: 'Federal Entry Report' },
   { path: '/apps/execution-api', label: 'Execution API' },
@@ -589,6 +590,12 @@ function AppLayout() {
                   <NavLink to="/studio/sas-to-pyspark" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
                     <span>🔁</span>
                     <span className={sidebarOpen ? '' : 'lg:hidden'}>SAS to PySpark Studio</span>
+                  </NavLink>
+                </SidebarTooltip>
+                <SidebarTooltip show={!sidebarOpen} label="ROI Calculator">
+                  <NavLink to="/roi-calculator" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
+                    <span>💹</span>
+                    <span className={sidebarOpen ? '' : 'lg:hidden'}>ROI Calculator</span>
                   </NavLink>
                 </SidebarTooltip>
                 <SidebarTooltip show={!sidebarOpen} label="Federal Entry Brief">
