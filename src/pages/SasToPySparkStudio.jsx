@@ -33,14 +33,36 @@ export default function SasToPySparkStudio() {
   const [warnings, setWarnings] = useState([])
   const [mapping, setMapping] = useState([])
   const [explanation, setExplanation] = useState(null)
+  const [overallConfidence, setOverallConfidence] = useState(null)
+  const [businessImpactSummary, setBusinessImpactSummary] = useState('')
+  const [nextStepsRecommendations, setNextStepsRecommendations] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [openBlocks, setOpenBlocks] = useState({})
 
+  const normalizedWarnings = useMemo(() => {
+    return (warnings || []).map((w) =>
+      typeof w === 'string'
+        ? { code: 'LEGACY', severity: 'warning', message: w, suggested_action: '', block_id: null }
+        : w
+    )
+  }, [warnings])
+
   const unsupportedWarnings = useMemo(
-    () => warnings.filter((w) => /manual|partial|unsupported|not resolved/i.test(w)),
-    [warnings]
+    () =>
+      normalizedWarnings.filter(
+        (w) =>
+          w.severity === 'error' ||
+          /manual|partial|unsupported|not resolved|not expanded|NotImplemented/i.test(w.message || '')
+      ),
+    [normalizedWarnings]
   )
+
+  const severityStyles = {
+    info: 'border-slate-200 bg-slate-50 text-slate-800',
+    warning: 'border-amber-200 bg-amber-50 text-amber-900',
+    error: 'border-rose-200 bg-rose-50 text-rose-900',
+  }
 
   const toggleBlock = (id) => {
     setOpenBlocks((prev) => ({ ...prev, [id]: !prev[id] }))
@@ -95,6 +117,13 @@ export default function SasToPySparkStudio() {
       const converted = await convertSasCode(sasCode, mode)
       setBlocks(converted.blocks || [])
       setWarnings(converted.warnings || [])
+      setOverallConfidence(
+        typeof converted.overall_conversion_confidence === 'number'
+          ? converted.overall_conversion_confidence
+          : null
+      )
+      setBusinessImpactSummary(converted.business_impact_summary || '')
+      setNextStepsRecommendations(converted.next_steps_recommendations || [])
       setMapping(converted.transformation_map || [])
       setPysparkCode(converted.pyspark_code || '')
       const explained = await explainSasConversion(sasCode, mode)
@@ -116,13 +145,17 @@ export default function SasToPySparkStudio() {
           mode,
           pysparkCode,
           blockCount: blocks.length,
-          warnings,
+          warnings: normalizedWarnings,
+          overallConversionConfidence: overallConfidence,
+          businessImpactSummary,
+          nextStepsRecommendations,
           pipelineBlocks: blocks.map((b) => ({
             id: b.id,
             type: b.type,
             line_start: b.line_start,
             line_end: b.line_end,
             constructs: b.constructs || {},
+            conversion_confidence: b.conversion_confidence,
           })),
           recommended: {
             keyColumns: recommendedKeys,
@@ -191,6 +224,35 @@ export default function SasToPySparkStudio() {
           </div>
         )}
 
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+            <p className="text-xs uppercase tracking-wide text-slate-500">Conversion confidence</p>
+            <p className="mt-2 text-3xl font-semibold text-slate-900">
+              {overallConfidence != null ? `${overallConfidence}%` : '—'}
+            </p>
+            <p className="text-xs text-slate-500 mt-2">
+              Conservative score blending block-level risk. Low scores mean manual engineering is expected — not silent parity.
+            </p>
+          </div>
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm lg:col-span-2">
+            <p className="text-xs uppercase tracking-wide text-slate-500">Business impact</p>
+            <p className="mt-2 text-sm text-slate-800 leading-relaxed">
+              {businessImpactSummary || 'Run conversion to assess migration risk in business terms.'}
+            </p>
+          </div>
+        </div>
+
+        {nextStepsRecommendations.length > 0 && (
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+            <p className="text-xs uppercase tracking-wide text-slate-500 mb-3">Recommended next steps</p>
+            <ol className="list-decimal ml-5 space-y-2 text-sm text-slate-800">
+              {nextStepsRecommendations.map((step, idx) => (
+                <li key={`${idx}-${step.slice(0, 24)}`}>{step}</li>
+              ))}
+            </ol>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           <div className="bg-white border border-slate-200 rounded-2xl shadow-sm">
             <div className="px-4 py-3 border-b border-slate-200">
@@ -253,13 +315,33 @@ export default function SasToPySparkStudio() {
                   <button
                     type="button"
                     onClick={() => toggleBlock(block.id || String(idx))}
-                    className="w-full px-3 py-2 text-left flex justify-between items-center"
+                    className="w-full px-3 py-2 text-left flex justify-between items-center gap-3"
                   >
                     <span className="text-sm font-medium text-slate-800">{block.type}</span>
-                    <span className="text-xs text-slate-500">Lines {block.line_start || '-'} - {block.line_end || '-'}</span>
+                    <span className="flex items-center gap-2 shrink-0">
+                      {typeof block.conversion_confidence === 'number' && (
+                        <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                          ~{block.conversion_confidence}%
+                        </span>
+                      )}
+                      <span className="text-xs text-slate-500">Lines {block.line_start || '-'} - {block.line_end || '-'}</span>
+                    </span>
                   </button>
                   {openBlocks[block.id || String(idx)] && (
-                    <div className="px-3 pb-3">
+                    <div className="px-3 pb-3 space-y-3">
+                      {block.business_impact && (
+                        <p className="text-xs text-slate-600 border border-slate-100 rounded-lg p-2 bg-slate-50">
+                          <span className="font-medium text-slate-700">Impact: </span>
+                          {block.business_impact}
+                        </p>
+                      )}
+                      {(block.next_steps || []).length > 0 && (
+                        <ul className="text-xs text-slate-700 list-disc ml-4 space-y-1">
+                          {block.next_steps.map((s, j) => (
+                            <li key={`${j}-${s.slice(0, 20)}`}>{s}</li>
+                          ))}
+                        </ul>
+                      )}
                       <pre className="text-xs bg-slate-50 rounded-lg p-3 overflow-auto border border-slate-200">{block.input}</pre>
                     </div>
                   )}
@@ -300,20 +382,38 @@ export default function SasToPySparkStudio() {
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
             <h3 className="text-lg font-semibold text-slate-900 mb-3">Warnings</h3>
-            {warnings.length === 0 ? (
+            {normalizedWarnings.length === 0 ? (
               <p className="text-sm text-slate-500">No warnings detected.</p>
             ) : (
               <ul className="space-y-2 text-sm">
-                {warnings.map((warning, idx) => (
-                  <li key={`${warning}-${idx}`} className="px-3 py-2 rounded-lg border border-amber-200 bg-amber-50 text-amber-800">
-                    {warning}
-                  </li>
-                ))}
+                {normalizedWarnings.map((warning, idx) => {
+                  const sev = warning.severity || 'warning'
+                  const box = severityStyles[sev] || severityStyles.warning
+                  return (
+                    <li
+                      key={`${warning.code || 'w'}-${idx}`}
+                      className={`px-3 py-2 rounded-lg border text-left ${box}`}
+                    >
+                      <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wide opacity-80">
+                        <span className="font-semibold">{warning.code || 'NOTICE'}</span>
+                        <span className="rounded px-1.5 py-0.5 bg-white/60 border border-black/5">{sev}</span>
+                        {warning.block_id && <span className="text-slate-600">block: {warning.block_id}</span>}
+                      </div>
+                      <p className="mt-1.5">{warning.message}</p>
+                      {warning.suggested_action && (
+                        <p className="mt-2 text-xs opacity-90 border-t border-black/5 pt-2">
+                          <span className="font-medium">Suggested: </span>
+                          {warning.suggested_action}
+                        </p>
+                      )}
+                    </li>
+                  )
+                })}
               </ul>
             )}
             {unsupportedWarnings.length > 0 && (
               <p className="text-xs text-rose-600 mt-3">
-                Unsupported/partial constructs were detected. Manual review is required before production.
+                Partial or non-automated constructs were flagged. Treat generated PySpark as a draft until reviewed and tested.
               </p>
             )}
           </div>
@@ -325,12 +425,33 @@ export default function SasToPySparkStudio() {
             ) : (
               <div className="space-y-3">
                 <p className="text-sm text-slate-700">{explanation.overview}</p>
+                {explanation.business_impact_summary && (
+                  <p className="text-sm text-slate-800 border border-slate-100 rounded-lg p-3 bg-slate-50">
+                    {explanation.business_impact_summary}
+                  </p>
+                )}
                 <div>
                   <p className="text-xs uppercase tracking-wide text-slate-500 mb-1">Assumptions</p>
                   <ul className="text-sm text-slate-700 list-disc ml-5">
                     {(explanation.assumptions || []).map((item, idx) => <li key={`${item}-${idx}`}>{item}</li>)}
                   </ul>
                 </div>
+                {(explanation.block_explanations || []).length > 0 && (
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-slate-500 mb-1">Per-block notes</p>
+                    <ul className="text-sm text-slate-700 space-y-2">
+                      {explanation.block_explanations.map((be) => (
+                        <li key={be.block_id} className="border border-slate-100 rounded-lg p-2">
+                          <span className="font-medium">{be.type}</span>
+                          {typeof be.conversion_confidence === 'number' && (
+                            <span className="text-xs text-slate-500 ml-2">~{be.conversion_confidence}%</span>
+                          )}
+                          <p className="text-xs text-slate-600 mt-1">{be.sas_intent}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
             )}
           </div>

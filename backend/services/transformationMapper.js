@@ -9,15 +9,21 @@ const TYPE_MAP = {
 function buildTransformationMap(blocks = []) {
   return blocks.map((block) => {
     const map = TYPE_MAP[block.type] || { sas: block.type, pyspark: 'Manual mapping required' }
+    const conf = block.conversion_confidence
+    const confNote =
+      typeof conf === 'number'
+        ? ` Block confidence ~${conf}% — ${conf < 60 ? 'manual review expected.' : 'spot-check critical paths.'}`
+        : ''
     return {
       block_id: block.id,
       block_type: block.type,
       sas_construct: map.sas,
       pyspark_construct: map.pyspark,
+      conversion_confidence: conf,
       notes:
-        block.type === 'MACRO'
-          ? 'Macro logic is partially converted in MVP mode.'
-          : 'Pattern-based conversion applied.',
+        (block.type === 'MACRO'
+          ? 'Macro logic is not auto-expanded; placeholder only.'
+          : 'Pattern-based conversion applied.') + confNote,
     }
   })
 }
