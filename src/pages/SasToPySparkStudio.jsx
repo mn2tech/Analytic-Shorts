@@ -9,6 +9,23 @@ const MODES = [
   { id: 'databricks', label: 'Databricks-ready' },
 ]
 
+/** Accepts API numbers, numeric strings, and camelCase/snake_case variants from proxies or older builds. */
+function parsePercent(value) {
+  if (value === '' || value === null || value === undefined) return null
+  const n = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(n)) return null
+  return Math.round(n)
+}
+
+function deriveOverallConfidenceFromBlocks(blocks) {
+  if (!Array.isArray(blocks) || blocks.length === 0) return null
+  const vals = blocks.map((b) => parsePercent(b?.conversion_confidence)).filter((x) => x != null)
+  if (vals.length === 0) return null
+  const min = Math.min(...vals)
+  const avg = vals.reduce((a, b) => a + b, 0) / vals.length
+  return Math.round(min * 0.45 + avg * 0.55)
+}
+
 const EXAMPLE_SAS = `data work.sales_clean;
   set work.sales_raw;
   if revenue > 1000 then tier = "HIGH";
@@ -115,19 +132,62 @@ export default function SasToPySparkStudio() {
     setError('')
     try {
       const converted = await convertSasCode(sasCode, mode)
-      setBlocks(converted.blocks || [])
+      const blocksNext = converted.blocks || []
+      setBlocks(blocksNext)
       setWarnings(converted.warnings || [])
-      setOverallConfidence(
-        typeof converted.overall_conversion_confidence === 'number'
-          ? converted.overall_conversion_confidence
-          : null
-      )
-      setBusinessImpactSummary(converted.business_impact_summary || '')
-      setNextStepsRecommendations(converted.next_steps_recommendations || [])
       setMapping(converted.transformation_map || [])
       setPysparkCode(converted.pyspark_code || '')
-      const explained = await explainSasConversion(sasCode, mode)
-      setExplanation(explained)
+
+      let confidence =
+        parsePercent(converted.overall_conversion_confidence) ??
+        parsePercent(converted.overallConversionConfidence) ??
+        deriveOverallConfidenceFromBlocks(blocksNext)
+
+      const impactRaw =
+        converted.business_impact_summary ??
+        converted.businessImpactSummary ??
+        ''
+      let impact = typeof impactRaw === 'string' ? impactRaw.trim() : String(impactRaw || '')
+
+      let steps = Array.isArray(converted.next_steps_recommendations)
+        ? converted.next_steps_recommendations
+        : Array.isArray(converted.nextStepsRecommendations)
+          ? converted.nextStepsRecommendations
+          : []
+
+      // Apply /convert results before /explain. In production, /explain may fail (timeout, 403, routing);
+      // previously we only setState after explain, so confidence stayed "—" while PySpark still appeared.
+      setOverallConfidence(confidence)
+      setBusinessImpactSummary(impact)
+      setNextStepsRecommendations(Array.isArray(steps) ? steps : [])
+
+      try {
+        const explained = await explainSasConversion(sasCode, mode)
+        setExplanation(explained)
+
+        let conf2 = confidence
+        if (conf2 == null) {
+          conf2 =
+            parsePercent(explained?.overall_conversion_confidence) ??
+            parsePercent(explained?.overallConversionConfidence) ??
+            deriveOverallConfidenceFromBlocks(blocksNext)
+        }
+        let impact2 = impact
+        if (!impact2 && explained?.business_impact_summary) {
+          impact2 = String(explained.business_impact_summary).trim()
+        }
+        let steps2 = steps
+        if ((!steps2 || steps2.length === 0) && Array.isArray(explained?.next_steps_recommendations)) {
+          steps2 = explained.next_steps_recommendations
+        }
+
+        if (conf2 != null) setOverallConfidence(conf2)
+        if (impact2) setBusinessImpactSummary(impact2)
+        if (Array.isArray(steps2) && steps2.length > 0) setNextStepsRecommendations(steps2)
+      } catch (explainErr) {
+        console.warn('[SAS Studio] /api/migration/explain failed:', explainErr?.message || explainErr)
+        setExplanation(null)
+      }
     } catch (err) {
       setError(err?.response?.data?.message || 'Failed to convert SAS code.')
     } finally {
@@ -310,7 +370,9 @@ export default function SasToPySparkStudio() {
             <h3 className="text-lg font-semibold text-slate-900 mb-3">Block Breakdown</h3>
             <div className="space-y-2">
               {blocks.length === 0 && <p className="text-sm text-slate-500">No blocks parsed yet.</p>}
-              {blocks.map((block, idx) => (
+              {blocks.map((block, idx) => {
+                const blockConf = parsePercent(block.conversion_confidence)
+                return (
                 <div key={`${block.id || idx}`} className="border border-slate-200 rounded-xl">
                   <button
                     type="button"
@@ -319,9 +381,9 @@ export default function SasToPySparkStudio() {
                   >
                     <span className="text-sm font-medium text-slate-800">{block.type}</span>
                     <span className="flex items-center gap-2 shrink-0">
-                      {typeof block.conversion_confidence === 'number' && (
+                      {blockConf != null && (
                         <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
-                          ~{block.conversion_confidence}%
+                          ~{blockConf}%
                         </span>
                       )}
                       <span className="text-xs text-slate-500">Lines {block.line_start || '-'} - {block.line_end || '-'}</span>
@@ -346,7 +408,8 @@ export default function SasToPySparkStudio() {
                     </div>
                   )}
                 </div>
-              ))}
+                )
+              })}
             </div>
           </div>
 
@@ -440,15 +503,18 @@ export default function SasToPySparkStudio() {
                   <div>
                     <p className="text-xs uppercase tracking-wide text-slate-500 mb-1">Per-block notes</p>
                     <ul className="text-sm text-slate-700 space-y-2">
-                      {explanation.block_explanations.map((be) => (
+                      {explanation.block_explanations.map((be) => {
+                        const beConf = parsePercent(be.conversion_confidence)
+                        return (
                         <li key={be.block_id} className="border border-slate-100 rounded-lg p-2">
                           <span className="font-medium">{be.type}</span>
-                          {typeof be.conversion_confidence === 'number' && (
-                            <span className="text-xs text-slate-500 ml-2">~{be.conversion_confidence}%</span>
+                          {beConf != null && (
+                            <span className="text-xs text-slate-500 ml-2">~{beConf}%</span>
                           )}
                           <p className="text-xs text-slate-600 mt-1">{be.sas_intent}</p>
                         </li>
-                      ))}
+                        )
+                      })}
                     </ul>
                   </div>
                 )}
