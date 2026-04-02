@@ -43,7 +43,6 @@ import ERCommandMapPage from './pages/ERCommandMapPage'
 import FloorMapAIPage from './pages/FloorMapAIPage'
 import MotelCommandCenter from './pages/MotelCommandCenter'
 import BestWesternCommandCenter from './pages/BestWesternCommandCenter'
-import DataCenterCommandCenter from './pages/DataCenterCommandCenter'
 import MigrationValidationStudio from './pages/MigrationValidationStudio'
 import SasToPySparkStudio from './pages/SasToPySparkStudio'
 import RoiCalculator from './pages/RoiCalculator'
@@ -121,7 +120,6 @@ function App() {
               <Route path="/floormap-ai" element={<FloorMapAIPage />} />
               <Route path="/motel-command-center" element={<MotelCommandCenter />} />
               <Route path="/best-western-command-center" element={<BestWesternCommandCenter />} />
-              <Route path="/data-center-command-center" element={<DataCenterCommandCenter />} />
               <Route path="/migration-validation-studio" element={<MigrationValidationStudio />} />
               <Route path="/roi-calculator" element={<RoiCalculator />} />
               <Route path="/federal-entry-brief" element={<FederalEntryBrief />} />
