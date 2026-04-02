@@ -49,6 +49,7 @@ const PATH_TO_LABEL = [
   { path: '/er-command-map', label: 'ER Command Map' },
   { path: '/floormap-ai', label: 'FloorMap AI' },
   { path: '/motel-command-center', label: 'Motel Command Center' },
+  { path: '/best-western-command-center', label: 'Best Western Command Center' },
   { path: '/migration-validation-studio', label: 'Migration Validation Studio' },
   { path: '/studio/sas-to-pyspark', label: 'SAS to PySpark Studio' },
   { path: '/roi-calculator', label: 'ROI Calculator' },
@@ -60,6 +61,7 @@ const PATH_TO_LABEL = [
   { path: '/feed', label: 'Feed' },
   { path: '/messages', label: 'Messages' },
   { path: '/careers', label: 'Careers' },
+  { path: '/audit', label: 'Audit Queue' },
   { path: '/dashboard', label: 'Dashboard Viewer' },
   { path: '/dashboards', label: 'My Dashboards' },
   { path: '/studio', label: 'Studio' },
@@ -580,6 +582,12 @@ function AppLayout() {
                     <span className={sidebarOpen ? '' : 'lg:hidden'}>Motel Command Center</span>
                   </NavLink>
                 </SidebarTooltip>
+                <SidebarTooltip show={!sidebarOpen} label="Best Western Command Center">
+                  <NavLink to="/best-western-command-center" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
+                    <span>🏨</span>
+                    <span className={sidebarOpen ? '' : 'lg:hidden'}>Best Western Command Center</span>
+                  </NavLink>
+                </SidebarTooltip>
                 <SidebarTooltip show={!sidebarOpen} label="Migration Validation Studio">
                   <NavLink to="/migration-validation-studio" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
                     <span>🧪</span>
@@ -693,6 +701,12 @@ function AppLayout() {
                     </NavLink>
                   </SidebarTooltip>
                 )}
+                <SidebarTooltip show={!sidebarOpen} label="Audit Queue">
+                  <NavLink to="/audit" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
+                    <span>✅</span>
+                    <span className={sidebarOpen ? '' : 'lg:hidden'}>Audit Queue</span>
+                  </NavLink>
+                </SidebarTooltip>
                 <SidebarTooltip show={!sidebarOpen} label="Dashboard Viewer">
                   <NavLink to="/dashboard" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
                     <span>📈</span>

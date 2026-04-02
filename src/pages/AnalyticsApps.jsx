@@ -17,6 +17,18 @@ const APPS = [
     icon: '🏥',
   },
   {
+    name: 'Data Center Command Center',
+    description: 'Synthetic rack floor map with telemetry, alerts, and workload movements.',
+    path: '/data-center-command-center',
+    icon: '🖥️',
+  },
+  {
+    name: 'Best Western Command Center',
+    description: 'Hotel blueprint command center with room-level overlays and live status simulation.',
+    path: '/best-western-command-center',
+    icon: '🏨',
+  },
+  {
     name: 'Federal Entry Brief',
     description: 'Federal opportunity briefs and compliance summaries.',
     path: '/federal-entry-brief',

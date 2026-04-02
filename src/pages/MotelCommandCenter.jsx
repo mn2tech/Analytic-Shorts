@@ -29,16 +29,15 @@ import MotelRotatingMetricsPanel from '../components/MotelRotatingMetricsPanel'
 
 const STATUS_SHORT = { available: 'Avail', occupied: 'Occ', dirty: 'Dirty', reserved: 'Res' }
 const STATUS_COLORS = ['#2ECC71', '#E74C3C', '#F1C40F', '#3498DB']
-
-const BLUEPRINT_PATHS = ['/motel-blueprint.png', '/images/motel-blueprint.png']
-
 const MOCK_GUESTS = [
   'J. Smith', 'M. Johnson', 'R. Williams', 'A. Brown', 'K. Davis', 'T. Miller',
   'S. Wilson', 'L. Moore', 'P. Taylor', 'C. Anderson', 'J. Thomas', 'D. Jackson',
 ]
 
 function pickGuestForRoom(roomId, i) {
-  return MOCK_GUESTS[(roomId?.length || 0 + i) % MOCK_GUESTS.length]
+  const numericRoom = Number.parseInt(String(roomId || '').replace(/\D/g, ''), 10)
+  const roomSeed = Number.isFinite(numericRoom) ? numericRoom : String(roomId || '').length
+  return MOCK_GUESTS[(roomSeed + i) % MOCK_GUESTS.length]
 }
 
 function roomsToOverlays(rooms, imageHeight = 1024) {
@@ -126,10 +125,16 @@ function BlueprintImage({
   imageDimensions: jsonImageDimensions,
   manualDimensions,
   defaultDimensions,
+  blueprintBaseName = 'motel-blueprint.png',
+  showRoomNumbers = true,
+  showStatusAbbrev = true,
+  showStatusDot = true,
+  roomFillOpacity = 0.5,
 }) {
   const [imageError, setImageError] = useState(false)
   const [pathIndex, setPathIndex] = useState(0)
   const [loadedDimensions, setLoadedDimensions] = useState(null)
+  const BLUEPRINT_PATHS = [`/${blueprintBaseName}`, `/images/${blueprintBaseName}`]
   const base = (import.meta.env.BASE_URL || '/').replace(/\/+$/, '') || ''
   const imageSrc = `${base}${BLUEPRINT_PATHS[pathIndex]}?v=1`
 
@@ -236,12 +241,12 @@ function BlueprintImage({
                   width={r.width ?? 50}
                   height={r.height ?? 50}
                   fill={fill}
-                  fillOpacity={isInfrastructure ? 0.25 : 0.5}
+                  fillOpacity={isInfrastructure ? 0.22 : roomFillOpacity}
                   stroke={isHovered ? '#fff' : isInfrastructure ? 'rgba(148,163,184,0.4)' : 'rgba(15,23,42,0.6)'}
                   strokeWidth={isHovered ? 2.5 : 1}
                   style={{ transition: 'fill 0.35s ease, stroke 0.2s ease' }}
                 />
-                {!isInfrastructure && (
+                {!isInfrastructure && showStatusDot && (
                   <circle
                     cx={r.x + 8}
                     cy={r.y + 8}
@@ -252,16 +257,18 @@ function BlueprintImage({
                     className="pointer-events-none"
                   />
                 )}
-                <text
-                  x={r.x + roomW - 4}
-                  y={r.y + roomH * 0.35}
-                  textAnchor="end"
-                  className="select-none pointer-events-none"
-                  style={{ fontSize: roomW < 45 ? 8 : 10, fill: '#0f172a', fontWeight: 700 }}
-                >
-                  {getRoomDisplayLabel(r.id, r)}
-                </text>
-                {showStatus && (
+                {showRoomNumbers && (
+                  <text
+                    x={r.x + roomW - 4}
+                    y={r.y + roomH * 0.35}
+                    textAnchor="end"
+                    className="select-none pointer-events-none"
+                    style={{ fontSize: roomW < 45 ? 8 : 10, fill: '#0f172a', fontWeight: 700 }}
+                  >
+                    {getRoomDisplayLabel(r.id, r)}
+                  </text>
+                )}
+                {showStatus && showStatusAbbrev && (
                   <text
                     x={r.x + (r.width ?? 50) / 2}
                     y={r.y + (r.height ?? 50) / 2 + 6}
@@ -331,7 +338,29 @@ function KpiPanels({ metrics, statusFilter, onFilterChange }) {
   )
 }
 
-function MotelCommandCenter() {
+function MotelCommandCenter({
+  brandName = 'Motel Command Center',
+  brandSubtitle = 'Operations floor map',
+  brandIcon = '🏨',
+  storagePrefix = 'motel-floormap',
+  blueprintBaseName = 'motel-blueprint.png',
+  apiEndpoint = '/api/motel/rooms/status',
+  defaultRoomOverlays = ROOM_OVERLAY_COORDINATES,
+  defaultBlueprintWidth = BLUEPRINT_DEFAULT_WIDTH,
+  defaultBlueprintHeight = BLUEPRINT_DEFAULT_HEIGHT,
+  showRoomNumbers = true,
+  showStatusAbbrev = true,
+  showStatusDot = true,
+  roomFillOpacity = 0.5,
+  initialCommandCenterMode = false,
+  timelineHistory = roomStatusHistory,
+  timelineTimeOptions = timelineTimes,
+  SidePanelComponent = MotelOperationalAlerts,
+}) {
+  const overlaysStorageKey = `${storagePrefix}-overlays`
+  const dimensionsStorageKey = `${storagePrefix}-dimensions`
+  const manualDimensionsStorageKey = `${storagePrefix}-manual-dimensions`
+  const hideAlignmentStorageKey = `${storagePrefix}-hide-alignment`
   const [roomData, setRoomData] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -345,7 +374,7 @@ function MotelCommandCenter() {
   // Load persisted floor map data from localStorage
   const [customOverlays, setCustomOverlays] = useState(() => {
     try {
-      const saved = localStorage.getItem('motel-floormap-overlays')
+      const saved = localStorage.getItem(overlaysStorageKey)
       return saved ? JSON.parse(saved) : null
     } catch {
       return null
@@ -353,7 +382,7 @@ function MotelCommandCenter() {
   })
   const [customImageDimensions, setCustomImageDimensions] = useState(() => {
     try {
-      const saved = localStorage.getItem('motel-floormap-dimensions')
+      const saved = localStorage.getItem(dimensionsStorageKey)
       return saved ? JSON.parse(saved) : null
     } catch {
       return null
@@ -361,7 +390,7 @@ function MotelCommandCenter() {
   })
   const [manualDimensions, setManualDimensions] = useState(() => {
     try {
-      const saved = localStorage.getItem('motel-floormap-manual-dimensions')
+      const saved = localStorage.getItem(manualDimensionsStorageKey)
       return saved ? JSON.parse(saved) : null
     } catch {
       return null
@@ -369,7 +398,7 @@ function MotelCommandCenter() {
   })
   const [hideAlignmentMessage, setHideAlignmentMessage] = useState(() => {
     try {
-      return localStorage.getItem('motel-floormap-hide-alignment') === 'true'
+      return localStorage.getItem(hideAlignmentStorageKey) === 'true'
     } catch {
       return false
     }
@@ -377,7 +406,7 @@ function MotelCommandCenter() {
   const [roomSearch, setRoomSearch] = useState('')
   const [selectedTime, setSelectedTime] = useState(null)
   const [isTimelinePlaying, setIsTimelinePlaying] = useState(false)
-  const [commandCenterMode, setCommandCenterMode] = useState(false)
+  const [commandCenterMode, setCommandCenterMode] = useState(initialCommandCenterMode)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [liveTime, setLiveTime] = useState(() => new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false }))
   const importInputRef = useRef(null)
@@ -386,14 +415,14 @@ function MotelCommandCenter() {
   const isDragging = useRef(false)
   const lastPan = useRef({ x: 0, y: 0 })
 
-  const roomOverlays = useMemo(() => customOverlays ?? ROOM_OVERLAY_COORDINATES, [customOverlays])
+  const roomOverlays = useMemo(() => customOverlays ?? defaultRoomOverlays, [customOverlays, defaultRoomOverlays])
 
   const mapDimensions = useMemo(
     () => ({
-      width: manualDimensions?.width ?? customImageDimensions?.width ?? BLUEPRINT_DEFAULT_WIDTH,
-      height: manualDimensions?.height ?? customImageDimensions?.height ?? BLUEPRINT_DEFAULT_HEIGHT,
+      width: manualDimensions?.width ?? customImageDimensions?.width ?? defaultBlueprintWidth,
+      height: manualDimensions?.height ?? customImageDimensions?.height ?? defaultBlueprintHeight,
     }),
-    [manualDimensions, customImageDimensions]
+    [manualDimensions, customImageDimensions, defaultBlueprintHeight, defaultBlueprintWidth]
   )
 
   // Fit to viewport function - fills entire window without padding
@@ -520,7 +549,7 @@ function MotelCommandCenter() {
       setError(null)
       let rooms = getFallbackRoomData(roomOverlays)
       try {
-        const res = await fetch('/api/motel/rooms/status')
+        const res = await fetch(apiEndpoint)
         if (res.ok) {
           const json = await res.json()
           const data = json?.data ?? json
@@ -537,7 +566,7 @@ function MotelCommandCenter() {
     } finally {
       setLoading(false)
     }
-  }, [roomOverlays])
+  }, [apiEndpoint, roomOverlays])
 
   useEffect(() => {
     fetchRoomStatus()
@@ -552,10 +581,10 @@ function MotelCommandCenter() {
   }, [roomData])
 
   const roomStatusMapWithTimeline = useMemo(() => {
-    const time = selectedTime ?? timelineTimes[0]
+    const time = selectedTime ?? timelineTimeOptions[0]
     const merged = { ...roomStatusMap }
     if (selectedTime) {
-      const snapshot = roomStatusHistory.find((s) => s.time === selectedTime)
+      const snapshot = timelineHistory.find((s) => s.time === selectedTime)
       if (snapshot?.rooms) {
         Object.entries(snapshot.rooms).forEach(([roomId, status]) => {
           merged[roomId] = { ...(merged[roomId] || { room: roomId }), status }
@@ -563,7 +592,7 @@ function MotelCommandCenter() {
       }
     }
     return merged
-  }, [roomStatusMap, selectedTime])
+  }, [roomStatusMap, selectedTime, timelineHistory, timelineTimeOptions])
 
   const roomsForMetrics = useMemo(() => {
     if (!selectedTime) return roomData
@@ -583,7 +612,7 @@ function MotelCommandCenter() {
     [roomsForMetrics, roomIdToUnit]
   )
 
-  const displayTime = selectedTime ?? timelineTimes[0]
+  const displayTime = selectedTime ?? timelineTimeOptions[0]
   const activeRoomId = selectedRoom ?? hoveredRoom
   const hoveredRoomData = activeRoomId
     ? (roomStatusMapWithTimeline[activeRoomId] ?? { room: activeRoomId, status: '—', guest_name: null, check_in: null })
@@ -638,11 +667,11 @@ function MotelCommandCenter() {
 
   useEffect(() => {
     if (commandCenterMode) {
-      setSelectedTime(timelineTimes[0])
+      setSelectedTime(timelineTimeOptions[0])
       setIsTimelinePlaying(true)
       setStatusFilter(null)
     } else setIsTimelinePlaying(false)
-  }, [commandCenterMode])
+  }, [commandCenterMode, timelineTimeOptions])
 
   const toggleFullscreenMap = useCallback(() => {
     if (document.fullscreenElement) {
@@ -671,53 +700,53 @@ function MotelCommandCenter() {
   useEffect(() => {
     if (customOverlays) {
       try {
-        localStorage.setItem('motel-floormap-overlays', JSON.stringify(customOverlays))
+        localStorage.setItem(overlaysStorageKey, JSON.stringify(customOverlays))
       } catch (err) {
         console.warn('Failed to save overlays to localStorage:', err)
       }
     } else {
-      localStorage.removeItem('motel-floormap-overlays')
+      localStorage.removeItem(overlaysStorageKey)
     }
-  }, [customOverlays])
+  }, [customOverlays, overlaysStorageKey])
 
   // Persist image dimensions to localStorage
   useEffect(() => {
     if (customImageDimensions) {
       try {
-        localStorage.setItem('motel-floormap-dimensions', JSON.stringify(customImageDimensions))
+        localStorage.setItem(dimensionsStorageKey, JSON.stringify(customImageDimensions))
       } catch (err) {
         console.warn('Failed to save dimensions to localStorage:', err)
       }
     } else {
-      localStorage.removeItem('motel-floormap-dimensions')
+      localStorage.removeItem(dimensionsStorageKey)
     }
-  }, [customImageDimensions])
+  }, [customImageDimensions, dimensionsStorageKey])
 
   // Persist manual dimensions to localStorage
   useEffect(() => {
     if (manualDimensions) {
       try {
-        localStorage.setItem('motel-floormap-manual-dimensions', JSON.stringify(manualDimensions))
+        localStorage.setItem(manualDimensionsStorageKey, JSON.stringify(manualDimensions))
       } catch (err) {
         console.warn('Failed to save manual dimensions to localStorage:', err)
       }
     } else {
-      localStorage.removeItem('motel-floormap-manual-dimensions')
+      localStorage.removeItem(manualDimensionsStorageKey)
     }
-  }, [manualDimensions])
+  }, [manualDimensions, manualDimensionsStorageKey])
 
   // Persist hide alignment message preference
   useEffect(() => {
     try {
       if (hideAlignmentMessage) {
-        localStorage.setItem('motel-floormap-hide-alignment', 'true')
+        localStorage.setItem(hideAlignmentStorageKey, 'true')
       } else {
-        localStorage.removeItem('motel-floormap-hide-alignment')
+        localStorage.removeItem(hideAlignmentStorageKey)
       }
     } catch (err) {
       console.warn('Failed to save alignment message preference:', err)
     }
-  }, [hideAlignmentMessage])
+  }, [hideAlignmentMessage, hideAlignmentStorageKey])
 
   const handleLoadFloorMapClick = () => importInputRef.current?.click()
   const handleLoadFloorMapFile = (e) => {
@@ -777,10 +806,10 @@ function MotelCommandCenter() {
         {!commandCenterMode && (
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-slate-700 flex items-center justify-center text-2xl border border-white/10">🏨</div>
+            <div className="w-12 h-12 rounded-xl bg-slate-700 flex items-center justify-center text-2xl border border-white/10">{brandIcon}</div>
             <div>
-              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Motel Command Center</h1>
-              <p className="text-sm text-slate-400 mt-0.5">Operations floor map</p>
+              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">{brandName}</h1>
+              <p className="text-sm text-slate-400 mt-0.5">{brandSubtitle}</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -939,7 +968,12 @@ function MotelCommandCenter() {
                   statusFilter={statusFilter}
                   imageDimensions={customImageDimensions}
                   manualDimensions={manualDimensions}
-                  defaultDimensions={{ width: BLUEPRINT_DEFAULT_WIDTH, height: BLUEPRINT_DEFAULT_HEIGHT }}
+                  defaultDimensions={{ width: defaultBlueprintWidth, height: defaultBlueprintHeight }}
+                  blueprintBaseName={blueprintBaseName}
+                  showRoomNumbers={showRoomNumbers}
+                  showStatusAbbrev={showStatusAbbrev}
+                  showStatusDot={showStatusDot}
+                  roomFillOpacity={roomFillOpacity}
                 />
               </div>
             )}
@@ -964,17 +998,24 @@ function MotelCommandCenter() {
         </div>
 
         <div className={`flex flex-col gap-3 shrink-0 order-first lg:order-last ${commandCenterMode ? 'w-full lg:w-56 min-w-0' : 'w-full lg:w-72'}`}>
-          <MotelOperationalAlerts selectedTime={displayTime} roomOverlays={roomOverlays} roomStatusMap={roomStatusMapWithTimeline} roomIdToUnit={roomIdToUnit} highlightAlerts={commandCenterMode} />
+          <SidePanelComponent
+            selectedTime={displayTime}
+            roomOverlays={roomOverlays}
+            roomStatusMap={roomStatusMapWithTimeline}
+            roomIdToUnit={roomIdToUnit}
+            highlightAlerts={commandCenterMode}
+            metrics={metrics}
+          />
         </div>
         </div>
 
         <div className={`shrink-0 ${commandCenterMode ? 'py-1' : 'space-y-2'}`}>
           <TimelinePlayback
-            times={timelineTimes}
-            selectedTime={selectedTime ?? timelineTimes[0]}
+            times={timelineTimeOptions}
+            selectedTime={selectedTime ?? timelineTimeOptions[0]}
             onTimeChange={setSelectedTime}
             isPlaying={isTimelinePlaying}
-            onPlayPause={() => { if (!selectedTime) setSelectedTime(timelineTimes[0]); setIsTimelinePlaying((p) => !p) }}
+            onPlayPause={() => { if (!selectedTime) setSelectedTime(timelineTimeOptions[0]); setIsTimelinePlaying((p) => !p) }}
             onBackToLive={() => { setSelectedTime(null); setIsTimelinePlaying(false) }}
             isLive={!selectedTime}
             compact={commandCenterMode}

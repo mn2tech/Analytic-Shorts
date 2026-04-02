@@ -42,6 +42,8 @@ import PredictiveBedMapPage from './pages/PredictiveBedMapPage'
 import ERCommandMapPage from './pages/ERCommandMapPage'
 import FloorMapAIPage from './pages/FloorMapAIPage'
 import MotelCommandCenter from './pages/MotelCommandCenter'
+import BestWesternCommandCenter from './pages/BestWesternCommandCenter'
+import DataCenterCommandCenter from './pages/DataCenterCommandCenter'
 import MigrationValidationStudio from './pages/MigrationValidationStudio'
 import SasToPySparkStudio from './pages/SasToPySparkStudio'
 import RoiCalculator from './pages/RoiCalculator'
@@ -50,6 +52,8 @@ import Contact from './pages/Contact'
 import ExecutionApi from './pages/ExecutionApi'
 import Scoring from './pages/Scoring'
 import AnalyticsApps from './pages/AnalyticsApps'
+import AuditQueuePage from './pages/audit/AuditQueuePage'
+import AuditCaseDetailPage from './pages/audit/AuditCaseDetailPage'
 
 /** Redirect /studio to /studio/chat, preserving search (e.g. ?open=:id). */
 function StudioIndexRedirect() {
@@ -116,6 +120,8 @@ function App() {
               <Route path="/er-command-map" element={<ERCommandMapPage />} />
               <Route path="/floormap-ai" element={<FloorMapAIPage />} />
               <Route path="/motel-command-center" element={<MotelCommandCenter />} />
+              <Route path="/best-western-command-center" element={<BestWesternCommandCenter />} />
+              <Route path="/data-center-command-center" element={<DataCenterCommandCenter />} />
               <Route path="/migration-validation-studio" element={<MigrationValidationStudio />} />
               <Route path="/roi-calculator" element={<RoiCalculator />} />
               <Route path="/federal-entry-brief" element={<FederalEntryBrief />} />
@@ -189,6 +195,22 @@ function App() {
                 element={
                   <ProtectedRoute>
                     <Dashboard />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/audit"
+                element={
+                  <ProtectedRoute>
+                    <AuditQueuePage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/audit/case/:caseId"
+                element={
+                  <ProtectedRoute>
+                    <AuditCaseDetailPage />
                   </ProtectedRoute>
                 }
               />
