@@ -51,8 +51,6 @@ import Contact from './pages/Contact'
 import ExecutionApi from './pages/ExecutionApi'
 import Scoring from './pages/Scoring'
 import AnalyticsApps from './pages/AnalyticsApps'
-import AuditQueuePage from './pages/audit/AuditQueuePage'
-import AuditCaseDetailPage from './pages/audit/AuditCaseDetailPage'
 
 /** Redirect /studio to /studio/chat, preserving search (e.g. ?open=:id). */
 function StudioIndexRedirect() {
@@ -193,22 +191,6 @@ function App() {
                 element={
                   <ProtectedRoute>
                     <Dashboard />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/audit"
-                element={
-                  <ProtectedRoute>
-                    <AuditQueuePage />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/audit/case/:caseId"
-                element={
-                  <ProtectedRoute>
-                    <AuditCaseDetailPage />
                   </ProtectedRoute>
                 }
               />
