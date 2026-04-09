@@ -51,6 +51,11 @@ import Contact from './pages/Contact'
 import ExecutionApi from './pages/ExecutionApi'
 import Scoring from './pages/Scoring'
 import AnalyticsApps from './pages/AnalyticsApps'
+import KumonLearningCommandCenter from './pages/KumonLearningCommandCenter'
+import TrainingModules from './pages/training/TrainingModules'
+import TrainingLesson from './pages/training/TrainingLesson'
+import AuditQueuePage from './pages/audit/AuditQueuePage'
+import AuditCaseDetailPage from './pages/audit/AuditCaseDetailPage'
 
 /** Redirect /studio to /studio/chat, preserving search (e.g. ?open=:id). */
 function StudioIndexRedirect() {
@@ -109,9 +114,12 @@ function App() {
               <Route path="/hospital-demo-request" element={<HospitalDemoRequestLandingPage />} />
               <Route path="/pricing" element={<Pricing />} />
               <Route path="/advanced-analytics" element={<AdvancedAnalytics />} />
+              <Route path="/training" element={<TrainingModules />} />
+              <Route path="/training/:id" element={<TrainingLesson />} />
               <Route path="/apps" element={<AnalyticsApps />} />
               <Route path="/govcon-4pack" element={<GovCon4Pack />} />
               <Route path="/hospital-bed-command-center" element={<HospitalBedCommandCenter />} />
+              <Route path="/kumon-learning-command-center" element={<KumonLearningCommandCenter />} />
               <Route path="/ed-bed-map" element={<EDBedMapPage />} />
               <Route path="/predictive-bed-map" element={<PredictiveBedMapPage />} />
               <Route path="/er-command-map" element={<ERCommandMapPage />} />
@@ -191,6 +199,22 @@ function App() {
                 element={
                   <ProtectedRoute>
                     <Dashboard />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/audit"
+                element={
+                  <ProtectedRoute>
+                    <AuditQueuePage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/audit/case/:caseId"
+                element={
+                  <ProtectedRoute>
+                    <AuditCaseDetailPage />
                   </ProtectedRoute>
                 }
               />

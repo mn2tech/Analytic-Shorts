@@ -96,7 +96,10 @@ export const erOvercrowdingScenario = {
           waitingForProvider: 1,
         },
         rooms: {
-          // Start with baseline ER occupancy ~70%
+          // Start with baseline ER occupancy ~70% and a small provider queue.
+          'ROOM_006': { waiting_for_provider: true, flow_status: 'Waiting Provider' },
+          'ROOM_009': { waiting_for_provider: false },
+          'ROOM_010': { waiting_for_provider: false },
         },
       },
     },
@@ -113,11 +116,11 @@ export const erOvercrowdingScenario = {
         },
         rooms: {
           // Occupy additional ER rooms (some may already be occupied from baseline)
-          'ROOM_001': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(45) },
-          'ROOM_004': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(30) },
-          'ROOM_007': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(25) },
-          'ROOM_023': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(40) },
-          'ROOM_024': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(35) },
+          'ROOM_001': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(45), waiting_for_provider: true, flow_status: 'Waiting Provider' },
+          'ROOM_004': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(30), waiting_for_provider: false, flow_status: 'Awaiting Results' },
+          'ROOM_007': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(25), waiting_for_provider: true, flow_status: 'Waiting Provider' },
+          'ROOM_023': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(40), waiting_for_provider: false, flow_status: 'Consult Pending' },
+          'ROOM_024': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(35), waiting_for_provider: false, flow_status: 'Disposition Pending' },
         },
         alerts: [
           {
@@ -142,14 +145,14 @@ export const erOvercrowdingScenario = {
         },
         rooms: {
           // Occupy more ER rooms to reach ~85% utilization
-          'ROOM_002': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(20) },
-          'ROOM_005': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(15) },
-          'ROOM_008': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(10) },
-          'ROOM_010': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(8) },
-          'ROOM_027': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(18) },
-          'ROOM_028': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(16) },
-          'ROOM_030': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(14) },
-          'ROOM_031': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(12) },
+          'ROOM_002': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(20), waiting_for_provider: true, flow_status: 'Waiting Provider' },
+          'ROOM_005': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(15), waiting_for_provider: false, flow_status: 'Awaiting Results' },
+          'ROOM_008': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(10), waiting_for_provider: false, flow_status: 'Consult Pending' },
+          'ROOM_010': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(8), waiting_for_provider: true, flow_status: 'Waiting Provider' },
+          'ROOM_027': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(18), waiting_for_provider: false, flow_status: 'Boarding' },
+          'ROOM_028': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(16), waiting_for_provider: false, flow_status: 'Transport Delay' },
+          'ROOM_030': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(14), waiting_for_provider: false, flow_status: 'Disposition Pending' },
+          'ROOM_031': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(12), waiting_for_provider: false, flow_status: 'Transfer In Progress' },
         },
         departmentPressure: {
           unit: 'ER',
@@ -182,25 +185,25 @@ export const erOvercrowdingScenario = {
           // Occupy ALL remaining ER rooms to reach 95%+ utilization (18-19 out of ~19 ER rooms)
           // Note: "ER Full" in healthcare means 85-95%+ utilization, leaving 1-2 rooms for emergencies
           // These rooms may already be occupied from previous steps, but ensure they're all set
-          'ROOM_001': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(45) },
-          'ROOM_002': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(20) },
-          'ROOM_003': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(5) },
-          'ROOM_004': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(30) },
-          'ROOM_005': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(15) },
-          'ROOM_006': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(3) },
-          'ROOM_007': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(25) },
-          'ROOM_008': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(10) },
-          'ROOM_009': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(2) },
-          'ROOM_010': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(8) },
-          'ROOM_023': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(40) },
-          'ROOM_024': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(35) },
-          'ROOM_027': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(18) },
-          'ROOM_028': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(16) },
-          'ROOM_030': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(14) },
-          'ROOM_031': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(12) },
-          'ROOM_032': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(6) },
-          'ROOM_057': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(7) },
-          'ROOM_064': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(8) },
+          'ROOM_001': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(45), waiting_for_provider: true, flow_status: 'Waiting Provider' },
+          'ROOM_002': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(20), waiting_for_provider: false },
+          'ROOM_003': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(5), waiting_for_provider: false, flow_status: 'Awaiting Results' },
+          'ROOM_004': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(30), waiting_for_provider: false },
+          'ROOM_005': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(15), waiting_for_provider: false },
+          'ROOM_006': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(3), waiting_for_provider: true, flow_status: 'Waiting Provider' },
+          'ROOM_007': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(25), waiting_for_provider: false, flow_status: 'Awaiting Results' },
+          'ROOM_008': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(10), waiting_for_provider: false, flow_status: 'Consult Pending' },
+          'ROOM_009': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(2), waiting_for_provider: false, flow_status: 'Consult Pending' },
+          'ROOM_010': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(8), waiting_for_provider: true, flow_status: 'Waiting Provider' },
+          'ROOM_023': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(40), waiting_for_provider: false, flow_status: 'Boarding' },
+          'ROOM_024': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(35), waiting_for_provider: false, flow_status: 'Boarding' },
+          'ROOM_027': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(18), waiting_for_provider: false, flow_status: 'Transfer In Progress' },
+          'ROOM_028': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(16), waiting_for_provider: false, flow_status: 'Transport Delay' },
+          'ROOM_030': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(14), waiting_for_provider: false, flow_status: 'Disposition Pending' },
+          'ROOM_031': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(12), waiting_for_provider: false, flow_status: 'Transfer In Progress' },
+          'ROOM_032': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(6), waiting_for_provider: false, flow_status: 'Awaiting Bed Assignment' },
+          'ROOM_057': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(7), waiting_for_provider: false, flow_status: 'Disposition Pending' },
+          'ROOM_064': { status: 'occupied', admitted_at_iso: toAdmittedAtIso(8), waiting_for_provider: false },
           // Keep 1 ER room available for emergency overflow (realistic hospital operations)
           // This will be one of the rooms not explicitly set above, or the last available one
         },
@@ -373,12 +376,115 @@ export const ambulanceInboundScenario = {
 }
 
 /**
+ * Scenario 4: Boarding Delay
+ */
+export const boardingDelayScenario = {
+  id: 'boarding_delay',
+  name: 'Boarding Delay',
+  description: 'Admitted ER patients are waiting longer for inpatient bed placement',
+  durationSeconds: 80,
+  totalSteps: 4,
+  steps: [
+    {
+      step: 1,
+      at: 0,
+      narrative: 'Boarding remains manageable with a small number of admitted ER holds.',
+      updates: {
+        rooms: {
+          'ROOM_006': { status: 'occupied', flow_status: 'Boarding', boarding_minutes: 35, admitted_at_iso: toAdmittedAtIso(95) },
+          'ROOM_010': { status: 'occupied', flow_status: 'Boarding', boarding_minutes: 42, admitted_at_iso: toAdmittedAtIso(110) },
+          'ROOM_023': { status: 'occupied', flow_status: 'Transfer In Progress', boarding_minutes: 28, admitted_at_iso: toAdmittedAtIso(90) },
+        },
+        alerts: [
+          {
+            id: 'boarding-watch',
+            msg: 'Boarding queue is building in ER',
+            severity: 'info',
+            filterUnit: 'ER',
+          },
+        ],
+      },
+    },
+    {
+      step: 2,
+      at: 20,
+      narrative: 'Inpatient bed turnover slows, increasing ER boarding duration and queue depth.',
+      updates: {
+        rooms: {
+          'ROOM_006': { flow_status: 'Boarding', boarding_minutes: 68 },
+          'ROOM_010': { flow_status: 'Boarding', boarding_minutes: 74 },
+          'ROOM_023': { flow_status: 'Boarding', boarding_minutes: 63 },
+          'ROOM_024': { status: 'occupied', flow_status: 'Boarding', boarding_minutes: 58, admitted_at_iso: toAdmittedAtIso(120) },
+          'ROOM_027': { status: 'occupied', flow_status: 'Transfer In Progress', boarding_minutes: 54, admitted_at_iso: toAdmittedAtIso(130) },
+        },
+        alerts: [
+          {
+            id: 'boarding-high',
+            msg: 'High ER boarding delay detected',
+            severity: 'warning',
+            filterUnit: 'ER',
+          },
+        ],
+      },
+    },
+    {
+      step: 3,
+      at: 45,
+      narrative: 'Boarding reaches critical levels as multiple admitted patients exceed two-hour delay.',
+      updates: {
+        rooms: {
+          'ROOM_006': { flow_status: 'Boarding', boarding_minutes: 121 },
+          'ROOM_010': { flow_status: 'Boarding', boarding_minutes: 129 },
+          'ROOM_023': { flow_status: 'Boarding', boarding_minutes: 134 },
+          'ROOM_024': { flow_status: 'Boarding', boarding_minutes: 118 },
+          'ROOM_027': { flow_status: 'Boarding', boarding_minutes: 125 },
+          'ROOM_028': { status: 'occupied', flow_status: 'Boarding', boarding_minutes: 102, admitted_at_iso: toAdmittedAtIso(150) },
+        },
+        alerts: [
+          {
+            id: 'boarding-critical',
+            msg: 'Critical boarding delays are reducing ER throughput',
+            severity: 'critical',
+            filterUnit: 'ER',
+          },
+        ],
+        highlightedZone: 'ER',
+      },
+    },
+    {
+      step: 4,
+      at: 65,
+      narrative: 'Command-center interventions start to relieve boarding pressure and open flow.',
+      updates: {
+        rooms: {
+          'ROOM_023': { flow_status: 'Transfer In Progress', boarding_minutes: 82 },
+          'ROOM_024': { flow_status: 'Transfer In Progress', boarding_minutes: 76 },
+          'ROOM_027': { flow_status: 'Transfer In Progress', boarding_minutes: 88 },
+          'ROOM_028': { flow_status: null, boarding_minutes: null },
+          'ROOM_030': { status: 'available', flow_status: null, boarding_minutes: null },
+        },
+        alerts: [
+          {
+            id: 'boarding-recovering',
+            msg: 'Boarding pressure is improving after transfers',
+            severity: 'info',
+            filterUnit: 'ER',
+          },
+        ],
+        highlightedZone: 'ER',
+      },
+    },
+  ],
+}
+
+/**
  * All available scenarios
  */
 export const demoScenarios = [
   erOvercrowdingScenario,
   roomTurnoverScenario,
   ambulanceInboundScenario,
+  boardingDelayScenario,
 ]
 
 /**

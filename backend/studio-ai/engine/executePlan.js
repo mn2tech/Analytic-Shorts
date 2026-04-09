@@ -1,3 +1,6 @@
+const path = require('path')
+const { spawnSync } = require('child_process')
+
 function clamp01(v) {
   if (!Number.isFinite(v)) return 0
   return Math.max(0, Math.min(1, v))
@@ -361,6 +364,129 @@ function pickTopMeasures(rows, numericCols, { limit = 5 } = {}) {
     scored.push({ name: col, score })
   }
   return scored.sort((a, b) => (b.score - a.score) || a.name.localeCompare(b.name)).slice(0, limit).map((s) => s.name)
+}
+
+function computeFallbackAiRisk(rows, { idColumn, numericColumns, dimensionColumns }) {
+  const usableNumeric = (numericColumns || []).slice(0, 8)
+  if (!usableNumeric.length || !Array.isArray(rows) || !rows.length) {
+    return { records: [], distribution: [], topFeatures: [] }
+  }
+  const stats = {}
+  for (const c of usableNumeric) {
+    const vals = rows.map((r) => safeNumber(r?.[c])).filter((n) => n !== null)
+    if (vals.length < 3) continue
+    const mean = vals.reduce((a, b) => a + b, 0) / vals.length
+    const variance = vals.reduce((a, n) => a + (n - mean) ** 2, 0) / vals.length
+    const std = Math.sqrt(variance) || 1
+    stats[c] = { mean, std }
+  }
+  const featureWeights = Object.fromEntries(Object.keys(stats).map((c) => [c, 0]))
+  const scored = []
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i] || {}
+    const featureImpacts = []
+    let scoreAccumulator = 0
+    for (const [c, st] of Object.entries(stats)) {
+      const n = safeNumber(r[c])
+      if (n === null) continue
+      const z = (n - st.mean) / st.std
+      const impact = Math.abs(z)
+      scoreAccumulator += impact
+      featureWeights[c] += impact
+      featureImpacts.push({ feature: c, impact: Number(z.toFixed(4)), direction: z >= 0 ? 'positive' : 'negative' })
+    }
+    const normalized = stats && Object.keys(stats).length
+      ? clamp01((scoreAccumulator / Math.max(1, Object.keys(stats).length)) / 3.5)
+      : 0
+    const riskScore = Math.round(normalized * 1000) / 10
+    const riskLevel = riskScore >= 60 ? 'High' : riskScore >= 30 ? 'Medium' : 'Low'
+    const topReasons = featureImpacts.sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact)).slice(0, 3)
+    scored.push({
+      record_id: String(r?.[idColumn] ?? `row_${i + 1}`),
+      risk_score: riskScore,
+      risk_level: riskLevel,
+      anomaly_flag: riskScore >= 70,
+      anomaly_score: Math.round((normalized * 0.9 + 0.1) * 1000) / 1000,
+      top_reasons: topReasons,
+      explanation_text: topReasons.length
+        ? `Flagged as ${riskLevel} risk due to deviations in ${topReasons.map((x) => x.feature).join(', ')}.`
+        : `Flagged as ${riskLevel} risk based on available statistical signals.`,
+      raw: r,
+    })
+  }
+  const buckets = [{ bucket: '0-20', count: 0 }, { bucket: '21-40', count: 0 }, { bucket: '41-60', count: 0 }, { bucket: '61-80', count: 0 }, { bucket: '81-100', count: 0 }]
+  scored.forEach((x) => {
+    const s = x.risk_score
+    if (s <= 20) buckets[0].count += 1
+    else if (s <= 40) buckets[1].count += 1
+    else if (s <= 60) buckets[2].count += 1
+    else if (s <= 80) buckets[3].count += 1
+    else buckets[4].count += 1
+  })
+  const topFeatures = Object.entries(featureWeights)
+    .map(([feature, weight]) => ({ feature, importance: Number(weight.toFixed(4)) }))
+    .sort((a, b) => b.importance - a.importance)
+    .slice(0, 10)
+  let riskByDimension = []
+  const dim = (dimensionColumns || [])[0]
+  if (dim) {
+    const m = new Map()
+    scored.forEach((s, idx) => {
+      const k = String(rows[idx]?.[dim] ?? '(missing)')
+      const cur = m.get(k) || { sum: 0, count: 0 }
+      cur.sum += s.risk_score
+      cur.count += 1
+      m.set(k, cur)
+    })
+    riskByDimension = Array.from(m.entries())
+      .map(([k, v]) => ({ dimension: k, avg_risk: Number((v.sum / Math.max(1, v.count)).toFixed(2)) }))
+      .sort((a, b) => b.avg_risk - a.avg_risk)
+      .slice(0, 20)
+  }
+  return {
+    records: scored.sort((a, b) => b.risk_score - a.risk_score),
+    distribution: buckets,
+    topFeatures,
+    riskByDimension,
+  }
+}
+
+/**
+ * Execute canonical AI risk scoring via the same Node service used by /api/ai/risk-analysis.
+ * This helper is sync so executePlan() can remain synchronous for current callers.
+ */
+function runCanonicalAiRiskAnalysisSync({ rows, options = {} }) {
+  const servicePath = path.join(__dirname, '..', '..', 'services', 'aiRiskAnalysisService.js')
+  const payload = { dataset: rows, schema: null, options }
+  const script = `
+const fs = require('fs');
+const svc = require(${JSON.stringify(servicePath)});
+(async () => {
+  try {
+    const input = JSON.parse(fs.readFileSync(0, 'utf8') || '{}');
+    const result = await svc.runAiRiskAnalysis(input);
+    process.stdout.write(JSON.stringify(result));
+  } catch (err) {
+    process.stderr.write((err && (err.message || String(err))) || 'Canonical AI risk analysis failed');
+    process.exit(1);
+  }
+})();
+`.trim()
+
+  const out = spawnSync(process.execPath, ['-e', script], {
+    input: JSON.stringify(payload),
+    encoding: 'utf8',
+    maxBuffer: 20 * 1024 * 1024,
+  })
+
+  if (out.status !== 0) {
+    throw new Error((out.stderr || '').trim() || `Canonical AI risk process failed with code ${out.status}`)
+  }
+  try {
+    return JSON.parse((out.stdout || '').trim() || '{}')
+  } catch (_e) {
+    throw new Error('Canonical AI risk process returned invalid JSON')
+  }
 }
 
 function computeNumericSummary(rows, col) {
@@ -938,6 +1064,135 @@ function executePlan(dataset, semanticGraph, analysisPlan, options = {}) {
         blockNarrative: enabled ? 'Anomaly detection is not implemented in this deterministic MVP.' : 'Anomaly block is disabled for this run.',
         payload: enabled ? { reason: 'Not implemented' } : { reason: 'Disabled' },
       })
+      continue
+    }
+
+    if (b.type === 'AI_RISK_ANALYSIS') {
+      const idColumn = cols.id[0] || cols.schema.find((c) => /(^|_)id$/i.test(String(c?.name || '')))?.name || null
+      const numericColumns = pickTopMeasures(rows, cols.numeric, { limit: 8 })
+      const dimensionColumns = cols.schema
+        .filter((c) => c?.inferredType === 'string')
+        .map((c) => c.name)
+        .filter((n) => /(region|product|type|category|department|segment|state|agency)/i.test(String(n)))
+      try {
+        const canonical = runCanonicalAiRiskAnalysisSync({
+          rows,
+          options: {
+            max_rows: Math.min(sampleSize || rows.length || 0, 10000),
+            timeout_ms: 20000,
+            analysis_mode_hint: 'hybrid',
+            id_column: idColumn || undefined,
+          },
+        })
+        const recs = Array.isArray(canonical?.records) ? canonical.records : []
+        const summary = canonical?.summary || {}
+        const high = Number(summary.high_risk_count || recs.filter((r) => r.risk_level === 'High').length || 0)
+        const medium = Number(summary.medium_risk_count || recs.filter((r) => r.risk_level === 'Medium').length || 0)
+        const low = Number(summary.low_risk_count || recs.filter((r) => r.risk_level === 'Low').length || 0)
+        const anomalyCount = Number(summary.anomaly_count || recs.filter((r) => r.anomaly_flag).length || 0)
+        const status = recs.length ? 'OK' : 'INSUFFICIENT_DATA'
+        blocks.push({
+          id: buildId('airisk', i),
+          type: 'AI_RISK_ANALYSIS',
+          title: b.title || 'AI Risk Analysis',
+          questionAnswered: 'Which records are high risk, anomalous, and why?',
+          status,
+          confidence: status === 'OK' ? 0.74 : 0.1,
+          assumptions: [
+            ...baseAssumptions,
+            'Canonical AI risk engine response is used for Studio risk analysis.',
+          ],
+          sampleSize,
+          badges: defaultBadges,
+          blockNarrative: status === 'OK'
+            ? `${high} high-risk records and ${anomalyCount} anomalies detected in sampled rows.`
+            : 'Canonical AI risk engine returned no scored records for this sample.',
+          payload: {
+            summary: {
+              ...summary,
+              total_records: Number(summary.total_records || recs.length || 0),
+              high_risk_count: high,
+              medium_risk_count: medium,
+              low_risk_count: low,
+              anomaly_count: anomalyCount,
+            },
+            features_used: Array.isArray(canonical?.features_used) ? canonical.features_used : numericColumns,
+            risk_distribution: Array.isArray(canonical?.risk_distribution) ? canonical.risk_distribution : [],
+            records: recs.slice(0, 250),
+            charts: {
+              feature_importance: canonical?.charts?.feature_importance || [],
+              risk_by_dimension: canonical?.charts?.risk_by_dimension || [],
+              anomaly_scatter: canonical?.charts?.anomaly_scatter || recs.slice(0, 500).map((r, idx) => ({ x: idx, risk_score: r.risk_score, anomaly_score: r.anomaly_score })),
+            },
+            warnings: Array.isArray(canonical?.warnings) ? canonical.warnings : [],
+            model_metadata: canonical?.model_metadata || {
+              engine: 'ai_risk_engine',
+              analysis_mode: summary.analysis_mode || 'unsupervised',
+              model_type: summary.model_type || 'unknown',
+            },
+            fallback_rule_based: Boolean(canonical?.fallback_rule_based ?? summary?.fallback_rule_based ?? false),
+          },
+        })
+      } catch (err) {
+        // Fallback: keep block shape compatible, but clearly mark fallback_rule_based path.
+        const fallback = computeFallbackAiRisk(rows, { idColumn, numericColumns, dimensionColumns })
+        const recs = fallback.records || []
+        const high = recs.filter((r) => r.risk_level === 'High').length
+        const medium = recs.filter((r) => r.risk_level === 'Medium').length
+        const low = recs.filter((r) => r.risk_level === 'Low').length
+        const anomalyCount = recs.filter((r) => r.anomaly_flag).length
+        blocks.push({
+          id: buildId('airisk', i),
+          type: 'AI_RISK_ANALYSIS',
+          title: b.title || 'AI Risk Analysis',
+          questionAnswered: 'Which records are high risk, anomalous, and why?',
+          status: recs.length ? 'WARNING' : 'INSUFFICIENT_DATA',
+          confidence: recs.length ? 0.45 : 0.1,
+          assumptions: [
+            ...baseAssumptions,
+            'Canonical AI risk engine failed for this block; fallback scoring was used.',
+          ],
+          sampleSize,
+          badges: defaultBadges,
+          blockNarrative: recs.length
+            ? `${high} high-risk records and ${anomalyCount} anomalies detected using fallback scoring.`
+            : 'Canonical AI risk engine failed and fallback scoring could not produce records.',
+          payload: {
+            summary: {
+              total_records: recs.length,
+              high_risk_count: high,
+              medium_risk_count: medium,
+              low_risk_count: low,
+              anomaly_count: anomalyCount,
+              model_type: 'fallback_proxy',
+              analysis_mode: 'hybrid',
+              fallback_rule_based: true,
+            },
+            features_used: numericColumns,
+            risk_distribution: fallback.distribution || [],
+            records: recs.slice(0, 250),
+            charts: {
+              feature_importance: fallback.topFeatures || [],
+              risk_by_dimension: fallback.riskByDimension || [],
+              anomaly_scatter: recs.slice(0, 500).map((r, idx) => ({ x: idx, risk_score: r.risk_score, anomaly_score: r.anomaly_score })),
+            },
+            warnings: [
+              `Canonical AI risk engine failed: ${err?.message || 'unknown error'}`,
+              'Fallback scoring was applied for Studio compatibility.',
+            ],
+            model_metadata: {
+              engine: 'studio_fallback_proxy',
+              analysis_mode: 'hybrid',
+              model_type: 'fallback_proxy',
+              feature_count: numericColumns.length,
+              max_rows: Math.min(sampleSize || rows.length || 0, 10000),
+              anomaly_contamination: null,
+              shap_used: false,
+            },
+            fallback_rule_based: true,
+          },
+        })
+      }
       continue
     }
 

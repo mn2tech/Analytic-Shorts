@@ -160,6 +160,24 @@ function irToPredictiveReport(ir) {
     })
   }
 
+  const aiRiskBlocks = (ir.blocks || [])
+    .filter((b) => b.type === 'AI_RISK_ANALYSIS' && b.payload)
+    .map((b) => ({
+      type: 'AIRiskAnalysis',
+      summary: b.payload.summary || {},
+      topRecords: (b.payload.records || []).slice(0, 10),
+      features_used: b.payload.features_used || [],
+      warnings: b.payload.warnings || [],
+    }))
+  if (aiRiskBlocks.length) {
+    base.push({
+      section: 'ForwardOutlook',
+      title: 'AI Risk Analysis',
+      blocks: aiRiskBlocks,
+      sourceRefs: ['blocks.AI_RISK_ANALYSIS'],
+    })
+  }
+
   return base
 }
 

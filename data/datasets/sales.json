@@ -1,0 +1,24 @@
+{
+  "data": [
+    { "month": "2024-01", "region": "East", "product": "Widget A", "revenue": 12000, "units": 240 },
+    { "month": "2024-01", "region": "West", "product": "Widget B", "revenue": 9800, "units": 196 },
+    { "month": "2024-02", "region": "East", "product": "Widget B", "revenue": 11200, "units": 210 },
+    { "month": "2024-02", "region": "West", "product": "Widget A", "revenue": 10500, "units": 215 },
+    { "month": "2024-03", "region": "East", "product": "Widget A", "revenue": 13200, "units": 250 },
+    { "month": "2024-03", "region": "West", "product": "Widget C", "revenue": 8700, "units": 145 },
+    { "month": "2024-04", "region": "South", "product": "Widget A", "revenue": 10100, "units": 198 },
+    { "month": "2024-04", "region": "East", "product": "Widget C", "revenue": 9400, "units": 160 },
+    { "month": "2024-05", "region": "West", "product": "Widget B", "revenue": 11800, "units": 225 },
+    { "month": "2024-05", "region": "South", "product": "Widget B", "revenue": 9900, "units": 188 },
+    { "month": "2024-06", "region": "East", "product": "Widget B", "revenue": 12500, "units": 232 },
+    { "month": "2024-06", "region": "West", "product": "Widget A", "revenue": 11100, "units": 220 },
+    { "month": "2024-07", "region": "South", "product": "Widget C", "revenue": 9100, "units": 152 },
+    { "month": "2024-07", "region": "East", "product": "Widget A", "revenue": 13800, "units": 265 },
+    { "month": "2024-08", "region": "West", "product": "Widget C", "revenue": 10200, "units": 170 }
+  ],
+  "columns": ["month", "region", "product", "revenue", "units"],
+  "numericColumns": ["revenue", "units"],
+  "categoricalColumns": ["region", "product"],
+  "dateColumns": ["month"],
+  "rowCount": 15
+}

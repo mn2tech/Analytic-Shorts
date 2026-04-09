@@ -31,7 +31,6 @@ import TimelinePlayback from '../components/TimelinePlayback'
 import PatientFlowPanel from '../components/PatientFlowPanel'
 import OperationalAlerts from '../components/OperationalAlerts'
 import TransferSummary from '../components/TransferSummary'
-import WaitingRoomMetrics from '../components/WaitingRoomMetrics'
 import ZoneHeatOverlay from '../components/ZoneHeatOverlay'
 import WaitingRoomWidget from '../components/WaitingRoomWidget'
 import InboundArrivalsWidget from '../components/InboundArrivalsWidget'
@@ -46,6 +45,7 @@ import PatientMovementAnimation from '../components/PatientMovementAnimation'
 import EROccupancyPrediction from '../components/EROccupancyPrediction'
 import EROccupancyTrendChart from '../components/EROccupancyTrendChart'
 import { calculateEROccupancyPrediction } from '../utils/erOccupancyPrediction'
+import { mapFlowStatusToDelayReason, normalizeFlowStatus } from '../data/erDelayReasonMap'
 import { getInboundArrivalsAtTime } from '../data/hospitalDemoData'
 import TransferAnimation from '../components/TransferAnimation'
 import ScenarioControlPanel from '../components/ScenarioControlPanel'
@@ -180,7 +180,7 @@ function KpiPanels({ metrics, statusFilter, onFilterChange }) {
         metrics={[
           { label: 'Avg LOS', value: formatAvgLOS(metrics.avgLOS) },
           { label: 'Door-to-Provider', value: formatD2PMinutes(metrics.avgD2P) },
-          { label: 'Waiting Provider', value: metrics.waitingForProvider ?? 0, valueColor: metrics.waitingForProvider > 0 ? '#f59e0b' : undefined },
+          { label: 'Waiting Provider', value: metrics.waitingForProvider ?? 0, filterKey: 'waitingProvider', valueColor: metrics.waitingForProvider > 0 ? '#f59e0b' : undefined },
           { label: 'High Pressure', value: metrics.highPressureRooms ?? 0, filterKey: 'highPressure', valueColor: '#ff9800' },
           { label: 'Critical', value: metrics.criticalRooms ?? 0, filterKey: 'critical', valueColor: '#e53935' },
         ]}
@@ -199,13 +199,33 @@ function formatPredictionMins(mins) {
 /** Minutes ago for demo LOS - LOS derived dynamically from admitted_at_iso */
 const DEMO_LOS = { ROOM_006: 25, ROOM_009: 95, ROOM_027: 220, ROOM_023: 320, ROOM_038: 360 }
 
-function RoomTooltip({ roomData, tooltipPos, showPressureLabel = true, unit, patientFlow }) {
+function RoomTooltip({ roomData, tooltipPos, showPressureLabel = true, unit, patientFlow, scenarioActive = false }) {
   if (!roomData) return null
   const isWaitingSlot = unit === 'WAITING'
   const statusLabel = isWaitingSlot
     ? (patientFlow ? 'Waiting for ER room' : STATUS_LABELS[roomData.status] || roomData.status)
     : (STATUS_LABELS[roomData.status] || roomData.status)
-  const waitingProvider = unit === 'ER' && roomData.status === 'occupied' && !roomData.provider_seen_time
+  const flowStatus = String(roomData?.flow_status || '').toLowerCase()
+  const explicitWaitingProvider = roomData?.waiting_for_provider === true || flowStatus.includes('waiting provider')
+  const inferredWaitingProvider = !scenarioActive && unit === 'ER' && roomData.status === 'occupied' && !roomData.provider_seen_time
+  const waitingProvider = unit === 'ER' && roomData.status === 'occupied' && (explicitWaitingProvider || inferredWaitingProvider)
+  const erFlowStatusLabel = (() => {
+    if (unit !== 'ER' || roomData.status !== 'occupied') return null
+    if (explicitWaitingProvider || inferredWaitingProvider) return 'Waiting Provider'
+    const raw = String(roomData?.flow_status || '').trim()
+    return raw || null
+  })()
+  const erFlowStatusTone = (() => {
+    const normalized = String(erFlowStatusLabel || '').toLowerCase()
+    if (normalized.includes('boarding')) return 'bg-orange-500/90 text-slate-900'
+    if (normalized.includes('consult')) return 'bg-indigo-500/90 text-white'
+    if (normalized.includes('result') || normalized.includes('lab') || normalized.includes('imaging')) return 'bg-cyan-500/90 text-slate-900'
+    if (normalized.includes('transfer') || normalized.includes('transport')) return 'bg-blue-500/90 text-white'
+    if (normalized.includes('disposition')) return 'bg-violet-500/90 text-white'
+    if (normalized.includes('clean')) return 'bg-amber-500/90 text-slate-900'
+    if (normalized.includes('waiting provider')) return 'bg-amber-500/90 text-slate-900'
+    return 'bg-slate-500/90 text-white'
+  })()
   const admittedDisplay = roomData.admitted_at ?? (roomData.admitted_at_iso ? new Date(roomData.admitted_at_iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : null)
   const { level: pressureLevel, losLabel } = getRoomPressureLevel(roomData)
   const pressureLabel = PRESSURE_LABELS[pressureLevel]
@@ -255,11 +275,11 @@ function RoomTooltip({ roomData, tooltipPos, showPressureLabel = true, unit, pat
             <span className="font-semibold text-cyan-400">{losLabel}</span>
           </div>
         )}
-        {waitingProvider && (
+        {erFlowStatusLabel && (
           <div className="flex justify-between gap-4 items-center">
             <span className="text-slate-400">ER status</span>
-            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-amber-500/90 text-slate-900">
-              Waiting Provider
+            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${erFlowStatusTone}`}>
+              {erFlowStatusLabel}
             </span>
           </div>
         )}
@@ -296,7 +316,7 @@ function RoomTooltip({ roomData, tooltipPos, showPressureLabel = true, unit, pat
   )
 }
 
-function BlueprintImage({ roomOverlays, roomStatusMap, onRoomHover, onRoomClick, hoveredRoom, statusFilter, unitFilters = new Set(), imageDimensions: jsonImageDimensions, manualDimensions, showPressureLayer = true, highlightedTransferRooms = new Set(), activeTransfers = [], onTransferComplete, showTransferAnimations = true, activePatientTransitions = [], onPatientTransitionComplete, showPatientMovements = true, inboundImpact = 'Low', highlightedZone = null, roomIdToUnit = new Map() }) {
+function BlueprintImage({ roomOverlays, roomStatusMap, onRoomHover, onRoomClick, hoveredRoom, statusFilter, unitFilters = new Set(), imageDimensions: jsonImageDimensions, manualDimensions, showPressureLayer = true, highlightedTransferRooms = new Set(), activeTransfers = [], onTransferComplete, showTransferAnimations = true, activePatientTransitions = [], onPatientTransitionComplete, showPatientMovements = true, inboundImpact = 'Low', highlightedZone = null, roomIdToUnit = new Map(), scenarioActive = false }) {
   const [imageError, setImageError] = useState(false)
   const [pathIndex, setPathIndex] = useState(0)
   const [loadedDimensions, setLoadedDimensions] = useState(null)
@@ -398,7 +418,16 @@ function BlueprintImage({ roomOverlays, roomStatusMap, onRoomHover, onRoomClick,
             const fill = isWaitingSlot
               ? (status === 'occupied' ? 'rgba(245, 158, 11, 0.5)' : 'rgba(245, 158, 11, 0.2)')
               : isInfrastructure ? 'rgba(148, 163, 184, 0.2)' : (STATUS_FILL_COLORS[status] || STATUS_COLORS[idx % 4])
-            const waitingProvider = r.unit === 'ER' && status === 'occupied' && !roomData?.provider_seen_time
+            const flowStatus = String(roomData?.flow_status || '').toLowerCase()
+            const explicitWaitingProvider = roomData?.waiting_for_provider === true || flowStatus.includes('waiting provider')
+            const inferredWaitingProvider = !scenarioActive && r.unit === 'ER' && status === 'occupied' && !roomData?.provider_seen_time
+            const waitingProvider = r.unit === 'ER' && status === 'occupied' && (explicitWaitingProvider || inferredWaitingProvider)
+            const mappedDelayReason = (() => {
+              if (waitingProvider) return 'waitingProvider'
+              if (status === 'cleaning') return 'cleaning'
+              const normalizedFlow = normalizeFlowStatus(roomData?.flow_status)
+              return mapFlowStatusToDelayReason(normalizedFlow)
+            })()
             // Dot always uses a status color (never gray) - cycle through colors if status unknown. No dot for infrastructure.
             const dotFill = isInfrastructure ? null : (isWaitingSlot ? (status === 'occupied' ? '#f59e0b' : '#94A3B8') : (STATUS_FILL_COLORS[status] || ['#2ECC71', '#E74C3C', '#F1C40F', '#3498DB'][idx % 4]))
             const statusLabel = isWaitingSlot ? (status === 'occupied' ? 'Wait' : 'Avail') : (STATUS_SHORT[status] || status || '—')
@@ -418,6 +447,22 @@ function BlueprintImage({ roomOverlays, roomStatusMap, onRoomHover, onRoomClick,
               ? true
               : statusFilter === 'predicted'
                 ? predMins != null
+                : statusFilter === 'waitingProvider'
+                  ? waitingProvider
+                : statusFilter === 'delayBoarding'
+                  ? mappedDelayReason === 'boarding'
+                : statusFilter === 'delayConsult'
+                  ? mappedDelayReason === 'consult'
+                : statusFilter === 'delayResults'
+                  ? mappedDelayReason === 'results'
+                : statusFilter === 'delayTransfer'
+                  ? mappedDelayReason === 'transfer'
+                : statusFilter === 'delayDisposition'
+                  ? mappedDelayReason === 'disposition'
+                : statusFilter === 'delayCleaning'
+                  ? mappedDelayReason === 'cleaning'
+                : statusFilter === 'delayOperationalHold'
+                  ? mappedDelayReason === 'operationalHold'
                 : statusFilter === 'highPressure'
                   ? pressureLevel === 'high'
                   : statusFilter === 'critical'
@@ -897,9 +942,9 @@ function HospitalBedCommandCenter() {
     }
   }, [])
 
-  // Initialize baseline state when room overlays are ready
+  // Recompute baseline whenever room overlays change (e.g. imported floor maps)
   useEffect(() => {
-    if (roomOverlays.length > 0 && !baselineStateRef.current) {
+    if (roomOverlays.length > 0) {
       baselineStateRef.current = getBaselineDemoState(roomOverlays)
     }
   }, [roomOverlays])
@@ -992,6 +1037,24 @@ function HospitalBedCommandCenter() {
     () => computeRoomMetrics(roomsForMetrics, { unitFilters, roomIdToUnit }),
     [roomsForMetrics, unitFilters, roomIdToUnit]
   )
+  const scenarioWaitingProviderCount = useMemo(() => {
+    if (!currentScenarioId) return null
+    return Object.entries(roomStatusMapWithTimeline).reduce((count, [roomId, room]) => {
+      if (!room || roomIdToUnit.get(roomId) !== 'ER' || room.status !== 'occupied') return count
+      const flowStatus = String(room.flow_status || '').toLowerCase()
+      const explicitWaitingProvider = room.waiting_for_provider === true || flowStatus.includes('waiting provider')
+      return explicitWaitingProvider ? count + 1 : count
+    }, 0)
+  }, [currentScenarioId, roomStatusMapWithTimeline, roomIdToUnit])
+  const displayMetrics = useMemo(() => {
+    if (currentScenarioId && scenarioWaitingProviderCount != null) {
+      return {
+        ...metrics,
+        waitingForProvider: scenarioWaitingProviderCount,
+      }
+    }
+    return metrics
+  }, [metrics, currentScenarioId, scenarioWaitingProviderCount])
 
   // Get inbound impact from scenario state or computed data
   const inboundImpact = useMemo(() => {
@@ -1500,7 +1563,7 @@ function HospitalBedCommandCenter() {
               </button>
             </div>
             <div className="shrink-0">
-              <RotatingMetricsPanel selectedTime={displayTime} metrics={metrics} />
+              <RotatingMetricsPanel selectedTime={displayTime} metrics={displayMetrics} />
             </div>
           </div>
         ) : (
@@ -1525,7 +1588,12 @@ function HospitalBedCommandCenter() {
         {!commandCenterMode && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <TransferSummary selectedTime={displayTime} />
-          <WaitingRoomMetrics selectedTime={displayTime} />
+          <WaitingRoomWidget
+            selectedTime={displayTime}
+            roomStatusMap={roomStatusMapWithTimeline}
+            roomOverlays={roomOverlays}
+            scenarioWaitingRoom={scenarioState?.waitingRoom}
+          />
         </div>
         )}
 
@@ -1588,6 +1656,13 @@ function HospitalBedCommandCenter() {
               <span>📤</span>
               Add to Feed
             </Link>
+            <Link
+              to="/publish/link?template=hospital-er-causation-poll"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-colors"
+            >
+              <span>🗳️</span>
+              ER Poll
+            </Link>
             <button
               type="button"
               onClick={fetchRoomStatus}
@@ -1637,7 +1712,7 @@ function HospitalBedCommandCenter() {
         <div className="space-y-3">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <KpiPanels
-              metrics={metrics}
+              metrics={displayMetrics}
               statusFilter={statusFilter}
               onFilterChange={setStatusFilter}
             />
@@ -1729,6 +1804,34 @@ function HospitalBedCommandCenter() {
                 </button>
               )}
               </div>
+              <div className="flex flex-wrap items-center gap-2 sm:border-l sm:border-white/20 sm:pl-3">
+                <span className="text-slate-400 text-xs">Delay:</span>
+                {[
+                  { value: 'delayBoarding', label: 'Board' },
+                  { value: 'delayConsult', label: 'Consult' },
+                  { value: 'delayResults', label: 'Results' },
+                  { value: 'delayTransfer', label: 'Xfer' },
+                  { value: 'delayDisposition', label: 'Dispo' },
+                  { value: 'delayCleaning', label: 'Clean' },
+                  { value: 'delayOperationalHold', label: 'Ops' },
+                ].map(({ value, label }) => {
+                  const isActive = statusFilter === value
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setStatusFilter((prev) => (prev === value ? null : value))}
+                      className={`px-2.5 py-1 rounded border transition-colors text-xs ${
+                        isActive
+                          ? 'border-amber-400/70 bg-amber-500/20 text-amber-200'
+                          : 'border-white/10 bg-slate-800/60 text-slate-400 hover:bg-slate-700/80 hover:text-slate-300'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  )
+                })}
+              </div>
             </div>
           </div>
           <p className="text-[10px] text-slate-500">
@@ -1741,7 +1844,29 @@ function HospitalBedCommandCenter() {
           <div className="flex items-center gap-2 text-sm">
             <span className="text-slate-400">Filter:</span>
             <span className="px-3 py-1.5 rounded-lg bg-slate-700/90 border border-white/20 font-medium text-white capitalize">
-              {statusFilter === 'predicted' ? 'Predicted available' : statusFilter === 'highPressure' ? 'High pressure' : statusFilter === 'critical' ? 'Critical' : statusFilter}
+              {statusFilter === 'predicted'
+                ? 'Predicted available'
+                : statusFilter === 'waitingProvider'
+                  ? 'Waiting provider'
+                  : statusFilter === 'delayBoarding'
+                    ? 'Boarding hold'
+                    : statusFilter === 'delayConsult'
+                      ? 'Consult pending'
+                      : statusFilter === 'delayResults'
+                        ? 'Awaiting results'
+                        : statusFilter === 'delayTransfer'
+                          ? 'Transfer/transport delay'
+                          : statusFilter === 'delayDisposition'
+                            ? 'Disposition pending'
+                            : statusFilter === 'delayCleaning'
+                              ? 'Room cleaning delay'
+                              : statusFilter === 'delayOperationalHold'
+                                ? 'Operational throughput hold'
+                  : statusFilter === 'highPressure'
+                    ? 'High pressure'
+                    : statusFilter === 'critical'
+                      ? 'Critical'
+                      : statusFilter}
             </span>
             <button
               type="button"
@@ -1880,6 +2005,7 @@ function HospitalBedCommandCenter() {
                     inboundImpact={inboundImpact}
                     highlightedZone={highlightedZone}
                     roomIdToUnit={roomIdToUnit}
+                    scenarioActive={!!currentScenarioId}
                   />
                 </div>
               </>
@@ -1919,6 +2045,7 @@ function HospitalBedCommandCenter() {
               tooltipPos={tooltipPos}
               unit={activeRoomId ? roomIdToUnit.get(activeRoomId) : null}
               patientFlow={patientFlowForTooltip}
+              scenarioActive={!!currentScenarioId}
             />
           )}
         </div>
@@ -1949,6 +2076,15 @@ function HospitalBedCommandCenter() {
             />
           </div>
 
+          <OperationalAlerts
+            selectedTime={displayTime}
+            roomOverlays={roomOverlays}
+            roomStatusMap={roomStatusMapWithTimeline}
+            roomIdToUnit={roomIdToUnit}
+            highlightAlerts={commandCenterMode}
+            scenarioAlerts={scenarioState?.alerts}
+            erOccupancyPrediction={erOccupancyPrediction}
+          />
           {/* ER Occupancy Prediction - Show in both normal and command center mode */}
           {erOccupancyPrediction && !selectedTime && (
             <div className="space-y-2">
@@ -1966,17 +2102,7 @@ function HospitalBedCommandCenter() {
               />
             </div>
           )}
-
           {!commandCenterMode && <PatientFlowPanel selectedRoomId={selectedRoom} selectedTime={displayTime} />}
-          <OperationalAlerts
-            selectedTime={displayTime}
-            roomOverlays={roomOverlays}
-            roomStatusMap={roomStatusMapWithTimeline}
-            roomIdToUnit={roomIdToUnit}
-            highlightAlerts={commandCenterMode}
-            scenarioAlerts={scenarioState?.alerts}
-            erOccupancyPrediction={erOccupancyPrediction}
-          />
         </div>
         </div>
 

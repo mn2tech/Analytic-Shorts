@@ -632,6 +632,7 @@ export default function Feed() {
                         <Link to="/studio/chat" onClick={() => setCreateMenuOpen(false)} className="flex items-center gap-2 w-full px-3 py-2.5 text-left text-sm text-gray-900 hover:bg-blue-50 rounded-t-xl">Upload data & create dashboard</Link>
                         <button type="button" onClick={() => { setCreateMenuOpen(false); openCompose() }} className="flex items-center gap-2 w-full px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 border-t border-gray-100">Share existing dashboard</button>
                         <Link to="/publish/link?template=hospital-bed" onClick={() => setCreateMenuOpen(false)} className="flex items-center gap-2 w-full px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 border-t border-gray-100">Add Hospital Bed Command Center</Link>
+                        <Link to="/publish/link?template=hospital-er-causation-poll" onClick={() => setCreateMenuOpen(false)} className="flex items-center gap-2 w-full px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 border-t border-gray-100">Add ER Causation Poll</Link>
                         <Link to="/publish/link?template=federal-entry" onClick={() => setCreateMenuOpen(false)} className="flex items-center gap-2 w-full px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 border-t border-gray-100">Add Federal Entry Report</Link>
                       </div>
                     </>

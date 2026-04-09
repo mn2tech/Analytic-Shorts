@@ -17,6 +17,12 @@ const APPS = [
     icon: '🏥',
   },
   {
+    name: 'Kumon Learning Command Center',
+    description: 'Real-time student seat map, learning alerts, and AI intervention insights.',
+    path: '/kumon-learning-command-center',
+    icon: '📚',
+  },
+  {
     name: 'Data Center Command Center',
     description: 'Synthetic rack floor map with telemetry, alerts, and workload movements.',
     path: '/data-center-command-center',

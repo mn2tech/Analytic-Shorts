@@ -26,6 +26,13 @@ const TEMPLATES = {
     tags: ['hospital', 'healthcare', 'command-center'],
     thumbnailUrl: HOSPITAL_BLUEPRINT_IMAGE,
   },
+  'hospital-er-causation-poll': {
+    title: 'ER Overcrowding Poll: Primary Delay Cause?',
+    caption: 'Live poll for ER causation review. Vote in comments with one option: A) Waiting Provider, B) Boarding Hold, C) Awaiting Results, D) Consult Pending, E) Transfer/Transport Delay, F) Disposition Pending. Include a short why.',
+    linkUrl: '/hospital-bed-command-center',
+    tags: ['hospital', 'er', 'poll', 'delay-causation', 'command-center'],
+    thumbnailUrl: HOSPITAL_BLUEPRINT_IMAGE,
+  },
   'federal-entry': {
     title: 'Federal Entry Intelligence Report',
     caption: 'SAM.gov market posture assessment, first-win shortlist, and capture strategy',

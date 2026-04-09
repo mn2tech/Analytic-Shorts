@@ -74,6 +74,12 @@ function Navbar({ onOpenSidebar, onOpenMessaging, messagesUnreadCount = 0 }) {
               </button>
             )}
             <Link
+              to="/training"
+              className="hidden sm:inline text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium transition-colors"
+            >
+              AI Training
+            </Link>
+            <Link
               to="/help"
               className="text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium transition-colors"
             >

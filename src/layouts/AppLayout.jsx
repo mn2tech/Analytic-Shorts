@@ -63,6 +63,7 @@ const PATH_TO_LABEL = [
   { path: '/careers', label: 'Careers' },
   { path: '/audit', label: 'Audit Queue' },
   { path: '/dashboard', label: 'Dashboard Viewer' },
+  { path: '/training', label: 'AI Training' },
   { path: '/dashboards', label: 'My Dashboards' },
   { path: '/studio', label: 'Studio' },
   { path: '/', label: 'Home' },
@@ -711,6 +712,12 @@ function AppLayout() {
                   <NavLink to="/dashboard" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
                     <span>📈</span>
                     <span className={sidebarOpen ? '' : 'lg:hidden'}>Dashboard Viewer</span>
+                  </NavLink>
+                </SidebarTooltip>
+                <SidebarTooltip show={!sidebarOpen} label="AI Training">
+                  <NavLink to="/training" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
+                    <span>🎓</span>
+                    <span className={sidebarOpen ? '' : 'lg:hidden'}>AI Training</span>
                   </NavLink>
                 </SidebarTooltip>
                 <SidebarTooltip show={!sidebarOpen} label="Pricing">

@@ -22,6 +22,7 @@ const URGENCY_STYLES = {
 
 export default function WaitingRoomWidget({ selectedTime, roomStatusMap = {}, roomOverlays = [], scenarioWaitingRoom = null }) {
   const summary = useMemo(() => {
+    const liveSummary = getWaitingRoomSummaryAtTime(selectedTime, roomStatusMap, roomOverlays)
     // Use scenario data if provided, otherwise use computed data
     if (scenarioWaitingRoom) {
       return {
@@ -29,12 +30,12 @@ export default function WaitingRoomWidget({ selectedTime, roomStatusMap = {}, ro
         avgWaitMinutes: scenarioWaitingRoom.avgWaitMinutes ?? 0,
         longestWaitMinutes: scenarioWaitingRoom.longestWaitMinutes ?? 0,
         waitingForProvider: scenarioWaitingRoom.waitingForProvider ?? 0,
-        nextAvailableRoom: 'ER-012', // Default fallback
-        nextAvailableInMinutes: 15,
+        nextAvailableRoom: liveSummary.nextAvailableRoom,
+        nextAvailableInMinutes: liveSummary.nextAvailableInMinutes,
         urgency: scenarioWaitingRoom.totalWaiting >= 15 ? 'Overflow' : scenarioWaitingRoom.totalWaiting >= 10 ? 'Delayed' : scenarioWaitingRoom.totalWaiting >= 6 ? 'Busy' : 'Stable',
       }
     }
-    return getWaitingRoomSummaryAtTime(selectedTime, roomStatusMap, roomOverlays)
+    return liveSummary
   }, [selectedTime, roomStatusMap, roomOverlays, scenarioWaitingRoom])
 
   const urgencyStyle = URGENCY_STYLES[summary.urgency] ?? URGENCY_STYLES.Stable

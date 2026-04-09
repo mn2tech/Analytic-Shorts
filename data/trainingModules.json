@@ -1,0 +1,52 @@
+[
+  {
+    "id": "sales_prediction",
+    "title": "From Excel to AI decision support",
+    "difficulty": "Beginner",
+    "description": "Learn the core AI workflow: frame a business question, inspect signal quality, and translate model output into actions a team can execute.",
+    "valueProposition": "You will leave this lesson able to explain how AI turns raw tables into trustworthy recommendations.",
+    "concepts": [
+      "Problem framing: what question are we solving?",
+      "Feature quality: which columns carry predictive signal?",
+      "Interpretability: how to explain outputs to non-technical stakeholders"
+    ],
+    "outcomes": [
+      "Define a clear AI question from spreadsheet data",
+      "Identify measure vs dimension fields and why that matters",
+      "Convert KPI patterns into concrete business actions"
+    ],
+    "steps": [
+      "State the business question before running analysis",
+      "Load sample data and inspect schema + field roles",
+      "Run AI analysis and compare trend vs segment behavior",
+      "Generate explanation and evaluate whether actions are justified"
+    ],
+    "sampleDataset": "sales.json",
+    "aiPrompt": "Create a compact training dashboard for this dataset: 3 to 5 KPIs and 2 or 3 charts (mix of bar and line if a date or period column exists). Use only real column names. Title the dashboard \"Lesson: Sales patterns\"."
+  },
+  {
+    "id": "kpi_deep_dive",
+    "title": "AI reasoning for KPI diagnostics",
+    "difficulty": "Intermediate",
+    "description": "Go beyond dashboard reading: diagnose why KPIs moved, test segment hypotheses, and choose next actions with AI-backed evidence.",
+    "valueProposition": "You will learn to challenge AI output, validate assumptions, and build confidence in decision quality.",
+    "concepts": [
+      "Hypothesis-driven analysis",
+      "Segment diagnostics and root-cause thinking",
+      "Action prioritization with risk/impact trade-offs"
+    ],
+    "outcomes": [
+      "Run structured KPI diagnostics instead of passive chart viewing",
+      "Identify high-impact segments from category-level performance",
+      "Write an action plan grounded in measurable evidence"
+    ],
+    "steps": [
+      "Form a hypothesis about what drives KPI variance",
+      "Run AI and inspect segment-level breakdowns",
+      "Validate whether the evidence supports your hypothesis",
+      "Generate an action brief with priorities and expected impact"
+    ],
+    "sampleDataset": "sales.json",
+    "aiPrompt": "Build a 2-tab DashboardSpec: Tab \"Overview\" with KPIs for revenue and units plus a bar chart by region; Tab \"Products\" with a bar chart by product and a table of the raw rows (limit columns to fit). Use only schema field names."
+  }
+]

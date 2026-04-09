@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback, useDeferredValue } from 'react'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { parseNumericValue } from '../utils/numberUtils'
 import Loader from '../components/Loader'
 import DashboardCharts from '../components/DashboardCharts'
@@ -7,10 +7,11 @@ import AdvancedDashboard from '../components/AdvancedDashboard'
 import AdvancedDashboardGrid from '../components/AdvancedDashboardGrid'
 import MetricCards from '../components/MetricCards'
 import Filters from '../components/Filters'
-import AIInsights from '../components/AIInsights'
+import AiInsightsTab from '../components/ai-insights/AiInsightsTab'
 import ForecastChart from '../components/ForecastChart'
 import DataMetadataEditor from '../components/DataMetadataEditor'
 import TimeSeriesReport from '../components/TimeSeriesReport'
+import AnomalyDetectionPanel from '../components/anomaly/AnomalyDetectionPanel'
 import ContractMapWidget, { getStateAbbr, getStateDisplayLabel } from '../components/widgets/ContractMapWidget'
 import DateRangeSlider from '../components/DateRangeSlider'
 import SubawardDrilldownModal from '../components/SubawardDrilldownModal'
@@ -49,7 +50,7 @@ function Dashboard() {
   const [chartFilter, setChartFilter] = useState(null) // { type: 'category' | 'date', value: string }
   const [shareId, setShareId] = useState(null)
   const [shareLinkCopied, setShareLinkCopied] = useState(false)
-  const [dashboardView, setDashboardView] = useState('simple') // 'simple', 'data', or 'timeseries'
+  const [dashboardView, setDashboardView] = useState('simple') // 'simple', 'advanced', 'custom', 'timeseries', 'data', 'ai-insights'
   const [dashboardTitle, setDashboardTitle] = useState('Analytics Dashboard')
   const [isEditingTitle, setIsEditingTitle] = useState(false)
   const [titleDraft, setTitleDraft] = useState('')
@@ -146,6 +147,7 @@ function Dashboard() {
   const [noDataReason, setNoDataReason] = useState(null) // 'no-storage' | 'invalid-data' when dashboard has nothing to show
   const [upgradePrompt, setUpgradePrompt] = useState(null)
   const [currentPlan, setCurrentPlan] = useState('free')
+  const [showAnomalyPanel, setShowAnomalyPanel] = useState(false)
   const hasInitialized = useRef(false)
   const isUpdatingMetadata = useRef(false)
   const lastAutoTitleMetric = useRef('')
@@ -3721,7 +3723,7 @@ function Dashboard() {
                   )}
                 </div>
                 
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
                   <button
                     onClick={() => setDashboardView('simple')}
                     className={`px-3 py-1.5 text-sm border rounded-lg transition-colors ${
@@ -3771,6 +3773,16 @@ function Dashboard() {
                     }`}
                   >
                     Data & Metadata
+                  </button>
+                  <button
+                    onClick={() => setDashboardView('ai-insights')}
+                    className={`px-3 py-1.5 text-sm border rounded-lg transition-colors ${
+                      dashboardView === 'ai-insights'
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-white border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    AI Insights
                   </button>
                 </div>
                 <button
@@ -3827,6 +3839,14 @@ function Dashboard() {
               categoricalColumns={categoricalColumns}
               dateColumns={dateColumns}
               onMetadataUpdate={handleMetadataUpdate}
+            />
+          ) : dashboardView === 'ai-insights' ? (
+            <AiInsightsTab
+              data={dashboardFilteredData || data || []}
+              columns={columns}
+              numericColumns={effectiveNumericColumns}
+              categoricalColumns={categoricalColumns}
+              dateColumns={dateColumns}
             />
           ) : dashboardView === 'timeseries' ? (
             <TimeSeriesReport
@@ -4097,7 +4117,7 @@ function Dashboard() {
               </svg>
               Fullscreen
             </button>
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               <button
                 onClick={() => setDashboardView('simple')}
                 className={`px-3 py-1.5 text-sm border rounded-lg transition-colors ${
@@ -4137,6 +4157,16 @@ function Dashboard() {
                 }`}
               >
                 Data & Metadata
+              </button>
+              <button
+                onClick={() => setDashboardView('ai-insights')}
+                className={`px-3 py-1.5 text-sm border rounded-lg transition-colors ${
+                  dashboardView === 'ai-insights'
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                AI Insights
               </button>
             </div>
           </div>
@@ -4426,11 +4456,11 @@ function Dashboard() {
           />
         )}
 
-        {/* AI Insights Section */}
+        {/* Export Section */}
         <div className="mt-6 space-y-4">
           <details className="bg-gray-50 rounded-lg p-4 border border-gray-200">
             <summary className="cursor-pointer font-semibold text-gray-900 mb-4">
-              AI Insights & Export
+              Export & Actions
             </summary>
             <div className="mt-4">
               <div className="flex gap-2 mb-4 flex-wrap">
@@ -4459,12 +4489,35 @@ function Dashboard() {
                   New Upload
                 </button>
               </div>
-              <AIInsights 
-                data={dashboardFilteredData} 
-                columns={columns} 
-                totalRows={dashboardFilteredData?.length || 0}
-                stats={stats}
-              />
+              <p className="text-sm text-gray-600">
+                Use the <span className="font-medium">AI Insights</span> tab for ML-based risk scoring and anomaly explainability.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  onClick={() => setDashboardView('ai-insights')}
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium text-sm"
+                >
+                  Open AI Insights
+                </button>
+                <button
+                  onClick={() => setShowAnomalyPanel((prev) => !prev)}
+                  className="px-4 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition-colors font-medium text-sm"
+                >
+                  {showAnomalyPanel ? 'Hide Anomaly Detector' : 'Detect Anomalies'}
+                </button>
+                <Link
+                  to="/audit"
+                  className="inline-flex items-center px-4 py-2 bg-white border border-slate-300 text-slate-800 rounded-lg hover:bg-slate-50 transition-colors font-medium text-sm"
+                >
+                  Audit Queue
+                </Link>
+              </div>
+              {showAnomalyPanel && (
+                <AnomalyDetectionPanel
+                  rows={dashboardFilteredData || data || []}
+                  numericColumns={effectiveNumericColumns}
+                />
+              )}
             </div>
           </details>
         </div>

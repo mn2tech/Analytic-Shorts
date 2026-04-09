@@ -1,0 +1,118 @@
+{
+  "siteType": "data_center",
+  "siteName": "NM2TECH Demo Data Center 01",
+  "generatedAt": "2026-04-01T12:00:00.000Z",
+  "layout": [
+    { "id": "rack_a01", "label": "A01", "row": "A", "position": 1, "x": 48, "y": 48, "width": 52, "height": 30, "zone": "Hall 1" },
+    { "id": "rack_a02", "label": "A02", "row": "A", "position": 2, "x": 114, "y": 48, "width": 52, "height": 30, "zone": "Hall 1" },
+    { "id": "rack_a03", "label": "A03", "row": "A", "position": 3, "x": 180, "y": 48, "width": 52, "height": 30, "zone": "Hall 1" },
+    { "id": "rack_b07", "label": "B07", "row": "B", "position": 7, "x": 444, "y": 102, "width": 52, "height": 30, "zone": "Hall 1" },
+    { "id": "rack_d03", "label": "D03", "row": "D", "position": 3, "x": 180, "y": 210, "width": 52, "height": 30, "zone": "Hall 1" },
+    { "id": "rack_f10", "label": "F10", "row": "F", "position": 10, "x": 642, "y": 398, "width": 52, "height": 30, "zone": "Hall 2" },
+    { "id": "rack_e04", "label": "E04", "row": "E", "position": 4, "x": 246, "y": 344, "width": 52, "height": 30, "zone": "Hall 2" },
+    { "id": "rack_c09", "label": "C09", "row": "C", "position": 9, "x": 576, "y": 156, "width": 52, "height": 30, "zone": "Hall 1" },
+    { "id": "rack_c03", "label": "C03", "row": "C", "position": 3, "x": 180, "y": 156, "width": 52, "height": 30, "zone": "Hall 1" },
+    { "id": "rack_g02", "label": "G02", "row": "G", "position": 2, "x": 114, "y": 452, "width": 52, "height": 30, "zone": "Hall 2" }
+  ],
+  "telemetry": [
+    { "id": "rack_a01", "label": "A01", "row": "A", "position": 1, "x": 48, "y": 48, "width": 52, "height": 30, "zone": "Hall 1", "status": "healthy", "temperature": 72.5, "powerLoadKw": 3.61, "cpuLoadPct": 36.4, "utilizationPct": 49.2, "airflowStatus": "normal", "maintenanceState": "none", "alertLevel": "none" },
+    { "id": "rack_a02", "label": "A02", "row": "A", "position": 2, "x": 114, "y": 48, "width": 52, "height": 30, "zone": "Hall 1", "status": "high_load", "temperature": 88.2, "powerLoadKw": 9.84, "cpuLoadPct": 90.3, "utilizationPct": 94.1, "airflowStatus": "normal", "maintenanceState": "none", "alertLevel": "warning" },
+    { "id": "rack_a03", "label": "A03", "row": "A", "position": 3, "x": 180, "y": 48, "width": 52, "height": 30, "zone": "Hall 1", "status": "overheating", "temperature": 101.1, "powerLoadKw": 11.23, "cpuLoadPct": 97.4, "utilizationPct": 98.0, "airflowStatus": "critical", "maintenanceState": "none", "alertLevel": "critical" },
+    { "id": "rack_b07", "label": "B07", "row": "B", "position": 7, "x": 444, "y": 102, "width": 52, "height": 30, "zone": "Hall 1", "status": "overheating", "temperature": 103.3, "powerLoadKw": 10.92, "cpuLoadPct": 96.8, "utilizationPct": 97.6, "airflowStatus": "degraded", "maintenanceState": "none", "alertLevel": "critical" },
+    { "id": "rack_d03", "label": "D03", "row": "D", "position": 3, "x": 180, "y": 210, "width": 52, "height": 30, "zone": "Hall 1", "status": "high_load", "temperature": 86.4, "powerLoadKw": 9.21, "cpuLoadPct": 85.1, "utilizationPct": 88.3, "airflowStatus": "normal", "maintenanceState": "none", "alertLevel": "warning" },
+    { "id": "rack_f10", "label": "F10", "row": "F", "position": 10, "x": 642, "y": 398, "width": 52, "height": 30, "zone": "Hall 2", "status": "maintenance", "temperature": 68.5, "powerLoadKw": 0.94, "cpuLoadPct": 0, "utilizationPct": 0, "airflowStatus": "maintenance_bypass", "maintenanceState": "in_progress", "alertLevel": "info" },
+    { "id": "rack_e04", "label": "E04", "row": "E", "position": 4, "x": 246, "y": 344, "width": 52, "height": 30, "zone": "Hall 2", "status": "healthy", "temperature": 74.0, "powerLoadKw": 3.02, "cpuLoadPct": 32.8, "utilizationPct": 47.9, "airflowStatus": "normal", "maintenanceState": "none", "alertLevel": "none" },
+    { "id": "rack_c09", "label": "C09", "row": "C", "position": 9, "x": 576, "y": 156, "width": 52, "height": 30, "zone": "Hall 1", "status": "healthy", "temperature": 73.3, "powerLoadKw": 3.44, "cpuLoadPct": 29.5, "utilizationPct": 44.2, "airflowStatus": "normal", "maintenanceState": "none", "alertLevel": "none" },
+    { "id": "rack_c03", "label": "C03", "row": "C", "position": 3, "x": 180, "y": 156, "width": 52, "height": 30, "zone": "Hall 1", "status": "high_load", "temperature": 84.9, "powerLoadKw": 8.76, "cpuLoadPct": 82.3, "utilizationPct": 86.1, "airflowStatus": "normal", "maintenanceState": "none", "alertLevel": "warning" },
+    { "id": "rack_g02", "label": "G02", "row": "G", "position": 2, "x": 114, "y": 452, "width": 52, "height": 30, "zone": "Hall 2", "status": "reserved", "temperature": 67.8, "powerLoadKw": 1.25, "cpuLoadPct": 12.1, "utilizationPct": 0, "airflowStatus": "normal", "maintenanceState": "capacity_reserved", "alertLevel": "info" }
+  ],
+  "alerts": [
+    {
+      "id": "alert-temp-critical",
+      "severity": "critical",
+      "title": "Rack B07 temperature critical",
+      "message": "Rack B07 reached 103.3F with sustained high compute demand.",
+      "affectedRackIds": ["rack_b07"],
+      "timestamp": "2026-04-01T11:58:00.000Z",
+      "category": "thermal"
+    },
+    {
+      "id": "alert-power-spike",
+      "severity": "warning",
+      "title": "Rack D03 power load spike detected",
+      "message": "Power draw increased to 9.21kW with CPU utilization above 80%.",
+      "affectedRackIds": ["rack_d03"],
+      "timestamp": "2026-04-01T11:54:00.000Z",
+      "category": "power"
+    },
+    {
+      "id": "alert-maintenance-active",
+      "severity": "info",
+      "title": "Rack F10 scheduled maintenance in progress",
+      "message": "Maintenance workflow active for rack F10; normal workload is rerouted.",
+      "affectedRackIds": ["rack_f10"],
+      "timestamp": "2026-04-01T11:48:00.000Z",
+      "category": "maintenance"
+    },
+    {
+      "id": "alert-airflow-zone",
+      "severity": "warning",
+      "title": "Cooling airflow degradation near C05-C08",
+      "message": "Aisle airflow sensors indicate degraded cooling around adjacent compute racks.",
+      "affectedRackIds": ["rack_c03", "rack_c09"],
+      "timestamp": "2026-04-01T11:43:00.000Z",
+      "category": "cooling"
+    }
+  ],
+  "movements": [
+    {
+      "id": "move-1",
+      "fromRackId": "rack_b07",
+      "toRackId": "rack_e04",
+      "workloadName": "edge-analytics-01",
+      "reason": "thermal_failover",
+      "status": "in_progress",
+      "timestamp": "2026-04-01T11:53:00.000Z"
+    },
+    {
+      "id": "move-2",
+      "fromRackId": "rack_c03",
+      "toRackId": "rack_c09",
+      "workloadName": "api-cluster-blue",
+      "reason": "load_rebalance",
+      "status": "completed",
+      "timestamp": "2026-04-01T11:46:00.000Z"
+    },
+    {
+      "id": "move-3",
+      "fromRackId": "rack_f10",
+      "toRackId": "rack_g02",
+      "workloadName": "batch-nightly-ops",
+      "reason": "maintenance_reroute",
+      "status": "completed",
+      "timestamp": "2026-04-01T11:39:00.000Z"
+    }
+  ],
+  "zoneSummaries": [
+    {
+      "zone": "Hall 1",
+      "rackCount": 7,
+      "activeRacks": 7,
+      "healthyRacks": 2,
+      "criticalAlerts": 1,
+      "averageTemperature": 87.1,
+      "totalPowerLoadKw": 56.01,
+      "utilizationRate": 79.6
+    },
+    {
+      "zone": "Hall 2",
+      "rackCount": 3,
+      "activeRacks": 3,
+      "healthyRacks": 1,
+      "criticalAlerts": 0,
+      "averageTemperature": 70.1,
+      "totalPowerLoadKw": 5.21,
+      "utilizationRate": 16
+    }
+  ]
+}

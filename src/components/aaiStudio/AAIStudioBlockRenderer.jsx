@@ -10,6 +10,7 @@ import GeoBlockView from './GeoBlockView'
 import KPIBlockView from './KPIBlockView'
 import DataQualityBlockView from './DataQualityBlockView'
 import DetailsTableBlockView from './DetailsTableBlockView'
+import AiRiskAnalysisBlockView from './AiRiskAnalysisBlockView'
 import { getPremiumRenderer } from './viz/registry.jsx'
 
 function BlockCard({ title, children, onClick, isSelected }) {
@@ -79,6 +80,7 @@ const VIEW_MAP = {
   GeoBlock: GeoBlockView,
   DataQualityBlock: DataQualityBlockView,
   DetailsTableBlock: DetailsTableBlockView,
+  AI_RISK_ANALYSIS: AiRiskAnalysisBlockView,
 }
 
 /**

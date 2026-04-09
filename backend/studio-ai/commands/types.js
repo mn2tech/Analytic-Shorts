@@ -30,6 +30,7 @@ const BLOCK_ALIAS_TO_TYPE = {
   quality: 'DataQualityBlock',
   details: 'DetailsTableBlock',
   anomaly: 'AnomalyBlock',
+  airisk: 'AI_RISK_ANALYSIS',
   geolike: 'GeoLikeBlock',
 }
 

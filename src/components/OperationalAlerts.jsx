@@ -5,6 +5,7 @@
 import { useMemo } from 'react'
 import { patientMovements, getPatientLocationAtTime, getWaitingRoomMetricsAtTime } from '../data/patientMovements'
 import { INFRASTRUCTURE_ROOM_IDS, NON_PATIENT_ROOM_TYPES } from '../config/hospitalBedData'
+import { ER_DELAY_REASON_DEFS, mapFlowStatusToDelayReason, normalizeFlowStatus } from '../data/erDelayReasonMap'
 
 function parseTime(t) {
   if (!t) return 0
@@ -14,6 +15,62 @@ function parseTime(t) {
 
 const WR_CONGESTION_THRESHOLD = 8
 const WR_MAX_WAIT_THRESHOLD_MIN = 60
+const ER_DELAY_CAUSE_MIN_ROOMS = 2
+const ER_DELAY_REASON_LABELS = Object.fromEntries(
+  Object.entries(ER_DELAY_REASON_DEFS).map(([k, v]) => [k, v.label])
+)
+
+function deriveErDelayReasonSummary(erRooms = [], roomStatusMap = {}, { scenarioActive = false } = {}) {
+  const counts = {
+    waitingProvider: 0,
+    boarding: 0,
+    transfer: 0,
+    results: 0,
+    consult: 0,
+    cleaning: 0,
+    disposition: 0,
+    staffing: 0,
+    registration: 0,
+    behaviorHealth: 0,
+    operationalHold: 0,
+  }
+
+  erRooms.forEach((r) => {
+    const data = roomStatusMap[r.id] || {}
+    const flowStatus = normalizeFlowStatus(data.flow_status)
+    const status = normalizeFlowStatus(data.status)
+    const isOccupied = status === 'occupied'
+    const explicitWaitingProvider = isOccupied && (data.waiting_for_provider === true || flowStatus.includes('waiting provider'))
+    const inferredWaitingProvider = !scenarioActive && status === 'occupied' && !data.provider_seen_time
+    const waitingProvider = explicitWaitingProvider || inferredWaitingProvider
+    if (waitingProvider) {
+      counts.waitingProvider += 1
+      return
+    }
+    if (status === 'cleaning') {
+      counts.cleaning += 1
+      return
+    }
+    const mappedReason = mapFlowStatusToDelayReason(flowStatus)
+    if (mappedReason && counts[mappedReason] != null) counts[mappedReason] += 1
+  })
+
+  const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1])
+  const breakdown = sorted
+    .filter(([, count]) => count > 0)
+    .map(([key, count]) => ({
+      key,
+      label: ER_DELAY_REASON_LABELS[key] || 'Unknown',
+      count,
+    }))
+  const [topKey, topCount] = sorted[0] || []
+  if (!topKey || !topCount || topCount < ER_DELAY_CAUSE_MIN_ROOMS) {
+    return { breakdown }
+  }
+  const label = ER_DELAY_REASON_LABELS[topKey] || 'Unknown'
+  const contributing = breakdown.length
+  return { key: topKey, label, count: topCount, contributing, counts, breakdown }
+}
 
 export default function OperationalAlerts({
   selectedTime,
@@ -24,7 +81,7 @@ export default function OperationalAlerts({
   scenarioAlerts = null,
   erOccupancyPrediction = null,
 }) {
-  const alerts = useMemo(() => {
+  const { alerts, delayBreakdown } = useMemo(() => {
     // Calculate ER utilization for percentage display
     const erRooms = roomOverlays.filter(
       (r) => roomIdToUnit.get(r.id) === 'ER' && !INFRASTRUCTURE_ROOM_IDS.has(r.id) && !NON_PATIENT_ROOM_TYPES.has(r.type)
@@ -35,11 +92,13 @@ export default function OperationalAlerts({
       if (s === 'occupied' || s === 'reserved') erOccupied++
     })
     const erUtilizationPct = erRooms.length > 0 ? Math.round((erOccupied / erRooms.length) * 100) : 0
+    const scenarioActive = Array.isArray(scenarioAlerts)
+    const erDelaySummary = deriveErDelayReasonSummary(erRooms, roomStatusMap, { scenarioActive })
     
     // Use scenario alerts if provided, otherwise compute from data
     if (scenarioAlerts && Array.isArray(scenarioAlerts)) {
       // Add percentage to ER-related scenario alerts
-      return scenarioAlerts.map((alert) => {
+      const scenarioList = scenarioAlerts.map((alert) => {
         if (alert.filterUnit === 'ER' && (alert.msg.includes('ER') || alert.msg.includes('capacity') || alert.msg.includes('Pressure'))) {
           return {
             ...alert,
@@ -48,6 +107,18 @@ export default function OperationalAlerts({
         }
         return alert
       })
+      if (erDelaySummary?.count >= ER_DELAY_CAUSE_MIN_ROOMS) {
+        scenarioList.push({
+          id: 'er-delay-cause',
+          msg: `Overall delay cause: ${erDelaySummary.label} (${erDelaySummary.count} room${erDelaySummary.count === 1 ? '' : 's'})`,
+          severity: erDelaySummary.count >= 4 ? 'warning' : 'info',
+          filterUnit: 'ER',
+        })
+      }
+      return {
+        alerts: scenarioList,
+        delayBreakdown: erDelaySummary?.breakdown || [],
+      }
     }
     
     const list = []
@@ -97,6 +168,14 @@ export default function OperationalAlerts({
         id: 'er-capacity', 
         msg: `ER capacity above 90% (${erUtilizationPct}%)`, 
         severity: 'critical' 
+      })
+    }
+    if (erDelaySummary?.count >= ER_DELAY_CAUSE_MIN_ROOMS) {
+      list.push({
+        id: 'er-delay-cause',
+        msg: `Overall delay cause: ${erDelaySummary.label} (${erDelaySummary.count} room${erDelaySummary.count === 1 ? '' : 's'})`,
+        severity: erDelaySummary.count >= 4 ? 'warning' : 'info',
+        filterUnit: 'ER',
       })
     }
 
@@ -155,10 +234,13 @@ export default function OperationalAlerts({
       }
     }
 
-    return list
+    return {
+      alerts: list,
+      delayBreakdown: erDelaySummary?.breakdown || [],
+    }
   }, [selectedTime, roomOverlays, roomStatusMap, roomIdToUnit, erOccupancyPrediction])
 
-  if (alerts.length === 0) return null
+  if (alerts.length === 0 && delayBreakdown.length === 0) return null
 
   return (
     <div className={`rounded-lg border px-4 py-3 space-y-2 transition-colors ${highlightAlerts ? 'border-amber-500/70 bg-amber-500/20 ring-2 ring-amber-500/30' : 'border-amber-500/30 bg-amber-500/10'}`}>
@@ -171,6 +253,21 @@ export default function OperationalAlerts({
           </li>
         ))}
       </ul>
+      {delayBreakdown.length > 0 && (
+        <div className="pt-2 border-t border-amber-500/20">
+          <h4 className="text-[11px] font-semibold text-amber-300/90 uppercase tracking-wider mb-1.5">
+            Delay Causes (Top 3)
+          </h4>
+          <ul className="space-y-1 text-xs text-amber-100/90">
+            {delayBreakdown.slice(0, 3).map((item) => (
+              <li key={item.key} className="flex items-center justify-between gap-3">
+                <span>{item.label}</span>
+                <span className="font-semibold text-amber-200">{item.count}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   )
 }

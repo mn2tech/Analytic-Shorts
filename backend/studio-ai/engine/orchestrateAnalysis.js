@@ -206,6 +206,19 @@ function computeDataQualityPenalty(datasetProfile) {
   return penalty
 }
 
+function shouldEnableAiRiskAnalysis(datasetProfile, topDims = [], measures = []) {
+  const cols = Array.isArray(datasetProfile?.columns) ? datasetProfile.columns : []
+  const rowCount = datasetProfile?.datasetStats?.profiledRowCount || datasetProfile?.datasetStats?.rowCount || 0
+  const numericCount = cols.filter((c) => c?.inferredType === 'number' || c?.roleCandidate === 'measure').length
+  const categoricalCount = cols.filter((c) => c?.inferredType === 'string' || c?.roleCandidate === 'dimension').length
+  if (rowCount < 30) return false
+  if (numericCount < 2) return false
+  const names = cols.map((c) => String(c?.name || '').toLowerCase())
+  const riskSignals = /(risk|transaction|tax|claim|compliance|fraud|amount|revenue|cost|volume|late|delay|payment|default|exposure|loss|behavior|operational)/
+  const hasRiskSignals = names.some((n) => riskSignals.test(n))
+  return hasRiskSignals || (measures.length >= 2 && (categoricalCount >= 1 || topDims.length >= 1))
+}
+
 function orchestrateAnalysis(datasetProfile, semanticGraph, canonicalDataset, options = {}) {
   const template = options && options.template && options.template.id ? options.template : null
   const overrides = options && options.overrides && typeof options.overrides === 'object' ? options.overrides : {}
@@ -260,6 +273,14 @@ function orchestrateAnalysis(datasetProfile, semanticGraph, canonicalDataset, op
   }
   if (semanticGraph?.enableAnomaly) {
     blocks.push({ type: 'AnomalyBlock', enabled: true })
+  }
+  if (shouldEnableAiRiskAnalysis(datasetProfile, topDims, measures)) {
+    blocks.push({
+      type: 'AI_RISK_ANALYSIS',
+      title: 'AI Risk Analysis',
+      maxRows: 10000,
+      targetColumnHints: ['is_high_risk', 'fraud_flag', 'label', 'target', 'default_flag', 'outcome'],
+    })
   }
 
   blocks.push({ type: 'DataQualityBlock' })

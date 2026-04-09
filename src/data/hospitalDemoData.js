@@ -4,6 +4,7 @@
  * Hooked into timeline playback.
  */
 import { getWaitingRoomMetricsAtTime } from './patientMovements'
+import { INFRASTRUCTURE_ROOM_IDS, NON_PATIENT_ROOM_TYPES } from '../config/hospitalBedData'
 
 /** Parse "HH:MM" to minutes since midnight */
 function parseTime(t) {
@@ -18,32 +19,56 @@ function parseTime(t) {
 export function getWaitingRoomSummaryAtTime(selectedTime, roomStatusMap = {}, roomOverlays = []) {
   const base = getWaitingRoomMetricsAtTime(selectedTime ?? '14:00')
   const time = selectedTime ?? '14:00'
+  const isWaitingProviderRoom = (room, data) =>
+    room?.unit === 'ER' &&
+    data?.status === 'occupied' &&
+    !data?.provider_seen_time
+  const formatRoomLabel = (room) => {
+    if (!room?.id) return '—'
+    const n = room.id.replace(/^ROOM_/, '')
+    if (room.unit === 'ER') return `ER-${n}`
+    if (room.unit === 'General Ward') return `GW-${n}`
+    if (room.unit === 'ICU') return `ICU-${n}`
+    if (room.unit === 'OR') return `OR-${n}`
+    return room.id
+  }
 
-  // Find next likely available room (has predicted availability)
+  // Find next likely available room across patient-facing units.
   let nextAvailableRoom = null
   let nextAvailableInMinutes = null
-  const erRooms = (roomOverlays || []).filter(
-    (r) => r.unit === 'ER' && r.id?.startsWith('ROOM_') && !r.id.includes('ROOM_011')
+  const candidateRooms = (roomOverlays || []).filter(
+    (r) =>
+      r.id?.startsWith('ROOM_') &&
+      !INFRASTRUCTURE_ROOM_IDS.has(r.id) &&
+      !NON_PATIENT_ROOM_TYPES.has(r.type) &&
+      r.unit !== 'WAITING'
   )
   let minMins = Infinity
-  erRooms.forEach((r) => {
+  candidateRooms.forEach((r) => {
     const data = roomStatusMap[r.id]
+    if (isWaitingProviderRoom(r, data)) return
     const pred = data?.predictedInMinutes ?? data?.predicted_in_minutes
     if (pred != null && pred < minMins) {
       minMins = pred
-      nextAvailableRoom = r.id?.replace(/^ROOM_/, 'ER-') ?? r.id
+      nextAvailableRoom = formatRoomLabel(r)
       nextAvailableInMinutes = pred
     }
   })
-  if (!nextAvailableRoom && erRooms.length > 0) {
+  if (!nextAvailableRoom && candidateRooms.length > 0) {
     // Fallback: first available or first cleaning
-    const avail = erRooms.find((r) => roomStatusMap[r.id]?.status === 'available')
-    const cleaning = erRooms.find((r) => roomStatusMap[r.id]?.status === 'cleaning')
+    const avail = candidateRooms.find((r) => {
+      const data = roomStatusMap[r.id]
+      return data?.status === 'available' && !isWaitingProviderRoom(r, data)
+    })
+    const cleaning = candidateRooms.find((r) => {
+      const data = roomStatusMap[r.id]
+      return data?.status === 'cleaning' && !isWaitingProviderRoom(r, data)
+    })
     if (avail) {
-      nextAvailableRoom = avail.id?.replace(/^ROOM_/, 'ER-')
+      nextAvailableRoom = formatRoomLabel(avail)
       nextAvailableInMinutes = 0
     } else if (cleaning) {
-      nextAvailableRoom = cleaning.id?.replace(/^ROOM_/, 'ER-')
+      nextAvailableRoom = formatRoomLabel(cleaning)
       nextAvailableInMinutes = 25
     }
   }
@@ -64,8 +89,8 @@ export function getWaitingRoomSummaryAtTime(selectedTime, roomStatusMap = {}, ro
     avgWaitMinutes,
     longestWaitMinutes,
     waitingForProvider,
-    nextAvailableRoom: nextAvailableRoom ?? 'ER-012',
-    nextAvailableInMinutes: nextAvailableInMinutes ?? 11,
+    nextAvailableRoom: nextAvailableRoom ?? '—',
+    nextAvailableInMinutes: nextAvailableInMinutes ?? 0,
     urgency,
   }
 }

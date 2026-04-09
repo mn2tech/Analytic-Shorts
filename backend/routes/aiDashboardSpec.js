@@ -25,7 +25,8 @@ router.get('/', (req, res) => {
       'GET /api/ai/dataset-data?dataset=<id>',
       'POST /api/ai/dataset-chat',
       'POST /api/ai/chat',
-      'POST /api/ai/dashboard-spec'
+      'POST /api/ai/dashboard-spec',
+      'POST /api/ai/risk-analysis'
     ]
   })
 })
@@ -375,6 +376,97 @@ You can suggest a good dashboard/report layout when asked.`
   }
 })
 
+/**
+ * Generate a validated DashboardSpec from in-memory row data (used by POST /api/ai/dashboard-spec and /api/training/run).
+ * @returns {{ spec: object, schemaSummary: { rowCount, fields } }}
+ */
+async function generateDashboardSpecFromRows(data, userPrompt, existingSpec) {
+  if (!openai) {
+    const e = new Error('OPENAI_API_KEY is required. Set it in backend .env.')
+    e.code = 'NO_AI'
+    throw e
+  }
+  if (!Array.isArray(data) || data.length === 0) {
+    const e = new Error('Dataset is empty')
+    e.code = 'BAD_DATA'
+    throw e
+  }
+  if (typeof userPrompt !== 'string' || !userPrompt.trim()) {
+    const e = new Error('userPrompt is required')
+    e.code = 'BAD_PROMPT'
+    throw e
+  }
+
+  const schemaSummary = profileSchema(data)
+  const schemaDesc = schemaSummary.fields
+    .map((f) => `${f.name} (${f.type})${f.examples && f.examples.length ? ` e.g. ${f.examples.slice(0, 2).join(', ')}` : ''}`)
+    .join('\n')
+
+  const schemaBlock = getSystemPromptSchemaBlock()
+  const systemPrompt = `You are a dashboard spec generator. Output ONLY a single JSON object (no markdown, no explanation). Use only field names from the dataset schema below.
+
+${schemaBlock}`
+
+  const promptTrimmed = userPrompt.trim()
+  const wantsThreeTabs = /3\s*[-]?\s*tab|Overview,?\s*Analysis,?\s*Data/i.test(promptTrimmed)
+  const wantsMultiTab = wantsThreeTabs || /2\s*[-]?\s*tab|Summary and Charts|multi\s*[-]?\s*tab/i.test(promptTrimmed)
+  const multiTabHint = wantsThreeTabs
+    ? '\n\nImportant: the user requested a 3-TAB report. You MUST output a "tabs" array with exactly 3 tab objects: first tab label "Overview" (KPIs and/or a chart), second tab label "Analysis" (at least one chart), third tab label "Data" (a table). Each tab: id, label, filters, kpis, charts, layout. Do not put filters/kpis/charts at the top level. Use only field names from the dataset schema above.'
+    : wantsMultiTab
+      ? '\n\nImportant: the user requested a multi-tab report. You MUST output a "tabs" array with exactly 2 or 3 tab objects (each with id, label, filters, kpis, charts, layout). Do not put filters/kpis/charts at the top level. Every tab must contain at least one widget: e.g. Summary tab with KPIs and/or a table, Charts tab with at least one chart (bar, line, pie), Data tab with a table. Use only field names from the dataset schema above.'
+      : ''
+
+  const userContent = `Dataset schema:\n${schemaDesc}\n\nUser request: ${userPrompt}\n${
+    existingSpec ? `\nCurrent spec (refine/update this):\n${JSON.stringify(existingSpec)}` : ''
+  }${multiTabHint}\n\nOutput only the DashboardSpec JSON:`
+
+  let lastErrors = []
+  let lastText = ''
+  for (let attempt = 0; attempt <= 1; attempt++) {
+    const messages =
+      attempt === 0
+        ? [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userContent }
+          ]
+        : [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userContent },
+            { role: 'assistant', content: lastText },
+            {
+              role: 'user',
+              content: `The response above had validation errors. Fix them and output ONLY the corrected DashboardSpec JSON, no other text.\nErrors:\n${lastErrors.join('\n')}`
+            }
+          ]
+
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages,
+      max_tokens: 2000,
+      temperature: 0.2
+    })
+
+    const text = completion.choices?.[0]?.message?.content?.trim() || ''
+    lastText = text
+    const spec = parseSpecFromResponse(text)
+    if (!spec) {
+      lastErrors = ['Response was not valid JSON.']
+      continue
+    }
+
+    const { valid, errors, spec: normalized } = validateDashboardSpec(spec, schemaSummary.fields)
+    if (valid) {
+      return { spec: normalized, schemaSummary }
+    }
+    lastErrors = errors
+  }
+
+  const e = new Error('AI returned invalid DashboardSpec after retry.')
+  e.code = 'INVALID_SPEC'
+  e.validationErrors = lastErrors
+  throw e
+}
+
 // POST /api/ai/dashboard-spec (handler shared for with/without trailing slash)
 async function handleDashboardSpec(req, res) {
   try {
@@ -408,75 +500,19 @@ async function handleDashboardSpec(req, res) {
       return res.status(400).json({ error: 'Dataset not found or empty. Use an example dataset, your dashboard, or upload data.' })
     }
 
-    const schemaSummary = profileSchema(data)
-    const schemaDesc = schemaSummary.fields
-      .map((f) => `${f.name} (${f.type})${f.examples && f.examples.length ? ` e.g. ${f.examples.slice(0, 2).join(', ')}` : ''}`)
-      .join('\n')
-
-    const schemaBlock = getSystemPromptSchemaBlock()
-    const systemPrompt = `You are a dashboard spec generator. Output ONLY a single JSON object (no markdown, no explanation). Use only field names from the dataset schema below.
-
-${schemaBlock}`
-
-    const promptTrimmed = userPrompt.trim()
-    const wantsThreeTabs = /3\s*[-]?\s*tab|Overview,?\s*Analysis,?\s*Data/i.test(promptTrimmed)
-    const wantsMultiTab = wantsThreeTabs || /2\s*[-]?\s*tab|Summary and Charts|multi\s*[-]?\s*tab/i.test(promptTrimmed)
-    const multiTabHint = wantsThreeTabs
-      ? '\n\nImportant: the user requested a 3-TAB report. You MUST output a "tabs" array with exactly 3 tab objects: first tab label "Overview" (KPIs and/or a chart), second tab label "Analysis" (at least one chart), third tab label "Data" (a table). Each tab: id, label, filters, kpis, charts, layout. Do not put filters/kpis/charts at the top level. Use only field names from the dataset schema above.'
-      : wantsMultiTab
-        ? '\n\nImportant: the user requested a multi-tab report. You MUST output a "tabs" array with exactly 2 or 3 tab objects (each with id, label, filters, kpis, charts, layout). Do not put filters/kpis/charts at the top level. Every tab must contain at least one widget: e.g. Summary tab with KPIs and/or a table, Charts tab with at least one chart (bar, line, pie), Data tab with a table. Use only field names from the dataset schema above.'
-        : ''
-
-    const userContent = `Dataset schema:\n${schemaDesc}\n\nUser request: ${userPrompt}\n${
-      existingSpec ? `\nCurrent spec (refine/update this):\n${JSON.stringify(existingSpec)}` : ''
-    }${multiTabHint}\n\nOutput only the DashboardSpec JSON:`
-
-    let lastErrors = []
-    let lastText = ''
-    for (let attempt = 0; attempt <= 1; attempt++) {
-      const messages =
-        attempt === 0
-          ? [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: userContent }
-            ]
-          : [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: userContent },
-              { role: 'assistant', content: lastText },
-              {
-                role: 'user',
-                content: `The response above had validation errors. Fix them and output ONLY the corrected DashboardSpec JSON, no other text.\nErrors:\n${lastErrors.join('\n')}`
-              }
-            ]
-
-      const completion = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages,
-        max_tokens: 2000,
-        temperature: 0.2
-      })
-
-      const text = completion.choices?.[0]?.message?.content?.trim() || ''
-      lastText = text
-      const spec = parseSpecFromResponse(text)
-      if (!spec) {
-        lastErrors = ['Response was not valid JSON.']
-        continue
+    try {
+      const { spec } = await generateDashboardSpecFromRows(data, userPrompt, existingSpec)
+      return res.json({ spec })
+    } catch (genErr) {
+      if (genErr.code === 'INVALID_SPEC') {
+        return res.status(502).json({
+          error: 'Invalid spec',
+          message: genErr.message,
+          validationErrors: genErr.validationErrors || []
+        })
       }
-
-      const { valid, errors, spec: normalized } = validateDashboardSpec(spec, schemaSummary.fields)
-      if (valid) {
-        return res.json({ spec: normalized })
-      }
-      lastErrors = errors
+      throw genErr
     }
-
-    return res.status(502).json({
-      error: 'Invalid spec',
-      message: 'AI returned invalid DashboardSpec after retry.',
-      validationErrors: lastErrors
-    })
   } catch (err) {
     console.error('POST /api/ai/dashboard-spec', err)
     const status = err.status ?? err.response?.status ?? 500
@@ -491,3 +527,5 @@ router.post('/dashboard-spec/', handleDashboardSpec)
 
 module.exports = router
 module.exports.handleDashboardSpec = handleDashboardSpec
+module.exports.generateDashboardSpecFromRows = generateDashboardSpecFromRows
+module.exports.profileSchema = profileSchema

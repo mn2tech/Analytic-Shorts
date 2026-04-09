@@ -24,6 +24,7 @@ const profilesRoutes = require('./routes/profiles')
 const studioRoutes = require('./routes/studio')
 const studioAiSchemaHandler = require('./routes/studioAiSchema')
 const aiDashboardSpecRoutes = require('./routes/aiDashboardSpec')
+const aiRiskAnalysisRoutes = require('./routes/aiRiskAnalysis')
 const sharedRoutes = require('./routes/shared')
 const datalakeRoutes = require('./routes/datalake')
 const ownerSummaryRoutes = require('./routes/ownerSummary')
@@ -36,10 +37,20 @@ const followRoutes = require('./routes/follow')
 const liveRoutes = require('./routes/live')
 const reportsRoutes = require('./routes/reports')
 const hospitalRoutes = require('./routes/hospital')
-const aiHealthChatRoutes = require('./routes/aiHealthChat')
+// Optional route: aiHealthChat may not be deployed in some environments.
+let aiHealthChatRoutes = null
+try {
+  // eslint-disable-next-line global-require
+  aiHealthChatRoutes = require('./routes/aiHealthChat')
+} catch (e) {
+  aiHealthChatRoutes = null
+  console.warn('[server] aiHealthChatRoutes not available; skipping /api/* ai health chat endpoints.')
+}
 const validationRoutes = require('./routes/validation')
 const migrationRoutes = require('./routes/migration')
 const v1Routes = require('./routes/v1')
+const trainingRoutes = require('./routes/training')
+const mlRoutes = require('./routes/ml')
 const accessLogger = require('./middleware/accessLogger')
 
 const app = express()
@@ -265,10 +276,12 @@ app.use('/api/profiles', profilesRoutes)
 app.use('/api/studio', studioRoutes)
 app.use('/api/reports', reportsRoutes)
 app.use('/api/hospital', hospitalRoutes)
-app.use('/api', aiHealthChatRoutes)
+if (aiHealthChatRoutes) app.use('/api', aiHealthChatRoutes)
 app.use('/api/validation', validationRoutes)
 app.use('/api/migration', migrationRoutes)
 app.use('/api/v1', v1Routes)
+app.use('/api/training', trainingRoutes)
+app.use('/api/ml', mlRoutes)
 // POST /api/ai/dashboard-spec — register first so it always matches (avoids 404)
 const handleDashboardSpec = aiDashboardSpecRoutes.handleDashboardSpec
 if (typeof handleDashboardSpec !== 'function') {
@@ -286,6 +299,7 @@ app.post('/api/ai/dashboard-spec/', dashboardSpecHandler)
 app.get('/api/ai/dashboard-spec', (req, res) => {
   res.status(405).json({ error: 'Method not allowed', hint: 'Use POST to generate a dashboard spec' })
 })
+app.use('/api/ai', aiRiskAnalysisRoutes)
 app.use('/api/ai', aiDashboardSpecRoutes)
 if (typeof handleDashboardSpec === 'function') {
   console.log('[server] POST /api/ai/dashboard-spec registered')
@@ -337,6 +351,11 @@ app.use((req, res) => {
       'GET /api/ai/dataset-schema',
       'GET /api/ai/dataset-data',
       'POST /api/ai/dashboard-spec',
+      'GET /api/training/modules',
+      'GET /api/training/modules/:id',
+      'GET /api/training/dataset/:name',
+      'POST /api/training/run',
+      'POST /api/training/explain',
       'POST /api/owner-summary',
       'POST /api/upload',
       'POST /api/insights',
