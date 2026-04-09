@@ -56,5 +56,17 @@ coverage
 .cache
 .temp
 
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.python-version
+.venv/
+venv/
+env/
+
+# Local tooling / scratch
+.worktrees/
+
 Analytic-Shorts/
 Analytic-Shorts/
