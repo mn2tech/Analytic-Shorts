@@ -7,12 +7,6 @@ import { getTransferCountsAtTime } from '../data/motelGuestMovements'
 
 const ROTATION_INTERVAL_MS = 5000
 
-function formatMins(m) {
-  if (m == null || isNaN(m)) return '—'
-  if (m < 60) return `${Math.round(m)}m`
-  return `${Math.floor(m / 60)}h ${Math.round(m % 60)}m`
-}
-
 export default function MotelRotatingMetricsPanel({ selectedTime, metrics }) {
   const [slideIndex, setSlideIndex] = useState(0)
   const time = selectedTime ?? '14:00'
@@ -30,7 +24,7 @@ export default function MotelRotatingMetricsPanel({ selectedTime, metrics }) {
         { label: 'Total', value: metrics?.total ?? 0 },
         { label: 'Occupied', value: metrics?.occupied ?? 0 },
         { label: 'Available', value: metrics?.available ?? 0 },
-        { label: 'Utilization', value: `${metrics?.utilizationPct ?? 0}%` },
+        { label: 'Occupancy Rate', value: `${metrics?.occupancyRatePct ?? metrics?.utilizationPct ?? 0}%` },
       ],
     },
     {
@@ -38,6 +32,8 @@ export default function MotelRotatingMetricsPanel({ selectedTime, metrics }) {
       items: [
         { label: 'Dirty', value: metrics?.dirty ?? 0 },
         { label: 'Reserved', value: metrics?.reserved ?? 0 },
+        { label: 'Maintenance', value: metrics?.maintenance ?? 0 },
+        { label: 'Turns Today', value: metrics?.turningOverToday ?? 0 },
       ],
     },
     {

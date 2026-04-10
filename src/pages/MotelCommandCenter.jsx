@@ -26,9 +26,17 @@ import KpiGroupCard from '../components/KpiGroupCard'
 import TimelinePlayback from '../components/TimelinePlayback'
 import MotelOperationalAlerts from '../components/MotelOperationalAlerts'
 import MotelRotatingMetricsPanel from '../components/MotelRotatingMetricsPanel'
+import { normalizeInnsoftRows, parseInnsoftFile } from '../utils/innsoftIngestion'
+import { gatewayInnDemoRows } from '../data/gatewayInnDemoDataset'
 
-const STATUS_SHORT = { available: 'Avail', occupied: 'Occ', dirty: 'Dirty', reserved: 'Res' }
 const STATUS_COLORS = ['#2ECC71', '#E74C3C', '#F1C40F', '#3498DB']
+const STATUS_VISUALS = {
+  available: { label: 'AVL', icon: 'OK', textColor: '#052E16', badgeBg: 'rgba(220, 252, 231, 0.95)' },
+  occupied: { label: 'OCC', icon: 'BED', textColor: '#7F1D1D', badgeBg: 'rgba(254, 226, 226, 0.95)' },
+  dirty: { label: 'DRT', icon: 'CLN', textColor: '#713F12', badgeBg: 'rgba(254, 243, 199, 0.95)' },
+  reserved: { label: 'RSV', icon: 'IN', textColor: '#1E3A8A', badgeBg: 'rgba(219, 234, 254, 0.95)' },
+  maintenance: { label: 'MNT', icon: 'FIX', textColor: '#111827', badgeBg: 'rgba(229, 231, 235, 0.95)' },
+}
 const MOCK_GUESTS = [
   'J. Smith', 'M. Johnson', 'R. Williams', 'A. Brown', 'K. Davis', 'T. Miller',
   'S. Wilson', 'L. Moore', 'P. Taylor', 'C. Anderson', 'J. Thomas', 'D. Jackson',
@@ -63,8 +71,19 @@ function formatAvgLOS(mins) {
   return m > 0 ? `${h}h ${m}m` : `${h}h`
 }
 function formatPredictionMins(mins) {
+  if (mins >= 1440) {
+    const days = mins / 1440
+    return Number.isInteger(days) ? `${days}d` : `${days.toFixed(1)}d`
+  }
   if (mins >= 60) return `${Math.floor(mins / 60)}h`
   return `${mins}m`
+}
+
+function canonicalRoomKey(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '')
 }
 
 function RoomTooltip({ roomData, tooltipPos, unit, roomOverlays = [] }) {
@@ -97,6 +116,14 @@ function RoomTooltip({ roomData, tooltipPos, unit, roomOverlays = [] }) {
         <div className="flex justify-between gap-4">
           <span className="text-slate-400">Check-in</span>
           <span className="font-medium text-right">{roomData.check_in || roomData.admitted_at || '—'}</span>
+        </div>
+        <div className="flex justify-between gap-4">
+          <span className="text-slate-400">Check-out</span>
+          <span className="font-medium text-right">{roomData.checkOut || roomData.check_out || '—'}</span>
+        </div>
+        <div className="flex justify-between gap-4">
+          <span className="text-slate-400">Priority</span>
+          <span className="font-semibold text-right">{roomData.priority || 'LOW'}</span>
         </div>
         {losLabel && (
           <div className="flex justify-between gap-4">
@@ -204,13 +231,13 @@ function BlueprintImage({
             const dotFill = isInfrastructure
               ? null
               : STATUS_FILL_COLORS[status] || STATUS_COLORS[idx % 4]
-            const statusLabel = STATUS_SHORT[status] || status || '—'
+            const statusVisual = STATUS_VISUALS[status] || STATUS_VISUALS.available
             const isHovered = hoveredRoom === r.id
             const roomH = r.height ?? 50
             const roomW = r.width ?? 50
             const showStatus = !isInfrastructure && roomH >= 28
             const predMins = roomData?.predictedInMinutes ?? roomData?.predicted_in_minutes
-            const predText = predMins != null ? (predMins >= 60 ? `${Math.floor(predMins / 60)}h` : `${predMins}m`) : null
+            const predText = predMins != null ? formatPredictionMins(predMins) : null
             const matchesStatus = isInfrastructure ? true : !statusFilter ? true : statusFilter === 'predicted' ? predMins != null : status === statusFilter
             const matchesFilter = matchesStatus
             const opacity = matchesFilter ? 1 : 0.06
@@ -233,6 +260,27 @@ function BlueprintImage({
                     <clipPath id={`clip-${r.id}`}>
                       <rect x={r.x} y={r.y} width={r.width ?? 50} height={r.height ?? 50} />
                     </clipPath>
+                    <pattern id={`room-pattern-${r.id}`} patternUnits="userSpaceOnUse" width="8" height="8">
+                      {status === 'dirty' && (
+                        <>
+                          <rect width="8" height="8" fill="rgba(255,255,255,0.06)" />
+                          <path d="M-2,8 l4,-4 M0,10 l10,-10 M6,10 l4,-4" stroke="rgba(120,53,15,0.45)" strokeWidth="1.2" />
+                        </>
+                      )}
+                      {status === 'reserved' && (
+                        <>
+                          <rect width="8" height="8" fill="rgba(255,255,255,0.04)" />
+                          <circle cx="2" cy="2" r="1.1" fill="rgba(30,58,138,0.45)" />
+                          <circle cx="6" cy="6" r="1.1" fill="rgba(30,58,138,0.45)" />
+                        </>
+                      )}
+                      {status === 'maintenance' && (
+                        <>
+                          <rect width="8" height="8" fill="rgba(17,24,39,0.05)" />
+                          <path d="M0,0 L8,8 M8,0 L0,8" stroke="rgba(17,24,39,0.38)" strokeWidth="1" />
+                        </>
+                      )}
+                    </pattern>
                   </defs>
                 )}
                 <rect
@@ -246,6 +294,17 @@ function BlueprintImage({
                   strokeWidth={isHovered ? 2.5 : 1}
                   style={{ transition: 'fill 0.35s ease, stroke 0.2s ease' }}
                 />
+                {!isInfrastructure && (status === 'dirty' || status === 'reserved' || status === 'maintenance') && (
+                  <rect
+                    x={r.x}
+                    y={r.y}
+                    width={r.width ?? 50}
+                    height={r.height ?? 50}
+                    fill={`url(#room-pattern-${r.id})`}
+                    fillOpacity={0.9}
+                    className="pointer-events-none"
+                  />
+                )}
                 {!isInfrastructure && showStatusDot && (
                   <circle
                     cx={r.x + 8}
@@ -263,21 +322,46 @@ function BlueprintImage({
                     y={r.y + roomH * 0.35}
                     textAnchor="end"
                     className="select-none pointer-events-none"
-                    style={{ fontSize: roomW < 45 ? 8 : 10, fill: '#0f172a', fontWeight: 700 }}
+                    style={{ fontSize: roomW < 45 ? 8 : 10, fill: '#000000', fontWeight: 700 }}
                   >
                     {getRoomDisplayLabel(r.id, r)}
                   </text>
                 )}
-                {showStatus && showStatusAbbrev && (
-                  <text
-                    x={r.x + (r.width ?? 50) / 2}
-                    y={r.y + (r.height ?? 50) / 2 + 6}
-                    textAnchor="middle"
-                    className="select-none pointer-events-none"
-                    style={{ fontSize: roomH < 50 ? 7 : 8, fill: fill, fontWeight: 700 }}
-                  >
-                    {statusLabel}
-                  </text>
+                {showStatus && showStatusAbbrev && !isInfrastructure && (
+                  <>
+                    <rect
+                      x={r.x + 6}
+                      y={r.y + roomH - 18}
+                      rx={4}
+                      ry={4}
+                      width={Math.min(roomW - 10, roomW < 54 ? 26 : 34)}
+                      height={12}
+                      fill={statusVisual.badgeBg}
+                      stroke="rgba(15, 23, 42, 0.35)"
+                      strokeWidth={0.7}
+                      className="pointer-events-none"
+                    />
+                    <text
+                      x={r.x + 8}
+                      y={r.y + roomH - 9}
+                      textAnchor="start"
+                      className="select-none pointer-events-none"
+                      style={{ fontSize: roomH < 50 ? 6.2 : 7, fill: statusVisual.textColor, fontWeight: 800, letterSpacing: 0.2 }}
+                    >
+                      {statusVisual.label}
+                    </text>
+                    {roomW >= 54 && (
+                      <text
+                        x={r.x + roomW - 8}
+                        y={r.y + roomH - 9}
+                        textAnchor="end"
+                        className="select-none pointer-events-none"
+                        style={{ fontSize: 6.2, fill: statusVisual.textColor, fontWeight: 700 }}
+                      >
+                        {statusVisual.icon}
+                      </text>
+                    )}
+                  </>
                 )}
                 {!isInfrastructure && predText && roomH >= 50 && (
                   <text
@@ -305,6 +389,33 @@ function BlueprintImage({
           </div>
         </div>
       )}
+      {!imageError && (
+        <div className="absolute top-3 left-3 z-20 rounded-lg bg-slate-900/92 border border-white/15 px-3 py-2 shadow-lg">
+          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Quick Status Key</div>
+          <div className="flex flex-wrap items-center gap-2 text-[11px]">
+            <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-emerald-100/90 text-emerald-900 font-semibold">
+              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: STATUS_FILL_COLORS.available }} />
+              AVL
+            </span>
+            <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-red-100/90 text-red-900 font-semibold">
+              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: STATUS_FILL_COLORS.occupied }} />
+              OCC
+            </span>
+            <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-amber-100/90 text-amber-900 font-semibold">
+              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: STATUS_FILL_COLORS.dirty }} />
+              DRT
+            </span>
+            <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-blue-100/90 text-blue-900 font-semibold">
+              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: STATUS_FILL_COLORS.reserved }} />
+              RSV
+            </span>
+            <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-slate-200/90 text-slate-900 font-semibold">
+              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: STATUS_FILL_COLORS.maintenance }} />
+              MNT
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -318,7 +429,7 @@ function KpiPanels({ metrics, statusFilter, onFilterChange }) {
           { label: 'Total Rooms', value: metrics.total },
           { label: 'Occupied', value: metrics.occupied, filterKey: 'occupied' },
           { label: 'Available', value: metrics.available, filterKey: 'available' },
-          { label: 'Utilization', value: `${metrics.utilizationPct ?? 0}%` },
+          { label: 'Occupancy Rate', value: `${metrics.occupancyRatePct ?? metrics.utilizationPct ?? 0}%` },
         ]}
         onMetricClick={onFilterChange}
         activeFilter={statusFilter}
@@ -328,8 +439,8 @@ function KpiPanels({ metrics, statusFilter, onFilterChange }) {
         metrics={[
           { label: 'Dirty', value: metrics.dirty, filterKey: 'dirty' },
           { label: 'Reserved', value: metrics.reserved, filterKey: 'reserved' },
-          { label: 'Predicted Avail', value: metrics.predictedAvailable, filterKey: 'predicted' },
-          { label: 'Avg Stay', value: formatAvgLOS(metrics.avgLOS) },
+          { label: 'Maintenance', value: metrics.maintenance ?? 0, filterKey: 'maintenance' },
+          { label: 'Turning Over Today', value: metrics.turningOverToday ?? 0 },
         ]}
         onMetricClick={onFilterChange}
         activeFilter={statusFilter}
@@ -339,8 +450,8 @@ function KpiPanels({ metrics, statusFilter, onFilterChange }) {
 }
 
 function MotelCommandCenter({
-  brandName = 'Motel Command Center',
-  brandSubtitle = 'Operations floor map',
+  brandName = 'Gateway Inn - Live Command Center',
+  brandSubtitle = 'Real-time operations floor map',
   brandIcon = '🏨',
   storagePrefix = 'motel-floormap',
   blueprintBaseName = 'motel-blueprint.png',
@@ -348,7 +459,7 @@ function MotelCommandCenter({
   defaultRoomOverlays = ROOM_OVERLAY_COORDINATES,
   defaultBlueprintWidth = BLUEPRINT_DEFAULT_WIDTH,
   defaultBlueprintHeight = BLUEPRINT_DEFAULT_HEIGHT,
-  showRoomNumbers = true,
+  showRoomNumbers = false,
   showStatusAbbrev = true,
   showStatusDot = true,
   roomFillOpacity = 0.5,
@@ -406,10 +517,12 @@ function MotelCommandCenter({
   const [roomSearch, setRoomSearch] = useState('')
   const [selectedTime, setSelectedTime] = useState(null)
   const [isTimelinePlaying, setIsTimelinePlaying] = useState(false)
+  const [dataSourceMode, setDataSourceMode] = useState('api')
   const [commandCenterMode, setCommandCenterMode] = useState(initialCommandCenterMode)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [liveTime, setLiveTime] = useState(() => new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false }))
   const importInputRef = useRef(null)
+  const innsoftInputRef = useRef(null)
   const containerRef = useRef(null)
   const fullscreenRef = useRef(null)
   const isDragging = useRef(false)
@@ -515,6 +628,20 @@ function MotelCommandCenter({
     })
   }, [roomOverlays, roomSearch])
 
+  const resolveOverlayRoomId = useCallback(
+    (roomNumber) => {
+      const target = canonicalRoomKey(roomNumber)
+      if (!target) return roomNumber
+      const match = roomOverlays.find((overlay) => {
+        const idKey = canonicalRoomKey(overlay.id)
+        const labelKey = canonicalRoomKey(getRoomDisplayLabel(overlay.id, overlay))
+        return target === idKey || target === labelKey
+      })
+      return match?.id || roomNumber
+    },
+    [roomOverlays]
+  )
+
   const handleRoomSearch = useCallback(() => {
     if (roomSearchMatches.length >= 1) zoomToRoom(roomSearchMatches[0].id)
     setRoomSearch('')
@@ -535,15 +662,23 @@ function MotelCommandCenter({
       const admitted_at_iso = isOccupied || isReserved ? checkInDate.toISOString() : null
       return {
         room: r.id,
+        roomNumber: r.id,
         status,
         guest_name: isOccupied ? pickGuestForRoom(r.id, i) : isReserved ? 'Incoming' : null,
+        guestName: isOccupied ? pickGuestForRoom(r.id, i) : isReserved ? 'Incoming' : null,
         check_in: checkIn,
+        checkIn: admitted_at_iso,
+        checkOut: null,
         admitted_at_iso,
+        priority: status === 'dirty' ? 'HIGH' : 'LOW',
+        priorityScore: status === 'dirty' ? 3 : 1,
+        updatedAt: new Date().toISOString(),
       }
     })
   }
 
   const fetchRoomStatus = useCallback(async () => {
+    if (dataSourceMode !== 'api') return
     try {
       setLoading(true)
       setError(null)
@@ -558,7 +693,14 @@ function MotelCommandCenter({
       } catch (_) {
         // Use fallback when API unavailable
       }
-      setRoomData(addMockPredictions(Array.isArray(rooms) ? rooms : []))
+      setRoomData(addMockPredictions(Array.isArray(rooms) ? rooms : []).map((r) => ({
+        ...r,
+        roomNumber: r.roomNumber || r.room,
+        guestName: r.guestName || r.guest_name || null,
+        checkIn: r.checkIn || r.check_in || null,
+        checkOut: r.checkOut || r.check_out || null,
+        updatedAt: r.updatedAt || new Date().toISOString(),
+      })))
       setLastUpdated(new Date())
     } catch {
       setRoomData(addMockPredictions(getFallbackRoomData(roomOverlays)))
@@ -566,17 +708,27 @@ function MotelCommandCenter({
     } finally {
       setLoading(false)
     }
-  }, [apiEndpoint, roomOverlays])
+  }, [apiEndpoint, roomOverlays, dataSourceMode])
 
   useEffect(() => {
+    if (dataSourceMode !== 'api') return undefined
     fetchRoomStatus()
     const interval = setInterval(fetchRoomStatus, 15000)
     return () => clearInterval(interval)
-  }, [fetchRoomStatus])
+  }, [fetchRoomStatus, dataSourceMode])
 
   const roomStatusMap = useMemo(() => {
     const map = {}
-    roomData.forEach((r) => { map[r.room] = r })
+    roomData.forEach((r) => {
+      const roomKey = r.room || r.roomNumber
+      const numberKey = r.roomNumber || r.room
+      if (roomKey) map[roomKey] = r
+      if (numberKey) map[numberKey] = r
+      const canonicalRoom = canonicalRoomKey(roomKey)
+      const canonicalNumber = canonicalRoomKey(numberKey)
+      if (canonicalRoom) map[canonicalRoom] = r
+      if (canonicalNumber) map[canonicalNumber] = r
+    })
     return map
   }, [roomData])
 
@@ -615,7 +767,11 @@ function MotelCommandCenter({
   const displayTime = selectedTime ?? timelineTimeOptions[0]
   const activeRoomId = selectedRoom ?? hoveredRoom
   const hoveredRoomData = activeRoomId
-    ? (roomStatusMapWithTimeline[activeRoomId] ?? { room: activeRoomId, status: '—', guest_name: null, check_in: null })
+    ? (
+      roomStatusMapWithTimeline[activeRoomId] ??
+      roomStatusMapWithTimeline[canonicalRoomKey(activeRoomId)] ??
+      { room: activeRoomId, status: '—', guest_name: null, check_in: null }
+    )
     : null
   const handleRoomHover = useCallback((roomId, entering, e) => {
     setHoveredRoom(entering ? roomId : null)
@@ -749,6 +905,7 @@ function MotelCommandCenter({
   }, [hideAlignmentMessage, hideAlignmentStorageKey])
 
   const handleLoadFloorMapClick = () => importInputRef.current?.click()
+  const handleLoadInnsoftClick = () => innsoftInputRef.current?.click()
   const handleLoadFloorMapFile = (e) => {
     const file = e.target?.files?.[0]
     if (!file) return
@@ -772,6 +929,43 @@ function MotelCommandCenter({
     }
     reader.readAsText(file)
     e.target.value = ''
+  }
+
+  const handleLoadInnsoftFile = async (e) => {
+    const file = e.target?.files?.[0]
+    if (!file) return
+    try {
+      setLoading(true)
+      const rows = await parseInnsoftFile(file)
+      const normalized = normalizeInnsoftRows(rows, { now: new Date() })
+      if (normalized.length === 0) {
+        alert('No valid rooms found in file. Please include a "Room Number" column.')
+      } else {
+        const mappedRows = normalized.map((row) => ({
+          ...row,
+          room: resolveOverlayRoomId(row.roomNumber),
+        }))
+        setDataSourceMode('innsoft')
+        setRoomData(addMockPredictions(mappedRows))
+        setLastUpdated(new Date())
+      }
+    } catch (err) {
+      alert(`Could not parse Innsoft file: ${err?.message || 'Unknown error'}`)
+    } finally {
+      setLoading(false)
+      if (e.target) e.target.value = ''
+    }
+  }
+
+  const handleLoadGatewayDemo = () => {
+    const normalized = normalizeInnsoftRows(gatewayInnDemoRows, { now: new Date() })
+    const mappedRows = normalized.map((row) => ({
+      ...row,
+      room: resolveOverlayRoomId(row.roomNumber),
+    }))
+    setDataSourceMode('demo')
+    setRoomData(addMockPredictions(mappedRows))
+    setLastUpdated(new Date())
   }
 
   return (
@@ -810,6 +1004,8 @@ function MotelCommandCenter({
             <div>
               <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">{brandName}</h1>
               <p className="text-sm text-slate-400 mt-0.5">{brandSubtitle}</p>
+              <p className="text-xs text-slate-500 mt-1">Data Source: Innsoft Export</p>
+              <p className="text-xs text-slate-500">Update Mode: Near Real-Time (CSV / Scheduled)</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -822,6 +1018,25 @@ function MotelCommandCenter({
             </Link>
             <button
               type="button"
+              onClick={handleLoadInnsoftClick}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-cyan-300/30 bg-cyan-900/20 hover:bg-cyan-900/30 text-sm font-semibold transition-colors"
+              title="Load Innsoft CSV or Excel export"
+            >
+              <span>🧾</span>
+              Upload Innsoft CSV/XLSX
+            </button>
+            <input ref={innsoftInputRef} type="file" accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" onChange={handleLoadInnsoftFile} className="hidden" />
+            <button
+              type="button"
+              onClick={handleLoadGatewayDemo}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-emerald-300/30 bg-emerald-900/20 hover:bg-emerald-900/30 text-sm font-semibold transition-colors"
+              title="Load demo data for Gateway Inn"
+            >
+              <span>✨</span>
+              Load Gateway Inn Demo
+            </button>
+            <button
+              type="button"
               onClick={handleLoadFloorMapClick}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-white/20 bg-slate-800 hover:bg-slate-700 text-sm font-semibold transition-colors"
               title="Load a FloorMap AI export (JSON)"
@@ -830,7 +1045,21 @@ function MotelCommandCenter({
               Load Floor Map
             </button>
             <input ref={importInputRef} type="file" accept=".json,application/json" onChange={handleLoadFloorMapFile} className="hidden" />
-            <button type="button" onClick={fetchRoomStatus} disabled={loading} className="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm font-semibold transition-colors disabled:opacity-50">{loading ? 'Refreshing…' : 'Refresh'}</button>
+            <button
+              type="button"
+              onClick={async () => {
+                if (dataSourceMode === 'api') {
+                  await fetchRoomStatus()
+                  return
+                }
+                setDataSourceMode('api')
+                await fetchRoomStatus()
+              }}
+              disabled={loading}
+              className="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm font-semibold transition-colors disabled:opacity-50"
+            >
+              {loading ? 'Refreshing…' : dataSourceMode === 'api' ? 'Refresh' : 'Switch to Live API'}
+            </button>
             <LiveStatus lastUpdated={lastUpdated} className="px-3 py-2 rounded-lg border border-white/10 bg-slate-800/80" />
             {isFullscreen ? (
               <button type="button" onClick={() => document.exitFullscreen?.().then(() => setIsFullscreen(false))} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-white/20 bg-slate-800 hover:bg-slate-700 text-sm font-semibold">✕ Exit full screen</button>
@@ -1029,19 +1258,9 @@ function MotelCommandCenter({
         </div>
 
         {!commandCenterMode && (
-        <div className="rounded-lg border border-white/10 bg-slate-800/40 px-4 py-3 flex flex-wrap items-center gap-x-6 gap-y-2">
-          <div className="flex items-center gap-x-4">
-            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Status</span>
-            <div className="flex items-center gap-x-3">
-              <span className="flex items-center gap-1.5 text-xs text-slate-400"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: STATUS_FILL_COLORS.available }} />Avail</span>
-              <span className="flex items-center gap-1.5 text-xs text-slate-400"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: STATUS_FILL_COLORS.occupied }} />Occ</span>
-              <span className="flex items-center gap-1.5 text-xs text-slate-400"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: STATUS_FILL_COLORS.dirty }} />Dirty</span>
-              <span className="flex items-center gap-1.5 text-xs text-slate-400"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: STATUS_FILL_COLORS.reserved }} />Res</span>
-              <span className="flex items-center gap-1.5 text-xs text-slate-400"><span className="w-2.5 h-2.5 rounded bg-emerald-500/80 shrink-0" />Pred</span>
-            </div>
+          <div className="rounded-lg border border-white/10 bg-slate-800/40 px-4 py-3">
+            <span className="text-[10px] text-slate-500">Scroll zoom • Drag pan</span>
           </div>
-          <span className="text-[10px] text-slate-500 ml-auto">Scroll zoom • Drag pan</span>
-        </div>
         )}
       </div>
     </div>

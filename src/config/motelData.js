@@ -15,6 +15,7 @@ export const ROOM_STATUS = {
   occupied: 'occupied',
   dirty: 'dirty',
   reserved: 'reserved',
+  maintenance: 'maintenance',
 }
 
 export const STATUS_LABELS = {
@@ -22,6 +23,7 @@ export const STATUS_LABELS = {
   [ROOM_STATUS.occupied]: 'Occupied',
   [ROOM_STATUS.dirty]: 'Dirty',
   [ROOM_STATUS.reserved]: 'Reserved / Check-in Pending',
+  [ROOM_STATUS.maintenance]: 'Maintenance',
 }
 
 /** Status → fill color for SVG blueprint rooms */
@@ -30,6 +32,7 @@ export const STATUS_FILL_COLORS = {
   [ROOM_STATUS.occupied]: '#E74C3C',
   [ROOM_STATUS.dirty]: '#F1C40F',
   [ROOM_STATUS.reserved]: '#3498DB',
+  [ROOM_STATUS.maintenance]: '#6B7280',
 }
 
 export const DEFAULT_ROOM_FILL = '#95A5A6'
@@ -91,16 +94,78 @@ export function isInfrastructureByLabel(label) {
 
 import { calculateAvgLOS } from '../utils/losPressure'
 
-/** Add mock predicted availability for rooms. */
+function isSameDay(a, b) {
+  if (!a || !b) return false
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  )
+}
+
+function toDate(value) {
+  if (!value) return null
+  const d = new Date(value)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+function estimateCleaningBufferMinutes(room) {
+  const typeText = `${room?.type || ''} ${room?.label || ''} ${room?.remarks || ''}`.toLowerCase()
+  const isSuite = typeText.includes('suite')
+  const isMaintenanceHeavy = typeText.includes('kitchen') || typeText.includes('family')
+  const checkIn = toDate(room.checkIn || room.check_in)
+  const checkOut = toDate(room.checkOut || room.check_out)
+  const nights = checkIn && checkOut
+    ? Math.max(0, Math.round((checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60 * 24)))
+    : 0
+
+  let buffer = isSuite ? 55 : 35
+  if (isMaintenanceHeavy) buffer += 8
+  if (nights >= 7) buffer += 12
+  else if (nights >= 4) buffer += 6
+  return buffer
+}
+
+function estimatePredictedMinutes(room, now = new Date()) {
+  const status = room.status
+  if (status !== 'occupied' && status !== 'dirty') return null
+
+  const checkOut = toDate(room.checkOut || room.check_out)
+  const updatedAt = toDate(room.updatedAt)
+  const cleaningBuffer = estimateCleaningBufferMinutes(room)
+  const estimatedCleaningMins = status === 'dirty' ? cleaningBuffer : cleaningBuffer + 10
+
+  // Dirty room: estimate remaining clean time by how long it has already been pending.
+  if (status === 'dirty') {
+    if (updatedAt) {
+      const elapsed = Math.max(0, Math.round((now.getTime() - updatedAt.getTime()) / 60000))
+      return Math.max(10, estimatedCleaningMins - elapsed)
+    }
+    return estimatedCleaningMins
+  }
+
+  // Occupied room with checkout: availability = time to checkout + cleaning.
+  if (checkOut) {
+    let minsToCheckout = Math.round((checkOut.getTime() - now.getTime()) / 60000)
+    if (minsToCheckout < 0) {
+      // If checkout is recorded as today (date-only feeds), treat it as imminently turning over.
+      minsToCheckout = isSameDay(checkOut, now) ? 15 : 0
+    }
+    return Math.max(20, minsToCheckout + estimatedCleaningMins)
+  }
+
+  // Occupied without checkout is uncertain; provide conservative placeholder.
+  return 180
+}
+
+/** Add predicted availability based on operational timing. */
 export function addMockPredictions(rooms) {
   if (!Array.isArray(rooms)) return rooms || []
-  const predMap = {}
-  const fallback = [45, 20, 90, 30, 60, 15, 25, 120, 35, 50]
-  return rooms.map((r, i) => {
-    const canPredict = r.status === 'occupied' || r.status === 'dirty'
-    const mins = canPredict ? (predMap[r.room] ?? fallback[i % fallback.length]) : null
+  const now = new Date()
+  return rooms.map((r) => {
     if (r.predictedInMinutes != null || r.predicted_in_minutes != null) return r
-    if (mins != null && canPredict) return { ...r, predictedInMinutes: mins }
+    const mins = estimatePredictedMinutes(r, now)
+    if (mins != null) return { ...r, predictedInMinutes: mins }
     return r
   })
 }
@@ -126,10 +191,20 @@ export function computeRoomMetrics(rooms, opts = {}) {
   const available = list.filter((r) => r.status === 'available').length
   const dirty = list.filter((r) => r.status === 'dirty').length
   const reserved = list.filter((r) => r.status === 'reserved').length
+  const maintenance = list.filter((r) => r.status === 'maintenance').length
   const total = list.length
   const utilizationPct = total > 0 ? Math.round((occupied / total) * 100) : 0
   const avgLOS = calculateAvgLOS(list)
   const predictedAvailable = list.filter((r) => r.predictedInMinutes != null || r.predicted_in_minutes != null).length
+  const today = new Date()
+  const turningOverToday = list.filter((r) => {
+    if (!r.check_out) return false
+    const d = new Date(r.check_out)
+    return !Number.isNaN(d.getTime()) &&
+      d.getFullYear() === today.getFullYear() &&
+      d.getMonth() === today.getMonth() &&
+      d.getDate() === today.getDate()
+  }).length
 
   return {
     total,
@@ -137,8 +212,11 @@ export function computeRoomMetrics(rooms, opts = {}) {
     available,
     dirty,
     reserved,
+    maintenance,
     utilizationPct,
     avgLOS,
     predictedAvailable,
+    turningOverToday,
+    occupancyRatePct: utilizationPct,
   }
 }
