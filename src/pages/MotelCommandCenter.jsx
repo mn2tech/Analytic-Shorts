@@ -14,8 +14,8 @@ import {
   INFRASTRUCTURE_ROOM_IDS,
   NON_GUEST_ROOM_TYPES,
   isInfrastructureByLabel,
-  computeRoomMetrics,
-  addMockPredictions,
+  computeRoomMetrics as defaultComputeRoomMetrics,
+  addMockPredictions as defaultAddMockPredictions,
   assignUnitFromPosition,
 } from '../config/motelData'
 import { getRoomDisplayLabel } from '../config/motelRoomDisplayLabels'
@@ -28,6 +28,8 @@ import MotelOperationalAlerts from '../components/MotelOperationalAlerts'
 import MotelRotatingMetricsPanel from '../components/MotelRotatingMetricsPanel'
 import { normalizeInnsoftRows, parseInnsoftFile } from '../utils/innsoftIngestion'
 import { gatewayInnDemoRows } from '../data/gatewayInnDemoDataset'
+import { supabase } from '../lib/supabase'
+import { useNotification } from '../contexts/NotificationContext'
 
 const STATUS_COLORS = ['#2ECC71', '#E74C3C', '#F1C40F', '#3498DB']
 const STATUS_VISUALS = {
@@ -84,6 +86,295 @@ function canonicalRoomKey(value) {
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '')
+}
+
+function toDateInputValue(value = new Date()) {
+  const d = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(d.getTime())) return ''
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function dateDiffNights(checkInDate, checkOutDate) {
+  if (!checkInDate || !checkOutDate) return 0
+  const inDate = new Date(`${checkInDate}T12:00:00`)
+  const outDate = new Date(`${checkOutDate}T12:00:00`)
+  const diffMs = outDate.getTime() - inDate.getTime()
+  if (Number.isNaN(diffMs) || diffMs <= 0) return 0
+  return Math.round(diffMs / (1000 * 60 * 60 * 24))
+}
+
+function NewReservationPanel({ isOpen, roomOverlay, roomData, onClose, onSave }) {
+  const [formValues, setFormValues] = useState(() => ({
+    firstName: '',
+    lastName: '',
+    email: '',
+    phone: '',
+    idType: 'Passport',
+    idNumber: '',
+    checkInDate: toDateInputValue(new Date()),
+    checkOutDate: '',
+    adults: 1,
+    children: 0,
+    ratePerNight: roomData?.rate_per_night ?? roomData?.ratePerNight ?? 0,
+    depositCollected: 0,
+    paymentMethod: 'Cash',
+    source: 'Walk-in',
+    specialRequests: '',
+  }))
+  const [errors, setErrors] = useState({})
+  const [isSaving, setIsSaving] = useState(false)
+
+  useEffect(() => {
+    if (!isOpen) return
+    setFormValues({
+      firstName: '',
+      lastName: '',
+      email: '',
+      phone: '',
+      idType: 'Passport',
+      idNumber: '',
+      checkInDate: toDateInputValue(new Date()),
+      checkOutDate: '',
+      adults: 1,
+      children: 0,
+      ratePerNight: roomData?.rate_per_night ?? roomData?.ratePerNight ?? 0,
+      depositCollected: 0,
+      paymentMethod: 'Cash',
+      source: 'Walk-in',
+      specialRequests: '',
+    })
+    setErrors({})
+    setIsSaving(false)
+  }, [isOpen, roomData?.rate_per_night, roomData?.ratePerNight, roomOverlay?.id])
+
+  const nights = useMemo(
+    () => dateDiffNights(formValues.checkInDate, formValues.checkOutDate),
+    [formValues.checkInDate, formValues.checkOutDate]
+  )
+  const totalAmount = useMemo(() => {
+    const rate = Number(formValues.ratePerNight) || 0
+    return nights * rate
+  }, [formValues.ratePerNight, nights])
+  const balanceDue = useMemo(() => {
+    const deposit = Number(formValues.depositCollected) || 0
+    return Math.max(0, totalAmount - deposit)
+  }, [formValues.depositCollected, totalAmount])
+
+  const roomTypeLabel = roomOverlay?.label || roomOverlay?.type || roomData?.room_type || 'Room'
+  const roomDisplay = roomOverlay ? getRoomDisplayLabel(roomOverlay.id, roomOverlay) : roomData?.room || '—'
+
+  const updateValue = (field, value) => {
+    setFormValues((prev) => ({ ...prev, [field]: value }))
+    setErrors((prev) => ({ ...prev, [field]: undefined, form: undefined }))
+  }
+
+  const validate = () => {
+    const nextErrors = {}
+    if (!String(formValues.firstName || '').trim()) nextErrors.firstName = 'First name is required.'
+    if (!String(formValues.lastName || '').trim()) nextErrors.lastName = 'Last name is required.'
+    if (!String(formValues.email || '').trim()) nextErrors.email = 'Email is required.'
+    if (!String(formValues.phone || '').trim()) nextErrors.phone = 'Phone is required.'
+    if (!formValues.checkInDate) nextErrors.checkInDate = 'Check-in date is required.'
+    if (!formValues.checkOutDate) nextErrors.checkOutDate = 'Check-out date is required.'
+    if (formValues.checkInDate && formValues.checkOutDate && nights <= 0) {
+      nextErrors.checkOutDate = 'Check-out must be after check-in.'
+    }
+    if ((Number(formValues.ratePerNight) || 0) < 0) nextErrors.ratePerNight = 'Rate cannot be negative.'
+    if ((Number(formValues.depositCollected) || 0) < 0) nextErrors.depositCollected = 'Deposit cannot be negative.'
+    setErrors(nextErrors)
+    return Object.keys(nextErrors).length === 0
+  }
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    if (!validate()) return
+    setIsSaving(true)
+    try {
+      await onSave({
+        ...formValues,
+        nights,
+        totalAmount,
+        balanceDue,
+      })
+    } catch (err) {
+      setErrors((prev) => ({
+        ...prev,
+        form: err?.message || 'Unable to save reservation.',
+      }))
+      setIsSaving(false)
+      return
+    }
+    setIsSaving(false)
+  }
+
+  const sectionLabelClass = 'text-xs font-semibold tracking-wide uppercase text-slate-400'
+  const inputClass = 'w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/70'
+  const labelClass = 'text-xs text-slate-400'
+  const required = <span className="text-red-500 ml-0.5">*</span>
+
+  return (
+    <>
+      <div
+        className={`fixed inset-0 z-40 bg-slate-950/65 transition-opacity duration-300 ${isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
+        onClick={onClose}
+      />
+      <aside
+        className={`fixed top-0 right-0 z-50 h-full w-full max-w-xl bg-slate-900 border-l border-white/10 shadow-2xl transform transition-transform duration-300 ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}
+        aria-hidden={!isOpen}
+      >
+        <form className="h-full flex flex-col" onSubmit={handleSubmit}>
+          <div className="px-5 py-4 border-b border-white/10 bg-slate-900/95">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-semibold text-white">New Reservation</h2>
+                <p className="text-sm text-slate-300 mt-1">
+                  Room {roomDisplay} — {roomTypeLabel}
+                </p>
+              </div>
+              <button type="button" onClick={onClose} className="text-slate-400 hover:text-white text-xl leading-none">
+                ×
+              </button>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-5 py-4 space-y-6">
+            <section className="space-y-3">
+              <h3 className={sectionLabelClass}>Guest Information</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className={labelClass}>First Name{required}</label>
+                  <input className={inputClass} value={formValues.firstName} onChange={(e) => updateValue('firstName', e.target.value)} />
+                  {errors.firstName && <p className="mt-1 text-xs text-red-400">{errors.firstName}</p>}
+                </div>
+                <div>
+                  <label className={labelClass}>Last Name{required}</label>
+                  <input className={inputClass} value={formValues.lastName} onChange={(e) => updateValue('lastName', e.target.value)} />
+                  {errors.lastName && <p className="mt-1 text-xs text-red-400">{errors.lastName}</p>}
+                </div>
+                <div>
+                  <label className={labelClass}>Email{required}</label>
+                  <input className={inputClass} type="email" value={formValues.email} onChange={(e) => updateValue('email', e.target.value)} />
+                  {errors.email && <p className="mt-1 text-xs text-red-400">{errors.email}</p>}
+                </div>
+                <div>
+                  <label className={labelClass}>Phone{required}</label>
+                  <input className={inputClass} value={formValues.phone} onChange={(e) => updateValue('phone', e.target.value)} />
+                  {errors.phone && <p className="mt-1 text-xs text-red-400">{errors.phone}</p>}
+                </div>
+                <div>
+                  <label className={labelClass}>ID Type</label>
+                  <select className={inputClass} value={formValues.idType} onChange={(e) => updateValue('idType', e.target.value)}>
+                    <option>Passport</option>
+                    <option>Driver&apos;s License</option>
+                    <option>Other</option>
+                  </select>
+                </div>
+                <div>
+                  <label className={labelClass}>ID Number</label>
+                  <input className={inputClass} value={formValues.idNumber} onChange={(e) => updateValue('idNumber', e.target.value)} />
+                </div>
+              </div>
+            </section>
+
+            <section className="space-y-3">
+              <h3 className={sectionLabelClass}>Booking Details</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className={labelClass}>Check-in Date{required}</label>
+                  <input className={inputClass} type="date" value={formValues.checkInDate} onChange={(e) => updateValue('checkInDate', e.target.value)} />
+                  {errors.checkInDate && <p className="mt-1 text-xs text-red-400">{errors.checkInDate}</p>}
+                </div>
+                <div>
+                  <label className={labelClass}>Check-out Date{required}</label>
+                  <input className={inputClass} type="date" value={formValues.checkOutDate} onChange={(e) => updateValue('checkOutDate', e.target.value)} />
+                  {errors.checkOutDate && <p className="mt-1 text-xs text-red-400">{errors.checkOutDate}</p>}
+                </div>
+                <div>
+                  <label className={labelClass}>Number of nights</label>
+                  <input className={inputClass} value={nights} readOnly />
+                </div>
+                <div>
+                  <label className={labelClass}>Adults</label>
+                  <input className={inputClass} type="number" min="1" value={formValues.adults} onChange={(e) => updateValue('adults', Number(e.target.value))} />
+                </div>
+                <div>
+                  <label className={labelClass}>Children</label>
+                  <input className={inputClass} type="number" min="0" value={formValues.children} onChange={(e) => updateValue('children', Number(e.target.value))} />
+                </div>
+                <div>
+                  <label className={labelClass}>Rate per night</label>
+                  <input className={inputClass} type="number" min="0" step="0.01" value={formValues.ratePerNight} onChange={(e) => updateValue('ratePerNight', e.target.value)} />
+                  {errors.ratePerNight && <p className="mt-1 text-xs text-red-400">{errors.ratePerNight}</p>}
+                </div>
+                <div className="sm:col-span-2">
+                  <label className={labelClass}>Total Amount</label>
+                  <input className={inputClass} value={totalAmount.toFixed(2)} readOnly />
+                </div>
+              </div>
+            </section>
+
+            <section className="space-y-3">
+              <h3 className={sectionLabelClass}>Payment</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className={labelClass}>Deposit Collected</label>
+                  <input className={inputClass} type="number" min="0" step="0.01" value={formValues.depositCollected} onChange={(e) => updateValue('depositCollected', e.target.value)} />
+                  {errors.depositCollected && <p className="mt-1 text-xs text-red-400">{errors.depositCollected}</p>}
+                </div>
+                <div>
+                  <label className={labelClass}>Payment Method</label>
+                  <select className={inputClass} value={formValues.paymentMethod} onChange={(e) => updateValue('paymentMethod', e.target.value)}>
+                    <option>Cash</option>
+                    <option>Credit Card</option>
+                    <option>Debit Card</option>
+                    <option>Online</option>
+                  </select>
+                </div>
+                <div className="sm:col-span-2">
+                  <label className={labelClass}>Balance Due</label>
+                  <input className={inputClass} value={balanceDue.toFixed(2)} readOnly />
+                </div>
+              </div>
+            </section>
+
+            <section className="space-y-3">
+              <h3 className={sectionLabelClass}>Extras</h3>
+              <div className="grid grid-cols-1 gap-3">
+                <div>
+                  <label className={labelClass}>Booking Source</label>
+                  <select className={inputClass} value={formValues.source} onChange={(e) => updateValue('source', e.target.value)}>
+                    <option>Walk-in</option>
+                    <option>Phone</option>
+                    <option>Booking.com</option>
+                    <option>Expedia</option>
+                    <option>Airbnb</option>
+                    <option>Website</option>
+                  </select>
+                </div>
+                <div>
+                  <label className={labelClass}>Special Requests</label>
+                  <textarea className={`${inputClass} min-h-[100px]`} value={formValues.specialRequests} onChange={(e) => updateValue('specialRequests', e.target.value)} />
+                </div>
+              </div>
+            </section>
+            {errors.form && <p className="text-sm text-red-400">{errors.form}</p>}
+          </div>
+
+          <div className="px-5 py-4 border-t border-white/10 flex items-center justify-end gap-3">
+            <button type="button" onClick={onClose} className="px-4 py-2 rounded-md border border-white/20 bg-slate-800 text-slate-200 hover:bg-slate-700">
+              Cancel
+            </button>
+            <button type="submit" disabled={isSaving} className="px-4 py-2 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white font-semibold disabled:opacity-60">
+              {isSaving ? 'Saving...' : 'Save Reservation'}
+            </button>
+          </div>
+        </form>
+      </aside>
+    </>
+  )
 }
 
 function RoomTooltip({ roomData, tooltipPos, unit, roomOverlays = [] }) {
@@ -157,6 +448,7 @@ function BlueprintImage({
   showStatusAbbrev = true,
   showStatusDot = true,
   roomFillOpacity = 0.5,
+  isInfrastructureCheck,
 }) {
   const [imageError, setImageError] = useState(false)
   const [pathIndex, setPathIndex] = useState(0)
@@ -219,10 +511,11 @@ function BlueprintImage({
           style={{ objectFit: 'contain' }}
         >
           {roomOverlays.map((r, idx) => {
-            const isInfrastructure =
-              INFRASTRUCTURE_ROOM_IDS.has(r.id) ||
-              NON_GUEST_ROOM_TYPES.has((r.type || '').toLowerCase()) ||
-              isInfrastructureByLabel(r.label)
+            const isInfrastructure = isInfrastructureCheck
+              ? isInfrastructureCheck(r)
+              : INFRASTRUCTURE_ROOM_IDS.has(r.id) ||
+                NON_GUEST_ROOM_TYPES.has((r.type || '').toLowerCase()) ||
+                isInfrastructureByLabel(r.label)
             const roomData = roomStatusMap[r.id]
             const status = roomData?.status ?? ['available', 'occupied', 'dirty', 'reserved'][idx % 4]
             const fill = isInfrastructure
@@ -467,7 +760,25 @@ function MotelCommandCenter({
   timelineHistory = roomStatusHistory,
   timelineTimeOptions = timelineTimes,
   SidePanelComponent = MotelOperationalAlerts,
+  isInfrastructureOverlayFn = null,
+  computeRoomMetricsFn = null,
+  addMockPredictionsFn = null,
 }) {
+  const addMock = addMockPredictionsFn ?? defaultAddMockPredictions
+  const computeMetrics = computeRoomMetricsFn ?? defaultComputeRoomMetrics
+
+  const checkInfrastructureOverlay = useCallback(
+    (overlay) => {
+      if (isInfrastructureOverlayFn) return isInfrastructureOverlayFn(overlay)
+      return (
+        INFRASTRUCTURE_ROOM_IDS.has(overlay.id) ||
+        NON_GUEST_ROOM_TYPES.has((overlay.type || '').toLowerCase()) ||
+        isInfrastructureByLabel(overlay.label)
+      )
+    },
+    [isInfrastructureOverlayFn]
+  )
+
   const overlaysStorageKey = `${storagePrefix}-overlays`
   const dimensionsStorageKey = `${storagePrefix}-dimensions`
   const manualDimensionsStorageKey = `${storagePrefix}-manual-dimensions`
@@ -521,12 +832,14 @@ function MotelCommandCenter({
   const [commandCenterMode, setCommandCenterMode] = useState(initialCommandCenterMode)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [liveTime, setLiveTime] = useState(() => new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false }))
+  const [reservationPanelRoomId, setReservationPanelRoomId] = useState(null)
   const importInputRef = useRef(null)
   const innsoftInputRef = useRef(null)
   const containerRef = useRef(null)
   const fullscreenRef = useRef(null)
   const isDragging = useRef(false)
   const lastPan = useRef({ x: 0, y: 0 })
+  const { notify } = useNotification()
 
   const roomOverlays = useMemo(() => customOverlays ?? defaultRoomOverlays, [customOverlays, defaultRoomOverlays])
 
@@ -650,7 +963,7 @@ function MotelCommandCenter({
   function getFallbackRoomData(overlays) {
     const statuses = ['available', 'occupied', 'dirty', 'reserved']
     return overlays.map((r, i) => {
-      if (INFRASTRUCTURE_ROOM_IDS.has(r.id) || NON_GUEST_ROOM_TYPES.has((r.type || '').toLowerCase()) || isInfrastructureByLabel(r.label)) {
+      if (checkInfrastructureOverlay(r)) {
         return { room: r.id, status: 'available', guest_name: null, check_in: null }
       }
       const status = statuses[i % 4]
@@ -693,7 +1006,7 @@ function MotelCommandCenter({
       } catch (_) {
         // Use fallback when API unavailable
       }
-      setRoomData(addMockPredictions(Array.isArray(rooms) ? rooms : []).map((r) => ({
+      setRoomData(addMock(Array.isArray(rooms) ? rooms : []).map((r) => ({
         ...r,
         roomNumber: r.roomNumber || r.room,
         guestName: r.guestName || r.guest_name || null,
@@ -703,12 +1016,12 @@ function MotelCommandCenter({
       })))
       setLastUpdated(new Date())
     } catch {
-      setRoomData(addMockPredictions(getFallbackRoomData(roomOverlays)))
+      setRoomData(addMock(getFallbackRoomData(roomOverlays)))
       setLastUpdated(new Date())
     } finally {
       setLoading(false)
     }
-  }, [apiEndpoint, roomOverlays, dataSourceMode])
+  }, [apiEndpoint, roomOverlays, dataSourceMode, addMock, checkInfrastructureOverlay])
 
   useEffect(() => {
     if (dataSourceMode !== 'api') return undefined
@@ -745,6 +1058,17 @@ function MotelCommandCenter({
     }
     return merged
   }, [roomStatusMap, selectedTime, timelineHistory, timelineTimeOptions])
+  const reservationRoomOverlay = useMemo(
+    () => roomOverlays.find((room) => room.id === reservationPanelRoomId) || null,
+    [roomOverlays, reservationPanelRoomId]
+  )
+  const reservationRoomData = reservationPanelRoomId
+    ? (
+      roomStatusMap[reservationPanelRoomId] ??
+      roomStatusMap[canonicalRoomKey(reservationPanelRoomId)] ??
+      null
+    )
+    : null
 
   const roomsForMetrics = useMemo(() => {
     if (!selectedTime) return roomData
@@ -760,8 +1084,8 @@ function MotelCommandCenter({
   )
 
   const metrics = useMemo(
-    () => computeRoomMetrics(roomsForMetrics, { roomIdToUnit }),
-    [roomsForMetrics, roomIdToUnit]
+    () => computeMetrics(roomsForMetrics, { roomIdToUnit }),
+    [roomsForMetrics, roomIdToUnit, computeMetrics]
   )
 
   const displayTime = selectedTime ?? timelineTimeOptions[0]
@@ -781,7 +1105,105 @@ function MotelCommandCenter({
   const handleRoomClick = useCallback((roomId, e) => {
     setSelectedRoom(roomId)
     if (e) setTooltipPos({ x: e.clientX, y: e.clientY })
-  }, [])
+    const clickedRoom = roomStatusMap[roomId] ?? roomStatusMap[canonicalRoomKey(roomId)]
+    const overlay = roomOverlays.find((r) => r.id === roomId)
+    if (!clickedRoom || !overlay) return
+    if (checkInfrastructureOverlay(overlay)) return
+    if (clickedRoom.status === 'available') {
+      setReservationPanelRoomId(roomId)
+    }
+  }, [checkInfrastructureOverlay, roomOverlays, roomStatusMap])
+
+  const handleSaveReservation = useCallback(async (values) => {
+    if (!reservationPanelRoomId) throw new Error('No room selected.')
+    const roomNumber = getRoomDisplayLabel(reservationPanelRoomId, reservationRoomOverlay)
+    const cleanEmail = String(values.email || '').trim().toLowerCase()
+    const cleanFirstName = String(values.firstName || '').trim()
+    const cleanLastName = String(values.lastName || '').trim()
+    const cleanPhone = String(values.phone || '').trim()
+    const cleanIdNumber = String(values.idNumber || '').trim() || null
+    const cleanSpecialRequests = String(values.specialRequests || '').trim() || null
+
+    const { data: existingGuest, error: guestLookupError } = await supabase
+      .from('guests')
+      .select('id')
+      .eq('email', cleanEmail)
+      .maybeSingle()
+    if (guestLookupError) throw guestLookupError
+
+    let guestId = existingGuest?.id
+    if (!guestId) {
+      const { data: createdGuest, error: createGuestError } = await supabase
+        .from('guests')
+        .insert({
+          first_name: cleanFirstName,
+          last_name: cleanLastName,
+          email: cleanEmail,
+          phone: cleanPhone,
+          id_type: values.idType,
+          id_number: cleanIdNumber,
+        })
+        .select('id')
+        .single()
+      if (createGuestError) throw createGuestError
+      guestId = createdGuest.id
+    }
+
+    const { data: roomRecord, error: roomLookupError } = await supabase
+      .from('rooms')
+      .select('id')
+      .eq('room_number', String(roomNumber))
+      .single()
+    if (roomLookupError) throw roomLookupError
+
+    const reservationPayload = {
+      room_id: roomRecord.id,
+      guest_id: guestId,
+      check_in_date: values.checkInDate,
+      check_out_date: values.checkOutDate,
+      status: 'reserved',
+      rate_per_night: Number(values.ratePerNight) || 0,
+      total_amount: values.totalAmount,
+      paid_amount: Number(values.depositCollected) || 0,
+      balance_due: values.balanceDue,
+      source: values.source,
+      special_requests: cleanSpecialRequests,
+      adults: Number(values.adults) || 1,
+      children: Number(values.children) || 0,
+      payment_method: values.paymentMethod,
+    }
+
+    const { error: createReservationError } = await supabase
+      .from('reservations')
+      .insert(reservationPayload)
+    if (createReservationError) throw createReservationError
+
+    const { error: updateRoomError } = await supabase
+      .from('rooms')
+      .update({ status: 'reserved' })
+      .eq('id', roomRecord.id)
+    if (updateRoomError) throw updateRoomError
+
+    const guestName = `${cleanFirstName} ${cleanLastName}`.trim()
+    setRoomData((prev) => prev.map((room) => {
+      if (room.room === reservationPanelRoomId || room.roomNumber === reservationPanelRoomId) {
+        return {
+          ...room,
+          status: 'reserved',
+          guest_name: guestName,
+          guestName,
+          check_in: values.checkInDate,
+          checkIn: values.checkInDate,
+          check_out: values.checkOutDate,
+          checkOut: values.checkOutDate,
+          rate_per_night: Number(values.ratePerNight) || 0,
+        }
+      }
+      return room
+    }))
+    setReservationPanelRoomId(null)
+    notify(`Reservation created for ${guestName}!`, 'success')
+  }, [notify, reservationPanelRoomId, reservationRoomOverlay])
 
   const handleWheel = useCallback((e) => {
     if (!containerRef.current) return
@@ -946,7 +1368,7 @@ function MotelCommandCenter({
           room: resolveOverlayRoomId(row.roomNumber),
         }))
         setDataSourceMode('innsoft')
-        setRoomData(addMockPredictions(mappedRows))
+        setRoomData(addMock(mappedRows))
         setLastUpdated(new Date())
       }
     } catch (err) {
@@ -964,7 +1386,7 @@ function MotelCommandCenter({
       room: resolveOverlayRoomId(row.roomNumber),
     }))
     setDataSourceMode('demo')
-    setRoomData(addMockPredictions(mappedRows))
+    setRoomData(addMock(mappedRows))
     setLastUpdated(new Date())
   }
 
@@ -1203,6 +1625,7 @@ function MotelCommandCenter({
                   showStatusAbbrev={showStatusAbbrev}
                   showStatusDot={showStatusDot}
                   roomFillOpacity={roomFillOpacity}
+                  isInfrastructureCheck={checkInfrastructureOverlay}
                 />
               </div>
             )}
@@ -1263,6 +1686,13 @@ function MotelCommandCenter({
           </div>
         )}
       </div>
+      <NewReservationPanel
+        isOpen={!!reservationPanelRoomId}
+        roomOverlay={reservationRoomOverlay}
+        roomData={reservationRoomData}
+        onClose={() => setReservationPanelRoomId(null)}
+        onSave={handleSaveReservation}
+      />
     </div>
   )
 }
