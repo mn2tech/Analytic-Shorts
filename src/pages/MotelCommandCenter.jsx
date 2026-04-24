@@ -9,8 +9,6 @@ import {
   BLUEPRINT_OVERLAY_VIEWBOX,
   BLUEPRINT_DEFAULT_WIDTH,
   BLUEPRINT_DEFAULT_HEIGHT,
-  STATUS_LABELS,
-  STATUS_FILL_COLORS,
   INFRASTRUCTURE_ROOM_IDS,
   NON_GUEST_ROOM_TYPES,
   isInfrastructureByLabel,
@@ -19,7 +17,6 @@ import {
   assignUnitFromPosition,
 } from '../config/motelData'
 import { getRoomDisplayLabel } from '../config/motelRoomDisplayLabels'
-import { calculateLOS } from '../utils/losPressure'
 import { roomStatusHistory, timelineTimes } from '../data/motelRoomStatusHistory'
 import LiveStatus from '../components/LiveStatus'
 import KpiGroupCard from '../components/KpiGroupCard'
@@ -31,23 +28,33 @@ import { gatewayInnDemoRows } from '../data/gatewayInnDemoDataset'
 import { supabase } from '../lib/supabase'
 import { useNotification } from '../contexts/NotificationContext'
 
-const STATUS_COLORS = ['#2ECC71', '#E74C3C', '#F1C40F', '#3498DB']
+const STATUS_COLORS = ['#22c55e', '#ef4444', '#eab308', '#3b82f6']
+const MAP_STATUS_FILL_COLORS = {
+  available: '#22c55e',
+  occupied: '#ef4444',
+  checked_in: '#ef4444',
+  reserved: '#3b82f6',
+  dirty: '#eab308',
+  maintenance: '#6b7280',
+  unavailable: '#6b7280',
+}
+const DISPLAY_STATUS_LABELS = {
+  available: 'Available',
+  occupied: 'Occupied',
+  checked_in: 'Checked In',
+  reserved: 'Reserved',
+  dirty: 'Dirty',
+  maintenance: 'Maintenance',
+  unavailable: 'Unavailable',
+}
 const STATUS_VISUALS = {
   available: { label: 'AVL', icon: 'OK', textColor: '#052E16', badgeBg: 'rgba(220, 252, 231, 0.95)' },
   occupied: { label: 'OCC', icon: 'BED', textColor: '#7F1D1D', badgeBg: 'rgba(254, 226, 226, 0.95)' },
+  checked_in: { label: 'OCC', icon: 'BED', textColor: '#7F1D1D', badgeBg: 'rgba(254, 226, 226, 0.95)' },
   dirty: { label: 'DRT', icon: 'CLN', textColor: '#713F12', badgeBg: 'rgba(254, 243, 199, 0.95)' },
   reserved: { label: 'RSV', icon: 'IN', textColor: '#1E3A8A', badgeBg: 'rgba(219, 234, 254, 0.95)' },
   maintenance: { label: 'MNT', icon: 'FIX', textColor: '#111827', badgeBg: 'rgba(229, 231, 235, 0.95)' },
-}
-const MOCK_GUESTS = [
-  'J. Smith', 'M. Johnson', 'R. Williams', 'A. Brown', 'K. Davis', 'T. Miller',
-  'S. Wilson', 'L. Moore', 'P. Taylor', 'C. Anderson', 'J. Thomas', 'D. Jackson',
-]
-
-function pickGuestForRoom(roomId, i) {
-  const numericRoom = Number.parseInt(String(roomId || '').replace(/\D/g, ''), 10)
-  const roomSeed = Number.isFinite(numericRoom) ? numericRoom : String(roomId || '').length
-  return MOCK_GUESTS[(roomSeed + i) % MOCK_GUESTS.length]
+  unavailable: { label: 'UNA', icon: 'N/A', textColor: '#111827', badgeBg: 'rgba(229, 231, 235, 0.95)' },
 }
 
 function roomsToOverlays(rooms, imageHeight = 1024) {
@@ -86,6 +93,13 @@ function canonicalRoomKey(value) {
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '')
+}
+
+function formatDateDisplay(value) {
+  if (!value) return '—'
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return String(value)
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 function toDateInputValue(value = new Date()) {
@@ -379,13 +393,9 @@ function NewReservationPanel({ isOpen, roomOverlay, roomData, onClose, onSave })
 
 function RoomTooltip({ roomData, tooltipPos, unit, roomOverlays = [] }) {
   if (!roomData) return null
-  const statusLabel = STATUS_LABELS[roomData.status] || roomData.status
+  const statusLabel = DISPLAY_STATUS_LABELS[roomData.status] || roomData.status
   const x = tooltipPos?.x ?? 0
   const y = tooltipPos?.y ?? 0
-  const admitted = roomData.admitted_at_iso ?? roomData.patient?.admitted_at
-  const los = calculateLOS(admitted)
-  const losLabel = los?.losLabel ?? null
-  const predMins = roomData.predictedInMinutes ?? roomData.predicted_in_minutes
   return (
     <div
       className="fixed z-50 pointer-events-none min-w-[200px] max-w-[280px] rounded-lg shadow-2xl overflow-hidden border border-white/20 bg-slate-900/95 backdrop-blur-sm text-white"
@@ -397,8 +407,12 @@ function RoomTooltip({ roomData, tooltipPos, unit, roomOverlays = [] }) {
       </div>
       <div className="p-4 space-y-2 text-sm">
         <div className="flex justify-between gap-4">
+          <span className="text-slate-400">Type</span>
+          <span className="font-medium text-right">{roomData.room_type || '—'}</span>
+        </div>
+        <div className="flex justify-between gap-4">
           <span className="text-slate-400">Guest</span>
-          <span className="font-medium text-right">{roomData.guest_name || roomData.patient_name || '—'}</span>
+          <span className="font-medium text-right">{roomData.guestName || roomData.guest_name || '—'}</span>
         </div>
         <div className="flex justify-between gap-4">
           <span className="text-slate-400">Status</span>
@@ -406,28 +420,8 @@ function RoomTooltip({ roomData, tooltipPos, unit, roomOverlays = [] }) {
         </div>
         <div className="flex justify-between gap-4">
           <span className="text-slate-400">Check-in</span>
-          <span className="font-medium text-right">{roomData.check_in || roomData.admitted_at || '—'}</span>
+          <span className="font-medium text-right">{formatDateDisplay(roomData.checkIn || roomData.check_in)}</span>
         </div>
-        <div className="flex justify-between gap-4">
-          <span className="text-slate-400">Check-out</span>
-          <span className="font-medium text-right">{roomData.checkOut || roomData.check_out || '—'}</span>
-        </div>
-        <div className="flex justify-between gap-4">
-          <span className="text-slate-400">Priority</span>
-          <span className="font-semibold text-right">{roomData.priority || 'LOW'}</span>
-        </div>
-        {losLabel && (
-          <div className="flex justify-between gap-4">
-            <span className="text-slate-400">Stay</span>
-            <span className="font-semibold text-cyan-400">{losLabel}</span>
-          </div>
-        )}
-        {predMins != null && (
-          <div className="flex justify-between gap-4">
-            <span className="text-slate-400">Predicted Avail</span>
-            <span className="font-semibold text-emerald-400">~{formatPredictionMins(predMins)}</span>
-          </div>
-        )}
       </div>
     </div>
   )
@@ -520,10 +514,10 @@ function BlueprintImage({
             const status = roomData?.status ?? ['available', 'occupied', 'dirty', 'reserved'][idx % 4]
             const fill = isInfrastructure
               ? 'rgba(148, 163, 184, 0.2)'
-              : STATUS_FILL_COLORS[status] || STATUS_COLORS[idx % 4]
+              : MAP_STATUS_FILL_COLORS[status] || STATUS_COLORS[idx % 4]
             const dotFill = isInfrastructure
               ? null
-              : STATUS_FILL_COLORS[status] || STATUS_COLORS[idx % 4]
+              : MAP_STATUS_FILL_COLORS[status] || STATUS_COLORS[idx % 4]
             const statusVisual = STATUS_VISUALS[status] || STATUS_VISUALS.available
             const isHovered = hoveredRoom === r.id
             const roomH = r.height ?? 50
@@ -567,7 +561,7 @@ function BlueprintImage({
                           <circle cx="6" cy="6" r="1.1" fill="rgba(30,58,138,0.45)" />
                         </>
                       )}
-                      {status === 'maintenance' && (
+                      {(status === 'maintenance' || status === 'unavailable') && (
                         <>
                           <rect width="8" height="8" fill="rgba(17,24,39,0.05)" />
                           <path d="M0,0 L8,8 M8,0 L0,8" stroke="rgba(17,24,39,0.38)" strokeWidth="1" />
@@ -587,7 +581,7 @@ function BlueprintImage({
                   strokeWidth={isHovered ? 2.5 : 1}
                   style={{ transition: 'fill 0.35s ease, stroke 0.2s ease' }}
                 />
-                {!isInfrastructure && (status === 'dirty' || status === 'reserved' || status === 'maintenance') && (
+                {!isInfrastructure && (status === 'dirty' || status === 'reserved' || status === 'maintenance' || status === 'unavailable') && (
                   <rect
                     x={r.x}
                     y={r.y}
@@ -687,23 +681,23 @@ function BlueprintImage({
           <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Quick Status Key</div>
           <div className="flex flex-wrap items-center gap-2 text-[11px]">
             <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-emerald-100/90 text-emerald-900 font-semibold">
-              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: STATUS_FILL_COLORS.available }} />
+              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: MAP_STATUS_FILL_COLORS.available }} />
               AVL
             </span>
             <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-red-100/90 text-red-900 font-semibold">
-              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: STATUS_FILL_COLORS.occupied }} />
+              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: MAP_STATUS_FILL_COLORS.occupied }} />
               OCC
             </span>
             <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-amber-100/90 text-amber-900 font-semibold">
-              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: STATUS_FILL_COLORS.dirty }} />
+              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: MAP_STATUS_FILL_COLORS.dirty }} />
               DRT
             </span>
             <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-blue-100/90 text-blue-900 font-semibold">
-              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: STATUS_FILL_COLORS.reserved }} />
+              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: MAP_STATUS_FILL_COLORS.reserved }} />
               RSV
             </span>
             <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-slate-200/90 text-slate-900 font-semibold">
-              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: STATUS_FILL_COLORS.maintenance }} />
+              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: MAP_STATUS_FILL_COLORS.maintenance }} />
               MNT
             </span>
           </div>
@@ -960,68 +954,73 @@ function MotelCommandCenter({
     setRoomSearch('')
   }, [roomSearchMatches, zoomToRoom])
 
-  function getFallbackRoomData(overlays) {
-    const statuses = ['available', 'occupied', 'dirty', 'reserved']
-    return overlays.map((r, i) => {
-      if (checkInfrastructureOverlay(r)) {
-        return { room: r.id, status: 'available', guest_name: null, check_in: null }
-      }
-      const status = statuses[i % 4]
-      const isOccupied = status === 'occupied'
-      const isReserved = status === 'reserved'
-      const daysAgo = i % 3
-      const checkInDate = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000)
-      const checkIn = isOccupied || isReserved ? checkInDate.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : null
-      const admitted_at_iso = isOccupied || isReserved ? checkInDate.toISOString() : null
-      return {
-        room: r.id,
-        roomNumber: r.id,
-        status,
-        guest_name: isOccupied ? pickGuestForRoom(r.id, i) : isReserved ? 'Incoming' : null,
-        guestName: isOccupied ? pickGuestForRoom(r.id, i) : isReserved ? 'Incoming' : null,
-        check_in: checkIn,
-        checkIn: admitted_at_iso,
-        checkOut: null,
-        admitted_at_iso,
-        priority: status === 'dirty' ? 'HIGH' : 'LOW',
-        priorityScore: status === 'dirty' ? 3 : 1,
-        updatedAt: new Date().toISOString(),
-      }
-    })
-  }
-
   const fetchRoomStatus = useCallback(async () => {
     if (dataSourceMode !== 'api') return
     try {
       setLoading(true)
       setError(null)
-      let rooms = getFallbackRoomData(roomOverlays)
-      try {
-        const res = await fetch(apiEndpoint)
-        if (res.ok) {
-          const json = await res.json()
-          const data = json?.data ?? json
-          if (Array.isArray(data) && data.length > 0) rooms = data
+
+      const { data, error: fetchError } = await supabase
+        .from('rooms')
+        .select(`
+          id,
+          room_number,
+          room_type,
+          status,
+          rate_per_night,
+          reservations!left (
+            status,
+            check_in_date,
+            check_out_date,
+            guests (
+              first_name,
+              last_name
+            )
+          )
+        `)
+        .order('room_number')
+      if (fetchError) throw fetchError
+
+      const normalizedRooms = (Array.isArray(data) ? data : []).map((room) => {
+        const reservations = Array.isArray(room.reservations) ? room.reservations : []
+        const activeReservation =
+          reservations.find((r) => r?.status === 'checked_in') ||
+          reservations.find((r) => r?.status === 'reserved') ||
+          reservations[0] ||
+          null
+        const guest = activeReservation?.guests || null
+        const guestName = guest
+          ? `${guest.first_name || ''} ${guest.last_name || ''}`.trim()
+          : null
+        const roomNumber = String(room.room_number || '')
+        const overlayRoomId = resolveOverlayRoomId(roomNumber)
+        const derivedStatus = activeReservation?.status || room.status || 'available'
+        return {
+          room: overlayRoomId,
+          roomNumber,
+          room_id: room.id,
+          room_type: room.room_type || null,
+          status: derivedStatus,
+          rate_per_night: room.rate_per_night ?? 0,
+          guestName: guestName || null,
+          guest_name: guestName || null,
+          checkIn: activeReservation?.check_in_date || null,
+          check_in: activeReservation?.check_in_date || null,
+          checkOut: activeReservation?.check_out_date || null,
+          check_out: activeReservation?.check_out_date || null,
+          updatedAt: new Date().toISOString(),
         }
-      } catch (_) {
-        // Use fallback when API unavailable
-      }
-      setRoomData(addMock(Array.isArray(rooms) ? rooms : []).map((r) => ({
-        ...r,
-        roomNumber: r.roomNumber || r.room,
-        guestName: r.guestName || r.guest_name || null,
-        checkIn: r.checkIn || r.check_in || null,
-        checkOut: r.checkOut || r.check_out || null,
-        updatedAt: r.updatedAt || new Date().toISOString(),
-      })))
+      })
+      setRoomData(addMock(normalizedRooms))
       setLastUpdated(new Date())
-    } catch {
-      setRoomData(addMock(getFallbackRoomData(roomOverlays)))
+    } catch (err) {
+      setError(err?.message || 'Failed to load room status from Supabase.')
+      setRoomData([])
       setLastUpdated(new Date())
     } finally {
       setLoading(false)
     }
-  }, [apiEndpoint, roomOverlays, dataSourceMode, addMock, checkInfrastructureOverlay])
+  }, [dataSourceMode, addMock, resolveOverlayRoomId])
 
   useEffect(() => {
     if (dataSourceMode !== 'api') return undefined
@@ -1071,10 +1070,13 @@ function MotelCommandCenter({
     : null
 
   const roomsForMetrics = useMemo(() => {
-    if (!selectedTime) return roomData
-    return roomData.map((r) => ({
+    const base = selectedTime ? roomData.map((r) => ({
       ...r,
       status: roomStatusMapWithTimeline[r.room]?.status ?? r.status,
+    })) : roomData
+    return base.map((r) => ({
+      ...r,
+      status: r.status === 'checked_in' ? 'occupied' : r.status,
     }))
   }, [roomData, selectedTime, roomStatusMapWithTimeline])
 
@@ -1121,8 +1123,6 @@ function MotelCommandCenter({
     const cleanFirstName = String(values.firstName || '').trim()
     const cleanLastName = String(values.lastName || '').trim()
     const cleanPhone = String(values.phone || '').trim()
-    const cleanSpecialRequests = String(values.specialRequests || '').trim() || null
-
     const { data: existingGuest, error: guestLookupError } = await supabase
       .from('guests')
       .select('id')
@@ -1172,11 +1172,7 @@ function MotelCommandCenter({
       check_out_date: values.checkOutDate,
       status: 'reserved',
       rate_per_night: Number(values.ratePerNight) || 0,
-      total_amount: values.totalAmount,
-      paid_amount: Number(values.depositCollected) || 0,
-      balance_due: values.balanceDue,
       source: values.source,
-      special_requests: cleanSpecialRequests,
     }
 
     const { error: createReservationError } = await supabase
