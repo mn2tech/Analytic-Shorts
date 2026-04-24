@@ -1121,7 +1121,6 @@ function MotelCommandCenter({
     const cleanFirstName = String(values.firstName || '').trim()
     const cleanLastName = String(values.lastName || '').trim()
     const cleanPhone = String(values.phone || '').trim()
-    const cleanIdNumber = String(values.idNumber || '').trim() || null
     const cleanSpecialRequests = String(values.specialRequests || '').trim() || null
 
     const { data: existingGuest, error: guestLookupError } = await supabase
@@ -1140,8 +1139,6 @@ function MotelCommandCenter({
           last_name: cleanLastName,
           email: cleanEmail,
           phone: cleanPhone,
-          id_type: values.idType,
-          id_number: cleanIdNumber,
         })
         .select('id')
         .single()
@@ -1149,12 +1146,24 @@ function MotelCommandCenter({
       guestId = createdGuest.id
     }
 
-    const { data: roomRecord, error: roomLookupError } = await supabase
+    let { data: roomRecord, error: roomLookupError } = await supabase
       .from('rooms')
       .select('id')
       .eq('room_number', String(roomNumber))
       .single()
-    if (roomLookupError) throw roomLookupError
+    if (roomLookupError || !roomRecord?.id) {
+      // Fallback for environments where rooms are keyed by overlay id.
+      const fallback = await supabase
+        .from('rooms')
+        .select('id')
+        .eq('room_number', String(reservationPanelRoomId))
+        .single()
+      roomRecord = fallback.data
+      roomLookupError = fallback.error
+    }
+    if (roomLookupError || !roomRecord?.id) {
+      throw new Error(`Room ${roomNumber} was not found in rooms table.`)
+    }
 
     const reservationPayload = {
       room_id: roomRecord.id,
@@ -1168,9 +1177,6 @@ function MotelCommandCenter({
       balance_due: values.balanceDue,
       source: values.source,
       special_requests: cleanSpecialRequests,
-      adults: Number(values.adults) || 1,
-      children: Number(values.children) || 0,
-      payment_method: values.paymentMethod,
     }
 
     const { error: createReservationError } = await supabase
