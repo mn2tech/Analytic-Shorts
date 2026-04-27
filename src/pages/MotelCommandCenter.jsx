@@ -107,6 +107,12 @@ function normalizeRoomStatus(value) {
 
 function formatDateDisplay(value) {
   if (!value) return '—'
+  const text = String(value).trim()
+  // ISO date-only strings parse as UTC in JS; use local calendar day to match DB intent.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    const local = parseDateOnly(text)
+    if (local) return local.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })
+  }
   const d = new Date(value)
   if (Number.isNaN(d.getTime())) return String(value)
   return d.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })
@@ -153,8 +159,9 @@ function formatCurrency(value) {
 
 function nightsStayedSoFar(value) {
   if (!value) return 0
-  const start = new Date(value)
-  if (Number.isNaN(start.getTime())) return 0
+  const text = String(value).trim()
+  const start = /^\d{4}-\d{2}-\d{2}$/.test(text) ? parseDateOnly(text) : new Date(value)
+  if (!start || Number.isNaN(start.getTime())) return 0
   const now = new Date()
   const diffMs = now.getTime() - start.getTime()
   if (diffMs <= 0) return 0
