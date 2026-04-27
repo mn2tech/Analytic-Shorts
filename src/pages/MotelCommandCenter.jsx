@@ -95,6 +95,16 @@ function canonicalRoomKey(value) {
     .replace(/[^a-z0-9]/g, '')
 }
 
+function normalizeRoomStatus(value) {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_')
+  if (!normalized) return 'available'
+  if (normalized === 'checkedin') return 'checked_in'
+  return normalized
+}
+
 function formatDateDisplay(value) {
   if (!value) return '—'
   const d = new Date(value)
@@ -111,16 +121,49 @@ function toDateInputValue(value = new Date()) {
   return `${year}-${month}-${day}`
 }
 
+function parseDateOnly(value) {
+  const text = String(value || '').trim()
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return null
+  const [year, month, day] = text.split('-').map(Number)
+  const date = new Date(year, month - 1, day, 12, 0, 0)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function addDays(dateValue, days) {
+  const base = dateValue instanceof Date ? dateValue : new Date(dateValue)
+  const date = new Date(base.getTime())
+  date.setDate(date.getDate() + days)
+  return date
+}
+
 function dateDiffNights(checkInDate, checkOutDate) {
   if (!checkInDate || !checkOutDate) return 0
-  const inDate = new Date(`${checkInDate}T12:00:00`)
-  const outDate = new Date(`${checkOutDate}T12:00:00`)
+  const inDate = parseDateOnly(checkInDate)
+  const outDate = parseDateOnly(checkOutDate)
+  if (!inDate || !outDate) return 0
   const diffMs = outDate.getTime() - inDate.getTime()
   if (Number.isNaN(diffMs) || diffMs <= 0) return 0
   return Math.round(diffMs / (1000 * 60 * 60 * 24))
 }
 
+function formatCurrency(value) {
+  const amount = Number(value) || 0
+  return amount.toLocaleString(undefined, { style: 'currency', currency: 'USD' })
+}
+
+function nightsStayedSoFar(value) {
+  if (!value) return 0
+  const start = new Date(value)
+  if (Number.isNaN(start.getTime())) return 0
+  const now = new Date()
+  const diffMs = now.getTime() - start.getTime()
+  if (diffMs <= 0) return 0
+  return Math.floor(diffMs / (1000 * 60 * 60 * 24))
+}
+
 function NewReservationPanel({ isOpen, roomOverlay, roomData, onClose, onSave }) {
+  const defaultCheckInDate = toDateInputValue(new Date())
+  const defaultCheckOutDate = toDateInputValue(addDays(new Date(), 1))
   const [formValues, setFormValues] = useState(() => ({
     firstName: '',
     lastName: '',
@@ -128,8 +171,8 @@ function NewReservationPanel({ isOpen, roomOverlay, roomData, onClose, onSave })
     phone: '',
     idType: 'Passport',
     idNumber: '',
-    checkInDate: toDateInputValue(new Date()),
-    checkOutDate: '',
+    checkInDate: defaultCheckInDate,
+    checkOutDate: defaultCheckOutDate,
     adults: 1,
     children: 0,
     ratePerNight: roomData?.rate_per_night ?? roomData?.ratePerNight ?? 0,
@@ -150,8 +193,8 @@ function NewReservationPanel({ isOpen, roomOverlay, roomData, onClose, onSave })
       phone: '',
       idType: 'Passport',
       idNumber: '',
-      checkInDate: toDateInputValue(new Date()),
-      checkOutDate: '',
+      checkInDate: defaultCheckInDate,
+      checkOutDate: defaultCheckOutDate,
       adults: 1,
       children: 0,
       ratePerNight: roomData?.rate_per_night ?? roomData?.ratePerNight ?? 0,
@@ -162,7 +205,7 @@ function NewReservationPanel({ isOpen, roomOverlay, roomData, onClose, onSave })
     })
     setErrors({})
     setIsSaving(false)
-  }, [isOpen, roomData?.rate_per_night, roomData?.ratePerNight, roomOverlay?.id])
+  }, [defaultCheckInDate, defaultCheckOutDate, isOpen, roomData?.rate_per_night, roomData?.ratePerNight, roomOverlay?.id])
 
   const nights = useMemo(
     () => dateDiffNights(formValues.checkInDate, formValues.checkOutDate),
@@ -177,11 +220,21 @@ function NewReservationPanel({ isOpen, roomOverlay, roomData, onClose, onSave })
     return Math.max(0, totalAmount - deposit)
   }, [formValues.depositCollected, totalAmount])
 
-  const roomTypeLabel = roomOverlay?.label || roomOverlay?.type || roomData?.room_type || 'Room'
+  const roomTypeLabel = roomOverlay?.type || roomData?.room_type || roomOverlay?.label || 'Room'
   const roomDisplay = roomOverlay ? getRoomDisplayLabel(roomOverlay.id, roomOverlay) : roomData?.room || '—'
 
   const updateValue = (field, value) => {
-    setFormValues((prev) => ({ ...prev, [field]: value }))
+    setFormValues((prev) => {
+      const next = { ...prev, [field]: value }
+      if (field === 'checkInDate') {
+        const inDate = parseDateOnly(value)
+        const outDate = parseDateOnly(next.checkOutDate)
+        if (inDate && (!outDate || outDate <= inDate)) {
+          next.checkOutDate = toDateInputValue(addDays(inDate, 1))
+        }
+      }
+      return next
+    })
     setErrors((prev) => ({ ...prev, [field]: undefined, form: undefined }))
   }
 
@@ -303,7 +356,7 @@ function NewReservationPanel({ isOpen, roomOverlay, roomData, onClose, onSave })
                 </div>
                 <div>
                   <label className={labelClass}>Check-out Date{required}</label>
-                  <input className={inputClass} type="date" value={formValues.checkOutDate} onChange={(e) => updateValue('checkOutDate', e.target.value)} />
+                  <input className={inputClass} type="date" min={formValues.checkInDate || undefined} value={formValues.checkOutDate} onChange={(e) => updateValue('checkOutDate', e.target.value)} />
                   {errors.checkOutDate && <p className="mt-1 text-xs text-red-400">{errors.checkOutDate}</p>}
                 </div>
                 <div>
@@ -386,6 +439,729 @@ function NewReservationPanel({ isOpen, roomOverlay, roomData, onClose, onSave })
             </button>
           </div>
         </form>
+      </aside>
+    </>
+  )
+}
+
+function ReservedCheckInPanel({ isOpen, roomOverlay, roomData, onClose, onComplete }) {
+  const [isSaving, setIsSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [checklist, setChecklist] = useState({
+    idVerified: false,
+    paymentVerified: false,
+    keyIssued: false,
+    requestsShared: false,
+  })
+  const [paymentMethod, setPaymentMethod] = useState('Cash')
+  const [amountReceived, setAmountReceived] = useState('')
+
+  useEffect(() => {
+    if (!isOpen) return
+    setChecklist({
+      idVerified: false,
+      paymentVerified: false,
+      keyIssued: false,
+      requestsShared: false,
+    })
+    setPaymentMethod('Cash')
+    setAmountReceived('')
+    setError('')
+    setIsSaving(false)
+  }, [isOpen, roomOverlay?.id])
+
+  const roomTypeLabel = roomOverlay?.label || roomOverlay?.type || roomData?.room_type || 'Room'
+  const roomDisplay = roomOverlay ? getRoomDisplayLabel(roomOverlay.id, roomOverlay) : roomData?.room || '—'
+  const guestName = roomData?.guestName || roomData?.guest_name || 'Guest not assigned'
+  const source = roomData?.bookingSource || roomData?.source || '—'
+  const checkInDate = roomData?.checkIn || roomData?.check_in
+  const checkOutDate = roomData?.checkOut || roomData?.check_out
+  const nights = roomData?.nights ?? dateDiffNights(checkInDate, checkOutDate)
+  const ratePerNight = Number(roomData?.rate_per_night ?? roomData?.ratePerNight ?? 0) || 0
+  const totalAmount = Number(roomData?.totalAmount ?? nights * ratePerNight) || 0
+  const amountPaid = Number(roomData?.amountPaid ?? roomData?.depositCollected ?? 0) || 0
+  const balanceDue = Math.max(0, Number(roomData?.balanceDue ?? totalAmount - amountPaid) || 0)
+  const amountReceivedNumber = Number(amountReceived) || 0
+  const changeDue = paymentMethod === 'Cash' ? Math.max(0, amountReceivedNumber - balanceDue) : 0
+  const checklistComplete = Object.values(checklist).every(Boolean)
+  const canSubmit = checklistComplete && !isSaving
+
+  const handleSubmit = async () => {
+    if (!canSubmit) return
+    setError('')
+    setIsSaving(true)
+    try {
+      await onComplete({
+        balanceDue,
+        paymentMethod,
+        amountReceived: amountReceivedNumber,
+      })
+    } catch (err) {
+      setError(err?.message || 'Unable to complete check-in.')
+      setIsSaving(false)
+      return
+    }
+    setIsSaving(false)
+  }
+
+  const toggleChecklist = (key) => {
+    setChecklist((prev) => ({ ...prev, [key]: !prev[key] }))
+  }
+
+  const checklistItems = [
+    { key: 'idVerified', label: 'Guest ID verified and matches reservation' },
+    { key: 'paymentVerified', label: 'Payment collected or card on file' },
+    { key: 'keyIssued', label: 'Room key issued to guest' },
+    { key: 'requestsShared', label: 'Special requests communicated to guest' },
+  ]
+
+  return (
+    <>
+      <div
+        className={`fixed inset-0 z-40 bg-slate-950/65 transition-opacity duration-300 ${isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
+        onClick={onClose}
+      />
+      <aside
+        className={`fixed top-0 right-0 z-50 h-full w-full max-w-xl bg-slate-900 border-l border-white/10 shadow-2xl transform transition-transform duration-300 ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}
+        aria-hidden={!isOpen}
+      >
+        <div className="h-full flex flex-col">
+          <div className="px-5 py-4 border-b border-white/10 bg-slate-900/95">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-semibold text-white">Check In Guest</h2>
+                <p className="text-sm text-slate-300 mt-1">
+                  Room {roomDisplay} — {roomTypeLabel}
+                </p>
+              </div>
+              <button type="button" onClick={onClose} className="text-slate-400 hover:text-white text-xl leading-none">
+                ×
+              </button>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+            <section className="rounded-lg border border-white/10 bg-slate-800/70 p-4 space-y-3">
+              <p className="text-xs font-semibold tracking-wide uppercase text-slate-400">Reservation Summary</p>
+              <p className="text-2xl font-bold text-white">{guestName}</p>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <p className="text-slate-400">Booking Source</p><p className="text-right text-white">{source}</p>
+                <p className="text-slate-400">Check-in Date</p><p className="text-right text-white">{formatDateDisplay(checkInDate)}</p>
+                <p className="text-slate-400">Check-out Date</p><p className="text-right text-white">{formatDateDisplay(checkOutDate)}</p>
+                <p className="text-slate-400">Number of nights</p><p className="text-right text-white">{nights}</p>
+                <p className="text-slate-400">Rate per night</p><p className="text-right text-white">{formatCurrency(ratePerNight)}</p>
+                <p className="text-slate-400">Total amount due</p><p className="text-right text-white">{formatCurrency(totalAmount)}</p>
+                <p className="text-slate-400">Amount already paid</p><p className="text-right text-white">{formatCurrency(amountPaid)}</p>
+                <p className="text-slate-200 font-semibold">Balance remaining</p>
+                <p className={`text-right font-semibold ${balanceDue > 0 ? 'text-red-400' : 'text-emerald-400'}`}>
+                  {formatCurrency(balanceDue)}
+                </p>
+              </div>
+            </section>
+
+            <section className="space-y-3">
+              <p className="text-xs font-semibold tracking-wide uppercase text-slate-400">Pre Check-In Checklist</p>
+              <div className="space-y-2">
+                {checklistItems.map((item) => (
+                  <label key={item.key} className="flex items-center gap-3 rounded-md border border-white/10 bg-slate-800/60 px-3 py-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={checklist[item.key]}
+                      onChange={() => toggleChecklist(item.key)}
+                      className="h-4 w-4 accent-emerald-500"
+                    />
+                    <span className={`${checklist[item.key] ? 'text-emerald-400' : 'text-slate-200'}`}>
+                      {checklist[item.key] ? '✓ ' : ''}{item.label}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </section>
+
+            {balanceDue > 0 && (
+              <section className="space-y-3 rounded-lg border border-red-500/20 bg-slate-800/65 p-4">
+                <p className="text-xs font-semibold tracking-wide uppercase text-slate-400">Payment</p>
+                <p className="text-lg font-semibold text-red-400">Amount due: {formatCurrency(balanceDue)}</p>
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs text-slate-400">Payment Method</label>
+                    <select
+                      className="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-emerald-500/70"
+                      value={paymentMethod}
+                      onChange={(e) => setPaymentMethod(e.target.value)}
+                    >
+                      <option>Cash</option>
+                      <option>Credit Card</option>
+                      <option>Debit Card</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-400">Amount Received</label>
+                    <input
+                      className="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-emerald-500/70"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={amountReceived}
+                      onChange={(e) => setAmountReceived(e.target.value)}
+                    />
+                  </div>
+                  <p className="text-sm text-slate-200">
+                    Change due: <span className="font-semibold text-emerald-400">{formatCurrency(changeDue)}</span>
+                  </p>
+                </div>
+              </section>
+            )}
+
+            {error && <p className="text-sm text-red-400">{error}</p>}
+          </div>
+
+          <div className="px-5 py-4 border-t border-white/10">
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={!canSubmit}
+              className={`w-full px-4 py-3 rounded-md text-white font-semibold transition-colors ${canSubmit ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-slate-600 cursor-not-allowed text-slate-300'}`}
+            >
+              {isSaving ? 'Completing Check-In...' : 'Complete Check-In'}
+            </button>
+          </div>
+        </div>
+      </aside>
+    </>
+  )
+}
+
+function OccupiedRoomPanel({ isOpen, roomOverlay, roomData, onClose, onCompleteCheckout, hotelName = 'Gateway Inn' }) {
+  const [isCheckoutMode, setIsCheckoutMode] = useState(false)
+  const [extraCharges, setExtraCharges] = useState([])
+  const [paymentMethod, setPaymentMethod] = useState('Cash')
+  const [amountReceived, setAmountReceived] = useState('')
+  const [waiveBalance, setWaiveBalance] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const [error, setError] = useState('')
+  const roomTypeLabel = roomOverlay?.label || roomOverlay?.type || roomData?.room_type || 'Room'
+  const roomDisplay = roomOverlay ? getRoomDisplayLabel(roomOverlay.id, roomOverlay) : roomData?.room || '—'
+  const guestName = roomData?.guestName || roomData?.guest_name || '—'
+  const checkInDate = roomData?.actual_check_in || roomData?.checkIn || roomData?.check_in
+  const checkOutDate = roomData?.checkOut || roomData?.check_out
+  const stayed = nightsStayedSoFar(checkInDate)
+  const nights = Math.max(1, roomData?.nights ?? dateDiffNights(checkInDate, checkOutDate) ?? stayed ?? 1)
+  const ratePerNight = Number(roomData?.rate_per_night ?? roomData?.ratePerNight ?? 0) || 0
+  const roomChargeTotal = nights * ratePerNight
+  const depositsPaid = Number(roomData?.amountPaid ?? roomData?.depositCollected ?? 0) || 0
+  const extraChargesTotal = extraCharges.reduce((sum, charge) => sum + (Number(charge.amount) || 0), 0)
+  const totalCharges = roomChargeTotal + extraChargesTotal
+  const balanceBeforePayment = Math.max(0, totalCharges - depositsPaid)
+  const amountReceivedNumber = Number(amountReceived) || 0
+  const effectivePayment = Math.min(balanceBeforePayment, amountReceivedNumber)
+  const remainingBalance = Math.max(0, balanceBeforePayment - effectivePayment)
+  const changeDue = paymentMethod === 'Cash' ? Math.max(0, amountReceivedNumber - balanceBeforePayment) : 0
+  const canCompleteCheckout = !isSaving && (remainingBalance === 0 || waiveBalance)
+
+  useEffect(() => {
+    if (!isOpen) return
+    setIsCheckoutMode(false)
+    setExtraCharges([])
+    setPaymentMethod('Cash')
+    setAmountReceived('')
+    setWaiveBalance(false)
+    setIsSaving(false)
+    setError('')
+  }, [isOpen, roomOverlay?.id])
+
+  const chargeOptions = ['Parking', 'Room Service', 'Minibar', 'Laundry', 'Pet Fee', 'Damages', 'Other']
+  const addCharge = () => {
+    setExtraCharges((prev) => [...prev, { id: crypto.randomUUID(), category: 'Parking', customDescription: '', amount: '' }])
+  }
+
+  const updateCharge = (id, field, value) => {
+    setExtraCharges((prev) => prev.map((charge) => (charge.id === id ? { ...charge, [field]: value } : charge)))
+  }
+
+  const deleteCharge = (id) => {
+    setExtraCharges((prev) => prev.filter((charge) => charge.id !== id))
+  }
+
+  const getChargeDescription = (charge) => {
+    if (charge.category !== 'Other') return charge.category
+    return String(charge.customDescription || '').trim() || 'Other'
+  }
+
+  const printInvoice = ({ checkoutDate }) => {
+    const invoiceWindow = window.open('', '_blank', 'width=900,height=700')
+    if (!invoiceWindow) return
+    const rowsHtml = [
+      `<tr><td>Room charge</td><td>${nights} nights × ${formatCurrency(ratePerNight)}</td><td style="text-align:right;">${formatCurrency(roomChargeTotal)}</td></tr>`,
+      ...extraCharges.map((charge) => `<tr><td>${getChargeDescription(charge)}</td><td></td><td style="text-align:right;">${formatCurrency(charge.amount)}</td></tr>`),
+    ].join('')
+    const html = `
+      <!doctype html>
+      <html>
+      <head>
+        <title>Invoice - Room ${roomDisplay}</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 28px; color: #0f172a; }
+          h1 { margin: 0; font-size: 28px; }
+          .sub { color: #334155; margin-top: 6px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+          th, td { border-bottom: 1px solid #cbd5e1; padding: 10px 6px; text-align: left; }
+          .summary { margin-top: 16px; width: 340px; margin-left: auto; }
+          .summary p { display: flex; justify-content: space-between; margin: 6px 0; }
+          .zero { color: #166534; font-weight: 700; }
+          .footer { margin-top: 24px; color: #475569; }
+          .actions { margin-top: 24px; }
+          .actions button { padding: 10px 16px; }
+          @media print { .actions { display: none; } }
+        </style>
+      </head>
+      <body>
+        <h1>${hotelName}</h1>
+        <p class="sub">Guest Invoice</p>
+        <p><strong>${guestName}</strong> — Room ${roomDisplay}</p>
+        <p class="sub">Check-in: ${formatDateDisplay(checkInDate)} | Check-out: ${formatDateDisplay(checkoutDate)} | Nights: ${nights}</p>
+        <table>
+          <thead><tr><th>Item</th><th>Details</th><th style="text-align:right;">Amount</th></tr></thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>
+        <div class="summary">
+          <p><span>Total charges</span><strong>${formatCurrency(totalCharges)}</strong></p>
+          <p><span>Payments made (incl. deposits)</span><strong>${formatCurrency(depositsPaid + effectivePayment)}</strong></p>
+          <p><span>Balance</span><strong class="zero">${formatCurrency(0)}</strong></p>
+        </div>
+        <p class="footer">Thank you for staying with us. We appreciate your business.</p>
+        <div class="actions"><button onclick="window.print()">Print</button></div>
+      </body>
+      </html>
+    `
+    invoiceWindow.document.open()
+    invoiceWindow.document.write(html)
+    invoiceWindow.document.close()
+  }
+
+  const handleComplete = async () => {
+    if (!canCompleteCheckout) return
+    setError('')
+    setIsSaving(true)
+    try {
+      const checkoutDate = new Date().toISOString()
+      const cleanedCharges = extraCharges
+        .map((charge) => ({
+          description: getChargeDescription(charge),
+          amount: Number(charge.amount) || 0,
+        }))
+        .filter((charge) => charge.amount > 0 && charge.description)
+      await onCompleteCheckout({
+        checkoutDate,
+        extraCharges: cleanedCharges,
+        paymentMethod,
+        paymentAmount: effectivePayment,
+        waiveBalance: remainingBalance > 0 && waiveBalance,
+      })
+      printInvoice({ checkoutDate })
+      setIsSaving(false)
+    } catch (err) {
+      setError(err?.message || 'Unable to complete check-out.')
+      setIsSaving(false)
+    }
+  }
+
+  return (
+    <>
+      <div
+        className={`fixed inset-0 z-40 bg-slate-950/65 transition-opacity duration-300 ${isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
+        onClick={onClose}
+      />
+      <aside
+        className={`fixed top-0 right-0 z-50 h-full w-full max-w-xl bg-slate-900 border-l border-white/10 shadow-2xl transform transition-transform duration-300 ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}
+        aria-hidden={!isOpen}
+      >
+        <div className="h-full flex flex-col">
+          <div className="px-5 py-4 border-b border-white/10 bg-slate-900/95">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-semibold text-white">
+                  {isCheckoutMode ? `Check Out — Room ${roomDisplay}` : 'Current Stay'}
+                </h2>
+                <p className="text-sm text-slate-300 mt-1">
+                  Room {roomDisplay}{roomTypeLabel && roomTypeLabel !== roomDisplay ? ` — ${roomTypeLabel}` : ''}
+                </p>
+              </div>
+              <button type="button" onClick={onClose} className="text-slate-400 hover:text-white text-xl leading-none">
+                ×
+              </button>
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+            {!isCheckoutMode ? (
+              <div className="rounded-lg border border-white/10 bg-slate-800/70 p-4 space-y-3">
+                <p className="text-2xl font-bold text-white">{guestName}</p>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <p className="text-slate-400">Check-in date</p><p className="text-right text-white">{formatDateDisplay(checkInDate)}</p>
+                  <p className="text-slate-400">Expected check-out</p><p className="text-right text-white">{formatDateDisplay(checkOutDate)}</p>
+                  <p className="text-slate-400">Nights stayed so far</p><p className="text-right text-white">{stayed}</p>
+                  <p className="text-slate-200 font-semibold">Current balance</p>
+                  <p className={`text-right font-semibold ${balanceBeforePayment > 0 ? 'text-red-400' : 'text-emerald-400'}`}>{formatCurrency(balanceBeforePayment)}</p>
+                </div>
+              </div>
+            ) : (
+              <>
+                <section className="rounded-lg border border-white/10 bg-slate-800/70 p-4 space-y-3">
+                  <p className="text-xl font-semibold text-white">Check Out — Room {roomDisplay}</p>
+                  <p className="text-2xl font-bold text-white">{guestName}</p>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <p className="text-slate-400">Check-in date</p><p className="text-right text-white">{formatDateDisplay(checkInDate)}</p>
+                    <p className="text-slate-400">Check-out date</p><p className="text-right text-white">{formatDateDisplay(new Date())}</p>
+                    <p className="text-slate-400">Total nights</p><p className="text-right text-white">{nights}</p>
+                  </div>
+                </section>
+
+                <section className="rounded-lg border border-white/10 bg-slate-800/70 p-4 space-y-3">
+                  <p className="text-xs font-semibold tracking-wide uppercase text-slate-400">Charges</p>
+                  <div className="rounded-md border border-white/10 overflow-hidden">
+                    <div className="grid grid-cols-12 bg-slate-700/40 px-3 py-2 text-xs font-semibold text-slate-300">
+                      <p className="col-span-7">Description</p>
+                      <p className="col-span-5 text-right">Amount</p>
+                    </div>
+                    <div className="grid grid-cols-12 px-3 py-2 text-sm border-t border-white/10">
+                      <p className="col-span-7 text-white">Room charge ({nights} nights × {formatCurrency(ratePerNight)})</p>
+                      <p className="col-span-5 text-right text-white">{formatCurrency(roomChargeTotal)}</p>
+                    </div>
+                    {extraCharges.map((charge) => (
+                      <div key={charge.id} className="px-3 py-2 border-t border-white/10 space-y-2">
+                        <div className="grid grid-cols-12 gap-2">
+                          <select
+                            className="col-span-7 rounded-md border border-slate-600 bg-slate-900 px-2 py-1.5 text-sm text-white"
+                            value={charge.category}
+                            onChange={(e) => updateCharge(charge.id, 'category', e.target.value)}
+                          >
+                            {chargeOptions.map((option) => <option key={option}>{option}</option>)}
+                          </select>
+                          <div className="col-span-4">
+                            <input
+                              className="w-full rounded-md border border-slate-600 bg-slate-900 px-2 py-1.5 text-sm text-white"
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              placeholder="0.00"
+                              value={charge.amount}
+                              onChange={(e) => updateCharge(charge.id, 'amount', e.target.value)}
+                            />
+                          </div>
+                          <button type="button" onClick={() => deleteCharge(charge.id)} className="col-span-1 rounded-md bg-red-900/50 text-red-300 hover:bg-red-800/60">
+                            ×
+                          </button>
+                        </div>
+                        {charge.category === 'Other' && (
+                          <input
+                            className="w-full rounded-md border border-slate-600 bg-slate-900 px-2 py-1.5 text-sm text-white"
+                            placeholder="Custom description"
+                            value={charge.customDescription}
+                            onChange={(e) => updateCharge(charge.id, 'customDescription', e.target.value)}
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <button type="button" onClick={addCharge} className="px-3 py-1.5 rounded-md border border-cyan-300/30 bg-cyan-900/25 hover:bg-cyan-900/35 text-sm font-semibold text-cyan-200">
+                    Add Charge
+                  </button>
+                </section>
+
+                <section className="rounded-lg border border-white/10 bg-slate-800/70 p-4 space-y-2 text-sm">
+                  <p className="text-xs font-semibold tracking-wide uppercase text-slate-400">Payments</p>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Deposits / prior payments</span>
+                    <span className="text-white">{formatCurrency(depositsPaid)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Total charges</span>
+                    <span className="text-white">{formatCurrency(totalCharges)}</span>
+                  </div>
+                  <div className="flex justify-between font-semibold">
+                    <span className="text-slate-100">Balance due</span>
+                    <span className={balanceBeforePayment > 0 ? 'text-red-400' : 'text-emerald-400'}>{formatCurrency(balanceBeforePayment)}</span>
+                  </div>
+                </section>
+
+                <section className="rounded-lg border border-white/10 bg-slate-800/70 p-4 space-y-3">
+                  <p className="text-xs font-semibold tracking-wide uppercase text-slate-400">Final Payment</p>
+                  <div>
+                    <label className="text-xs text-slate-400">Payment method</label>
+                    <select
+                      className="w-full rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-white"
+                      value={paymentMethod}
+                      onChange={(e) => setPaymentMethod(e.target.value)}
+                    >
+                      <option>Cash</option>
+                      <option>Card</option>
+                      <option>Debit</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-400">Amount received</label>
+                    <input
+                      className="w-full rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-white"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={amountReceived}
+                      onChange={(e) => setAmountReceived(e.target.value)}
+                    />
+                  </div>
+                  <p className="text-sm text-slate-200">Change due: <span className="font-semibold text-emerald-400">{formatCurrency(changeDue)}</span></p>
+                  <label className="flex items-center gap-2 text-sm text-slate-200">
+                    <input type="checkbox" checked={waiveBalance} onChange={(e) => setWaiveBalance(e.target.checked)} className="h-4 w-4 accent-amber-500" />
+                    Waive Balance (manager override)
+                  </label>
+                  {remainingBalance > 0 && !waiveBalance && (
+                    <p className="text-xs text-red-400">Balance must be zero before completing checkout.</p>
+                  )}
+                </section>
+              </>
+            )}
+            {error && <p className="text-sm text-red-400">{error}</p>}
+          </div>
+          <div className="px-5 py-4 border-t border-white/10">
+            {!isCheckoutMode ? (
+              <button type="button" onClick={() => setIsCheckoutMode(true)} className="w-full px-4 py-3 rounded-md bg-amber-500/90 hover:bg-amber-400 text-slate-950 font-semibold">
+                Check Out
+              </button>
+            ) : (
+              <div className="flex gap-3">
+                <button type="button" onClick={() => setIsCheckoutMode(false)} className="flex-1 px-4 py-3 rounded-md border border-white/20 bg-slate-700 text-white font-semibold">
+                  Back
+                </button>
+                <button
+                  type="button"
+                  onClick={handleComplete}
+                  disabled={!canCompleteCheckout}
+                  className={`flex-1 px-4 py-3 rounded-md font-semibold ${canCompleteCheckout ? 'bg-emerald-600 hover:bg-emerald-500 text-white' : 'bg-slate-600 text-slate-300 cursor-not-allowed'}`}
+                >
+                  {isSaving ? 'Completing...' : 'Complete Check-Out'}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </aside>
+    </>
+  )
+}
+
+function HousekeepingPanel({ isOpen, roomOverlay, roomData, onClose, onMarkInProgress, onMarkAsClean }) {
+  const [assignedTo, setAssignedTo] = useState('')
+  const [notes, setNotes] = useState('')
+  const [skipChecklist, setSkipChecklist] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [nowTs, setNowTs] = useState(Date.now())
+  const [tasks, setTasks] = useState({
+    linens: false,
+    bathroom: false,
+    floor: false,
+    surfaces: false,
+    trash: false,
+    towels: false,
+    hvac: false,
+    appliances: false,
+  })
+
+  useEffect(() => {
+    if (!isOpen) return
+    setAssignedTo(roomData?.cleaning_assigned_to || '')
+    setNotes('')
+    setSkipChecklist(false)
+    setError('')
+    setIsSaving(false)
+    setTasks({
+      linens: false,
+      bathroom: false,
+      floor: false,
+      surfaces: false,
+      trash: false,
+      towels: false,
+      hvac: false,
+      appliances: false,
+    })
+  }, [isOpen, roomOverlay?.id, roomData?.cleaning_assigned_to])
+
+  useEffect(() => {
+    if (!isOpen) return undefined
+    const timer = setInterval(() => setNowTs(Date.now()), 60000)
+    return () => clearInterval(timer)
+  }, [isOpen])
+
+  const roomDisplay = roomOverlay ? getRoomDisplayLabel(roomOverlay.id, roomOverlay) : roomData?.room || '—'
+  const roomTypeLabel = roomOverlay?.type || roomData?.room_type || roomOverlay?.label || 'Room'
+  const previousGuestName = roomData?.guestName || roomData?.guest_name || '—'
+  const checkedOutAt = roomData?.actual_check_out || roomData?.check_out || roomData?.checkOut || null
+  const cleaningStartedAt = roomData?.maintenance_started_at || null
+  const isMaintenance = roomData?.status === 'maintenance'
+  const checklistDone = Object.values(tasks).every(Boolean)
+  const canMarkClean = !isSaving && (checklistDone || skipChecklist)
+
+  const agoLabel = (value) => {
+    if (!value) return '—'
+    const dt = new Date(value)
+    if (Number.isNaN(dt.getTime())) return '—'
+    const mins = Math.max(0, Math.floor((nowTs - dt.getTime()) / (1000 * 60)))
+    if (mins < 1) return 'just now'
+    if (mins < 60) return `${mins} min ago`
+    const hrs = Math.floor(mins / 60)
+    if (hrs < 24) return `${hrs} hour${hrs === 1 ? '' : 's'} ago`
+    const days = Math.floor(hrs / 24)
+    return `${days} day${days === 1 ? '' : 's'} ago`
+  }
+
+  const checklistItems = [
+    { key: 'linens', label: 'Bed linens changed' },
+    { key: 'bathroom', label: 'Bathroom cleaned and restocked' },
+    { key: 'floor', label: 'Floor vacuumed / mopped' },
+    { key: 'surfaces', label: 'Surfaces wiped down' },
+    { key: 'trash', label: 'Trash emptied' },
+    { key: 'towels', label: 'Towels replaced' },
+    { key: 'hvac', label: 'AC/Heat reset to default' },
+    { key: 'appliances', label: 'TV and appliances checked' },
+  ]
+
+  const handleMarkInProgress = async () => {
+    setError('')
+    setIsSaving(true)
+    try {
+      await onMarkInProgress({
+        assignedTo: String(assignedTo || '').trim() || null,
+        notes: String(notes || '').trim() || null,
+        startedAt: new Date().toISOString(),
+      })
+      setIsSaving(false)
+    } catch (err) {
+      setError(err?.message || 'Unable to mark room in progress.')
+      setIsSaving(false)
+    }
+  }
+
+  const handleMarkAsClean = async () => {
+    if (!canMarkClean) return
+    setError('')
+    setIsSaving(true)
+    try {
+      await onMarkAsClean({
+        assignedTo: String(assignedTo || '').trim() || null,
+        notes: String(notes || '').trim() || null,
+      })
+      setIsSaving(false)
+    } catch (err) {
+      setError(err?.message || 'Unable to mark room clean.')
+      setIsSaving(false)
+    }
+  }
+
+  return (
+    <>
+      <div
+        className={`fixed inset-0 z-40 bg-slate-950/65 transition-opacity duration-300 ${isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
+        onClick={onClose}
+      />
+      <aside
+        className={`fixed top-0 right-0 z-50 h-full w-full max-w-xl bg-slate-900 border-l border-white/10 shadow-2xl transform transition-transform duration-300 ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}
+        aria-hidden={!isOpen}
+      >
+        <div className="h-full flex flex-col">
+          <div className="px-5 py-4 border-b border-white/10 bg-slate-900/95">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-semibold text-white">{isMaintenance ? 'Cleaning In Progress' : 'Housekeeping'}</h2>
+                <p className="text-sm text-slate-300 mt-1">
+                  Room {roomDisplay}{roomTypeLabel && roomTypeLabel !== roomDisplay ? ` — ${roomTypeLabel}` : ''}
+                </p>
+              </div>
+              <button type="button" onClick={onClose} className="text-slate-400 hover:text-white text-xl leading-none">
+                ×
+              </button>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+            <section className="rounded-lg border border-amber-300/30 bg-amber-500/10 p-4 space-y-2">
+              <p className="text-amber-200 font-semibold">🟡 Room {roomDisplay} needs cleaning</p>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <p className="text-amber-100/80">Previous guest</p><p className="text-right text-amber-50">{previousGuestName}</p>
+                <p className="text-amber-100/80">Checked out at</p><p className="text-right text-amber-50">{formatDateDisplay(checkedOutAt)}</p>
+                <p className="text-amber-100/80">Time since checkout</p><p className="text-right text-amber-50">{agoLabel(checkedOutAt)}</p>
+                {isMaintenance && (
+                  <>
+                    <p className="text-amber-100/80">Started at</p><p className="text-right text-amber-50">{formatDateDisplay(cleaningStartedAt)}</p>
+                  </>
+                )}
+              </div>
+            </section>
+
+            <section className="space-y-3">
+              <p className="text-xs font-semibold tracking-wide uppercase text-slate-400">Housekeeping Checklist</p>
+              <div className="space-y-2">
+                {checklistItems.map((item) => (
+                  <label key={item.key} className="flex items-center gap-3 rounded-md border border-white/10 bg-slate-800/60 px-3 py-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={tasks[item.key]}
+                      onChange={() => setTasks((prev) => ({ ...prev, [item.key]: !prev[item.key] }))}
+                      className="h-4 w-4 accent-emerald-500"
+                    />
+                    <span className={`${tasks[item.key] ? 'text-emerald-400' : 'text-slate-200'}`}>{item.label}</span>
+                  </label>
+                ))}
+              </div>
+              <label className="inline-flex items-center gap-2 text-sm text-slate-300">
+                <input type="checkbox" checked={skipChecklist} onChange={(e) => setSkipChecklist(e.target.checked)} className="h-4 w-4 accent-amber-500" />
+                Skip checklist override
+              </label>
+            </section>
+
+            <section className="space-y-2">
+              <label className="text-xs text-slate-400 uppercase font-semibold tracking-wide">Assigned to</label>
+              <input
+                className="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/70"
+                placeholder="Enter housekeeper name"
+                value={assignedTo}
+                onChange={(e) => setAssignedTo(e.target.value)}
+              />
+            </section>
+
+            <section className="space-y-2">
+              <label className="text-xs text-slate-400 uppercase font-semibold tracking-wide">Maintenance notes</label>
+              <textarea
+                className="w-full min-h-[96px] rounded-md border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/70"
+                placeholder="Any issues found in room..."
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+              />
+            </section>
+
+            {error && <p className="text-sm text-red-400">{error}</p>}
+          </div>
+
+          <div className="px-5 py-4 border-t border-white/10 flex gap-3">
+            {!isMaintenance && (
+              <button
+                type="button"
+                onClick={handleMarkInProgress}
+                disabled={isSaving}
+                className="flex-1 px-4 py-3 rounded-md bg-blue-600 hover:bg-blue-500 text-white font-semibold disabled:opacity-60"
+              >
+                Mark In Progress
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleMarkAsClean}
+              disabled={!canMarkClean}
+              className={`flex-1 px-4 py-3 rounded-md font-semibold ${canMarkClean ? 'bg-emerald-600 hover:bg-emerald-500 text-white' : 'bg-slate-600 text-slate-300 cursor-not-allowed'}`}
+            >
+              Mark as Clean
+            </button>
+          </div>
+        </div>
       </aside>
     </>
   )
@@ -511,7 +1287,8 @@ function BlueprintImage({
                 NON_GUEST_ROOM_TYPES.has((r.type || '').toLowerCase()) ||
                 isInfrastructureByLabel(r.label)
             const roomData = roomStatusMap[r.id]
-            const status = roomData?.status ?? ['available', 'occupied', 'dirty', 'reserved'][idx % 4]
+            // Keep map colors consistent with KPI counts: if live status is missing, treat as available.
+            const status = roomData?.status ?? 'available'
             const fill = isInfrastructure
               ? 'rgba(148, 163, 184, 0.2)'
               : MAP_STATUS_FILL_COLORS[status] || STATUS_COLORS[idx % 4]
@@ -827,6 +1604,9 @@ function MotelCommandCenter({
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [liveTime, setLiveTime] = useState(() => new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false }))
   const [reservationPanelRoomId, setReservationPanelRoomId] = useState(null)
+  const [checkInPanelRoomId, setCheckInPanelRoomId] = useState(null)
+  const [occupiedPanelRoomId, setOccupiedPanelRoomId] = useState(null)
+  const [housekeepingPanelRoomId, setHousekeepingPanelRoomId] = useState(null)
   const importInputRef = useRef(null)
   const innsoftInputRef = useRef(null)
   const containerRef = useRef(null)
@@ -969,9 +1749,17 @@ function MotelCommandCenter({
           status,
           rate_per_night,
           reservations!left (
+            id,
             status,
             check_in_date,
             check_out_date,
+            actual_check_in,
+            actual_check_out,
+            rate_per_night,
+            source,
+            payments (
+              amount
+            ),
             guests (
               first_name,
               last_name
@@ -986,15 +1774,23 @@ function MotelCommandCenter({
         const activeReservation =
           reservations.find((r) => r?.status === 'checked_in') ||
           reservations.find((r) => r?.status === 'reserved') ||
-          reservations[0] ||
           null
-        const guest = activeReservation?.guests || null
+        const latestCheckedOutReservation = reservations.find((r) => r?.status === 'checked_out') || null
+        const contextReservation = activeReservation || latestCheckedOutReservation || reservations[0] || null
+        const guest = contextReservation?.guests || null
         const guestName = guest
           ? `${guest.first_name || ''} ${guest.last_name || ''}`.trim()
           : null
+        const payments = Array.isArray(activeReservation?.payments) ? activeReservation.payments : []
+        const amountPaid = payments.reduce((sum, payment) => sum + (Number(payment?.amount) || 0), 0)
         const roomNumber = String(room.room_number || '')
         const overlayRoomId = resolveOverlayRoomId(roomNumber)
-        const derivedStatus = activeReservation?.status || room.status || 'available'
+        const derivedStatus = normalizeRoomStatus(room.status || activeReservation?.status || 'available')
+        const checkInDate = contextReservation?.check_in_date || null
+        const checkOutDate = contextReservation?.check_out_date || null
+        const nights = dateDiffNights(checkInDate, checkOutDate)
+        const ratePerNight = Number(activeReservation?.rate_per_night ?? room.rate_per_night ?? 0) || 0
+        const totalAmount = nights * ratePerNight
         return {
           room: overlayRoomId,
           roomNumber,
@@ -1004,10 +1800,19 @@ function MotelCommandCenter({
           rate_per_night: room.rate_per_night ?? 0,
           guestName: guestName || null,
           guest_name: guestName || null,
-          checkIn: activeReservation?.check_in_date || null,
-          check_in: activeReservation?.check_in_date || null,
-          checkOut: activeReservation?.check_out_date || null,
-          check_out: activeReservation?.check_out_date || null,
+          checkIn: checkInDate,
+          check_in: checkInDate,
+          checkOut: checkOutDate,
+          check_out: checkOutDate,
+          actual_check_in: activeReservation?.actual_check_in || null,
+          actual_check_out: contextReservation?.actual_check_out || null,
+          reservation_id: activeReservation?.id || null,
+          bookingSource: activeReservation?.source || null,
+          source: activeReservation?.source || null,
+          nights,
+          totalAmount,
+          amountPaid,
+          balanceDue: Math.max(0, totalAmount - amountPaid),
           updatedAt: new Date().toISOString(),
         }
       })
@@ -1068,6 +1873,39 @@ function MotelCommandCenter({
       null
     )
     : null
+  const checkInRoomOverlay = useMemo(
+    () => roomOverlays.find((room) => room.id === checkInPanelRoomId) || null,
+    [roomOverlays, checkInPanelRoomId]
+  )
+  const checkInRoomData = checkInPanelRoomId
+    ? (
+      roomStatusMap[checkInPanelRoomId] ??
+      roomStatusMap[canonicalRoomKey(checkInPanelRoomId)] ??
+      null
+    )
+    : null
+  const occupiedRoomOverlay = useMemo(
+    () => roomOverlays.find((room) => room.id === occupiedPanelRoomId) || null,
+    [roomOverlays, occupiedPanelRoomId]
+  )
+  const occupiedRoomData = occupiedPanelRoomId
+    ? (
+      roomStatusMap[occupiedPanelRoomId] ??
+      roomStatusMap[canonicalRoomKey(occupiedPanelRoomId)] ??
+      null
+    )
+    : null
+  const housekeepingRoomOverlay = useMemo(
+    () => roomOverlays.find((room) => room.id === housekeepingPanelRoomId) || null,
+    [roomOverlays, housekeepingPanelRoomId]
+  )
+  const housekeepingRoomData = housekeepingPanelRoomId
+    ? (
+      roomStatusMap[housekeepingPanelRoomId] ??
+      roomStatusMap[canonicalRoomKey(housekeepingPanelRoomId)] ??
+      null
+    )
+    : null
 
   const roomsForMetrics = useMemo(() => {
     const base = selectedTime ? roomData.map((r) => ({
@@ -1076,7 +1914,10 @@ function MotelCommandCenter({
     })) : roomData
     return base.map((r) => ({
       ...r,
-      status: r.status === 'checked_in' ? 'occupied' : r.status,
+      status: (() => {
+        const normalized = normalizeRoomStatus(r.status)
+        return normalized === 'checked_in' ? 'occupied' : normalized
+      })(),
     }))
   }, [roomData, selectedTime, roomStatusMapWithTimeline])
 
@@ -1113,6 +1954,30 @@ function MotelCommandCenter({
     if (checkInfrastructureOverlay(overlay)) return
     if (clickedRoom.status === 'available') {
       setReservationPanelRoomId(roomId)
+      setCheckInPanelRoomId(null)
+      setOccupiedPanelRoomId(null)
+      setHousekeepingPanelRoomId(null)
+      return
+    }
+    if (clickedRoom.status === 'reserved') {
+      setCheckInPanelRoomId(roomId)
+      setReservationPanelRoomId(null)
+      setOccupiedPanelRoomId(null)
+      setHousekeepingPanelRoomId(null)
+      return
+    }
+    if (clickedRoom.status === 'occupied' || clickedRoom.status === 'checked_in') {
+      setOccupiedPanelRoomId(roomId)
+      setReservationPanelRoomId(null)
+      setCheckInPanelRoomId(null)
+      setHousekeepingPanelRoomId(null)
+      return
+    }
+    if (clickedRoom.status === 'dirty' || clickedRoom.status === 'maintenance') {
+      setHousekeepingPanelRoomId(roomId)
+      setReservationPanelRoomId(null)
+      setCheckInPanelRoomId(null)
+      setOccupiedPanelRoomId(null)
     }
   }, [checkInfrastructureOverlay, roomOverlays, roomStatusMap])
 
@@ -1206,6 +2071,229 @@ function MotelCommandCenter({
     setReservationPanelRoomId(null)
     notify(`Reservation created for ${guestName}!`, 'success')
   }, [notify, reservationPanelRoomId, reservationRoomOverlay])
+
+  const handleCompleteCheckIn = useCallback(async ({ balanceDue, paymentMethod, amountReceived }) => {
+    if (!checkInPanelRoomId) throw new Error('No room selected.')
+    const roomNumber = getRoomDisplayLabel(checkInPanelRoomId, checkInRoomOverlay)
+    const selectedRoom = roomStatusMap[checkInPanelRoomId] ?? roomStatusMap[canonicalRoomKey(checkInPanelRoomId)]
+    if (!selectedRoom?.room_id) throw new Error(`Room ${roomNumber} is missing a room record id.`)
+
+    let reservationId = selectedRoom?.reservation_id
+    if (!reservationId) {
+      const { data: reservationLookup, error: reservationLookupError } = await supabase
+        .from('reservations')
+        .select('id')
+        .eq('room_id', selectedRoom.room_id)
+        .eq('status', 'reserved')
+        .order('check_in_date', { ascending: true })
+        .limit(1)
+        .maybeSingle()
+      if (reservationLookupError) throw reservationLookupError
+      reservationId = reservationLookup?.id
+    }
+    if (!reservationId) throw new Error(`No active reserved reservation found for room ${roomNumber}.`)
+
+    if (balanceDue > 0) {
+      if ((Number(amountReceived) || 0) < balanceDue) {
+        throw new Error('Amount received must cover the full balance due.')
+      }
+      const { error: paymentError } = await supabase
+        .from('payments')
+        .insert({
+          reservation_id: reservationId,
+          amount: balanceDue,
+          payment_method: paymentMethod,
+          created_at: new Date().toISOString(),
+        })
+      if (paymentError) throw paymentError
+    }
+
+    const nowIso = new Date().toISOString()
+    const { error: reservationUpdateError } = await supabase
+      .from('reservations')
+      .update({ status: 'checked_in', actual_check_in: nowIso })
+      .eq('id', reservationId)
+    if (reservationUpdateError) throw reservationUpdateError
+
+    const { error: roomUpdateError } = await supabase
+      .from('rooms')
+      .update({ status: 'occupied' })
+      .eq('id', selectedRoom.room_id)
+    if (roomUpdateError) throw roomUpdateError
+
+    const guestName = selectedRoom.guestName || selectedRoom.guest_name || 'Guest'
+    setRoomData((prev) => prev.map((room) => {
+      if (room.room === checkInPanelRoomId || room.roomNumber === checkInPanelRoomId) {
+        return {
+          ...room,
+          status: 'occupied',
+          actual_check_in: nowIso,
+          amountPaid: (Number(room.amountPaid) || 0) + (balanceDue > 0 ? balanceDue : 0),
+          balanceDue: Math.max(0, (Number(room.balanceDue) || 0) - (balanceDue > 0 ? balanceDue : 0)),
+        }
+      }
+      return room
+    }))
+    setCheckInPanelRoomId(null)
+    notify(`✅ ${guestName} checked in to Room ${roomNumber}!`, 'success')
+  }, [checkInPanelRoomId, checkInRoomOverlay, notify, roomStatusMap])
+
+  const handleCompleteCheckout = useCallback(async ({ checkoutDate, extraCharges, paymentMethod, paymentAmount }) => {
+    if (!occupiedPanelRoomId) throw new Error('No occupied room selected.')
+    const roomNumber = getRoomDisplayLabel(occupiedPanelRoomId, occupiedRoomOverlay)
+    const selectedRoom = roomStatusMap[occupiedPanelRoomId] ?? roomStatusMap[canonicalRoomKey(occupiedPanelRoomId)]
+    if (!selectedRoom?.room_id) throw new Error(`Room ${roomNumber} is missing a room record id.`)
+
+    let reservationId = selectedRoom?.reservation_id
+    if (!reservationId) {
+      const { data: reservationLookup, error: reservationLookupError } = await supabase
+        .from('reservations')
+        .select('id')
+        .eq('room_id', selectedRoom.room_id)
+        .in('status', ['checked_in', 'reserved'])
+        .order('check_in_date', { ascending: true })
+        .limit(1)
+        .maybeSingle()
+      if (reservationLookupError) throw reservationLookupError
+      reservationId = reservationLookup?.id
+    }
+    if (!reservationId) throw new Error(`No active reservation found for room ${roomNumber}.`)
+
+    if (Array.isArray(extraCharges) && extraCharges.length > 0) {
+      const chargeRows = extraCharges
+        .filter((charge) => (Number(charge?.amount) || 0) > 0)
+        .map((charge) => ({
+          reservation_id: reservationId,
+          description: String(charge.description || 'Other').trim(),
+          amount: Number(charge.amount) || 0,
+          created_at: checkoutDate,
+        }))
+      if (chargeRows.length > 0) {
+        const { error: chargesError } = await supabase.from('charges').insert(chargeRows)
+        if (chargesError) throw chargesError
+      }
+    }
+
+    if ((Number(paymentAmount) || 0) > 0) {
+      const { error: paymentError } = await supabase
+        .from('payments')
+        .insert({
+          reservation_id: reservationId,
+          amount: Number(paymentAmount) || 0,
+          payment_method: paymentMethod,
+          created_at: checkoutDate,
+        })
+      if (paymentError) throw paymentError
+    }
+
+    const reservationUpdatePayload = {
+      status: 'checked_out',
+      actual_check_out: checkoutDate,
+    }
+    const { error: reservationUpdateError } = await supabase
+      .from('reservations')
+      .update(reservationUpdatePayload)
+      .eq('id', reservationId)
+    if (reservationUpdateError) throw reservationUpdateError
+
+    const { error: roomUpdateError } = await supabase
+      .from('rooms')
+      .update({ status: 'dirty' })
+      .eq('id', selectedRoom.room_id)
+    if (roomUpdateError) throw roomUpdateError
+
+    const guestName = selectedRoom.guestName || selectedRoom.guest_name || 'Guest'
+    setRoomData((prev) => prev.map((room) => {
+      if (room.room === occupiedPanelRoomId || room.roomNumber === occupiedPanelRoomId) {
+        return {
+          ...room,
+          status: 'dirty',
+          check_out: checkoutDate,
+          checkOut: checkoutDate,
+          actual_check_out: checkoutDate,
+          balanceDue: 0,
+        }
+      }
+      return room
+    }))
+    setOccupiedPanelRoomId(null)
+    notify(`✅ ${guestName} checked out from Room ${roomNumber}. Room needs cleaning.`, 'success')
+  }, [notify, occupiedPanelRoomId, occupiedRoomOverlay, roomStatusMap])
+
+  const handleMarkCleaningInProgress = useCallback(async ({ assignedTo, notes, startedAt }) => {
+    if (!housekeepingPanelRoomId) throw new Error('No room selected.')
+    const roomNumber = getRoomDisplayLabel(housekeepingPanelRoomId, housekeepingRoomOverlay)
+    const selectedRoom = roomStatusMap[housekeepingPanelRoomId] ?? roomStatusMap[canonicalRoomKey(housekeepingPanelRoomId)]
+    if (!selectedRoom?.room_id) throw new Error(`Room ${roomNumber} is missing a room record id.`)
+
+    const { error: roomUpdateError } = await supabase
+      .from('rooms')
+      .update({ status: 'maintenance' })
+      .eq('id', selectedRoom.room_id)
+    if (roomUpdateError) throw roomUpdateError
+
+    setRoomData((prev) => prev.map((room) => {
+      if (room.room === housekeepingPanelRoomId || room.roomNumber === housekeepingPanelRoomId) {
+        return {
+          ...room,
+          status: 'maintenance',
+          cleaning_assigned_to: assignedTo || room.cleaning_assigned_to || null,
+          maintenance_started_at: startedAt,
+          maintenance_notes: notes || room.maintenance_notes || null,
+        }
+      }
+      return room
+    }))
+    setHousekeepingPanelRoomId(null)
+    notify(`Room ${roomNumber} cleaning in progress`, 'info')
+  }, [housekeepingPanelRoomId, housekeepingRoomOverlay, notify, roomStatusMap])
+
+  const handleMarkRoomClean = useCallback(async ({ assignedTo, notes }) => {
+    if (!housekeepingPanelRoomId) throw new Error('No room selected.')
+    const roomNumber = getRoomDisplayLabel(housekeepingPanelRoomId, housekeepingRoomOverlay)
+    const selectedRoom = roomStatusMap[housekeepingPanelRoomId] ?? roomStatusMap[canonicalRoomKey(housekeepingPanelRoomId)]
+    if (!selectedRoom?.room_id) throw new Error(`Room ${roomNumber} is missing a room record id.`)
+
+    const nowIso = new Date().toISOString()
+    const { error: roomUpdateError } = await supabase
+      .from('rooms')
+      .update({ status: 'available' })
+      .eq('id', selectedRoom.room_id)
+    if (roomUpdateError) throw roomUpdateError
+
+    const { error: housekeepingInsertError } = await supabase
+      .from('housekeeping')
+      .insert({
+        room_id: selectedRoom.room_id,
+        assigned_to: assignedTo || null,
+        status: 'completed',
+        notes: notes || null,
+        completed_at: nowIso,
+      })
+    if (housekeepingInsertError) throw housekeepingInsertError
+
+    setRoomData((prev) => prev.map((room) => {
+      if (room.room === housekeepingPanelRoomId || room.roomNumber === housekeepingPanelRoomId) {
+        return {
+          ...room,
+          status: 'available',
+          guestName: null,
+          guest_name: null,
+          checkIn: null,
+          check_in: null,
+          checkOut: null,
+          check_out: null,
+          actual_check_out: null,
+          cleaning_assigned_to: null,
+          maintenance_started_at: null,
+          maintenance_notes: null,
+        }
+      }
+      return room
+    }))
+    setHousekeepingPanelRoomId(null)
+    notify(`✅ Room ${roomNumber} is clean and available!`, 'success')
+  }, [housekeepingPanelRoomId, housekeepingRoomOverlay, notify, roomStatusMap])
 
   const handleWheel = useCallback((e) => {
     if (!containerRef.current) return
@@ -1694,6 +2782,29 @@ function MotelCommandCenter({
         roomData={reservationRoomData}
         onClose={() => setReservationPanelRoomId(null)}
         onSave={handleSaveReservation}
+      />
+      <ReservedCheckInPanel
+        isOpen={!!checkInPanelRoomId}
+        roomOverlay={checkInRoomOverlay}
+        roomData={checkInRoomData}
+        onClose={() => setCheckInPanelRoomId(null)}
+        onComplete={handleCompleteCheckIn}
+      />
+      <OccupiedRoomPanel
+        isOpen={!!occupiedPanelRoomId}
+        roomOverlay={occupiedRoomOverlay}
+        roomData={occupiedRoomData}
+        onClose={() => setOccupiedPanelRoomId(null)}
+        onCompleteCheckout={handleCompleteCheckout}
+        hotelName={brandName}
+      />
+      <HousekeepingPanel
+        isOpen={!!housekeepingPanelRoomId}
+        roomOverlay={housekeepingRoomOverlay}
+        roomData={housekeepingRoomData}
+        onClose={() => setHousekeepingPanelRoomId(null)}
+        onMarkInProgress={handleMarkCleaningInProgress}
+        onMarkAsClean={handleMarkRoomClean}
       />
     </div>
   )

@@ -56,6 +56,10 @@ import TrainingModules from './pages/training/TrainingModules'
 import TrainingLesson from './pages/training/TrainingLesson'
 import AuditQueuePage from './pages/audit/AuditQueuePage'
 import AuditCaseDetailPage from './pages/audit/AuditCaseDetailPage'
+import ResponsibleAiCopilotBanking from './pages/ResponsibleAiCopilotBanking'
+import MentalHealthParityMcoHelpdeskDemo from './pages/MentalHealthParityMcoHelpdeskDemo'
+import InnSoftImporter from './pages/InnSoftImporter'
+import Downloads from './pages/Downloads'
 
 /** Redirect /studio to /studio/chat, preserving search (e.g. ?open=:id). */
 function StudioIndexRedirect() {
@@ -125,9 +129,13 @@ function App() {
               <Route path="/er-command-map" element={<ERCommandMapPage />} />
               <Route path="/floormap-ai" element={<FloorMapAIPage />} />
               <Route path="/motel-command-center" element={<MotelCommandCenter />} />
+              <Route path="/pms/import-innsoft" element={<InnSoftImporter />} />
+              <Route path="/downloads" element={<Downloads />} />
               <Route path="/best-western-command-center" element={<BestWesternCommandCenter />} />
               <Route path="/migration-validation-studio" element={<MigrationValidationStudio />} />
               <Route path="/roi-calculator" element={<RoiCalculator />} />
+              <Route path="/responsible-ai-copilot-banking" element={<ResponsibleAiCopilotBanking />} />
+              <Route path="/mental-health-parity-mco-helpdesk" element={<MentalHealthParityMcoHelpdeskDemo />} />
               <Route path="/federal-entry-brief" element={<FederalEntryBrief />} />
               <Route path="/reports/federal-entry" element={<FederalEntryReport />} />
               <Route path="/contact" element={<Contact />} />

@@ -39,6 +39,13 @@ function pickField(row, headerLookup, aliases) {
 function toDate(value) {
   if (!value) return null
   if (value instanceof Date && !Number.isNaN(value.getTime())) return value
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      const [y, m, d] = trimmed.split('-').map(Number)
+      return new Date(y, m - 1, d, 12, 0, 0)
+    }
+  }
   if (typeof value === 'number') {
     const parsed = XLSX.SSF.parse_date_code(value)
     if (parsed?.y) return new Date(parsed.y, parsed.m - 1, parsed.d, parsed.H || 0, parsed.M || 0, parsed.S || 0)
@@ -49,7 +56,12 @@ function toDate(value) {
 
 function asIsoDate(value) {
   const d = toDate(value)
-  return d ? d.toISOString() : null
+  if (!d) return null
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  // Keep date-only values to avoid timezone shifts in UI rendering.
+  return `${year}-${month}-${day}`
 }
 
 function sameDay(a, b) {

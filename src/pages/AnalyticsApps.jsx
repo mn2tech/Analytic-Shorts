@@ -35,6 +35,12 @@ const APPS = [
     icon: '🏨',
   },
   {
+    name: 'Migration Tools',
+    description: 'Download free Innsoft migration utilities and quick-start instructions.',
+    path: '/downloads',
+    icon: '⬇️',
+  },
+  {
     name: 'Federal Entry Brief',
     description: 'Federal opportunity briefs and compliance summaries.',
     path: '/federal-entry-brief',
@@ -75,6 +81,18 @@ const APPS = [
     description: 'Estimate migration savings, reduced validation effort, and enterprise risk impact for SAS modernization.',
     path: '/roi-calculator',
     icon: '💹',
+  },
+  {
+    name: 'Responsible AI Copilot for Banking Operations',
+    description: 'Enterprise-style LLM copilot demo with retrieval, guardrails, and observability traces.',
+    path: '/responsible-ai-copilot-banking',
+    icon: '🛡️',
+  },
+  {
+    name: 'Mental Health Parity MCO Helpdesk Demo',
+    description: 'Track MCO submission readiness, parity compliance findings, and helpdesk issues using a structured parity review dataset.',
+    path: '/mental-health-parity-mco-helpdesk',
+    icon: '🩺',
   },
 ]
 

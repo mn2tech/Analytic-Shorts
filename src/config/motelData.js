@@ -105,6 +105,13 @@ function isSameDay(a, b) {
 
 function toDate(value) {
   if (!value) return null
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      const [y, m, d] = trimmed.split('-').map(Number)
+      return new Date(y, m - 1, d, 12, 0, 0)
+    }
+  }
   const d = new Date(value)
   return Number.isNaN(d.getTime()) ? null : d
 }

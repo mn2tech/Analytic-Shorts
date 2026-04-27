@@ -44,6 +44,9 @@ export default defineConfig({
         ]
       },
       workbox: {
+        // SPA: let the app handle client-side routes when the service worker is active (avoids blank/404 on deep links).
+        navigateFallback: '/index.html',
+        navigateFallbackDenylist: [/^\/api/, /^\/api-floormap/],
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         runtimeCaching: [
           {
@@ -91,7 +94,9 @@ export default defineConfig({
     })
   ],
   server: {
-    port: 3000,
+    // Prefer VITE_DEV_PORT, then PORT, else 3000. If that port is taken, Vite picks the next free port (strictPort: false).
+    port: Number(process.env.VITE_DEV_PORT || process.env.PORT || 3000),
+    strictPort: false,
     host: '0.0.0.0', // Listen on all interfaces to allow external access
     proxy: {
       // FloorMap AI must come BEFORE /api (otherwise /api matches /api-floormap)

@@ -50,9 +50,11 @@ const PATH_TO_LABEL = [
   { path: '/floormap-ai', label: 'FloorMap AI' },
   { path: '/motel-command-center', label: 'Motel Command Center' },
   { path: '/best-western-command-center', label: 'Best Western Command Center' },
+  { path: '/downloads', label: 'Migration Tools' },
   { path: '/migration-validation-studio', label: 'Migration Validation Studio' },
   { path: '/studio/sas-to-pyspark', label: 'SAS to PySpark Studio' },
   { path: '/roi-calculator', label: 'ROI Calculator' },
+  { path: '/mental-health-parity-mco-helpdesk', label: 'MH Parity MCO Helpdesk Demo' },
   { path: '/federal-entry-brief', label: 'Federal Entry Brief' },
   { path: '/reports/federal-entry', label: 'Federal Entry Report' },
   { path: '/apps/execution-api', label: 'Execution API' },
@@ -589,6 +591,12 @@ function AppLayout() {
                     <span className={sidebarOpen ? '' : 'lg:hidden'}>Best Western Command Center</span>
                   </NavLink>
                 </SidebarTooltip>
+                <SidebarTooltip show={!sidebarOpen} label="Migration Tools">
+                  <NavLink to="/downloads" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
+                    <span>⬇️</span>
+                    <span className={sidebarOpen ? '' : 'lg:hidden'}>Migration Tools</span>
+                  </NavLink>
+                </SidebarTooltip>
                 <SidebarTooltip show={!sidebarOpen} label="Migration Validation Studio">
                   <NavLink to="/migration-validation-studio" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
                     <span>🧪</span>
@@ -605,6 +613,18 @@ function AppLayout() {
                   <NavLink to="/roi-calculator" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
                     <span>💹</span>
                     <span className={sidebarOpen ? '' : 'lg:hidden'}>ROI Calculator</span>
+                  </NavLink>
+                </SidebarTooltip>
+                <SidebarTooltip show={!sidebarOpen} label="Responsible AI Copilot for Banking Operations">
+                  <NavLink to="/responsible-ai-copilot-banking" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
+                    <span>🛡️</span>
+                    <span className={sidebarOpen ? '' : 'lg:hidden'}>Responsible AI Copilot</span>
+                  </NavLink>
+                </SidebarTooltip>
+                <SidebarTooltip show={!sidebarOpen} label="Mental Health Parity MCO Helpdesk Demo">
+                  <NavLink to="/mental-health-parity-mco-helpdesk" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>
+                    <span>🩺</span>
+                    <span className={sidebarOpen ? '' : 'lg:hidden'}>MH Parity Helpdesk Demo</span>
                   </NavLink>
                 </SidebarTooltip>
                 <SidebarTooltip show={!sidebarOpen} label="Federal Entry Brief">

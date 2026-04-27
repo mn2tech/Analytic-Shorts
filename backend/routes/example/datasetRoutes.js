@@ -26,6 +26,7 @@ const ROUTE_TO_KEY = {
   'banking': 'banking', 'yearly-income': 'yearlyIncome', 'pharmacy': 'pharmacy',
   'superbowl-winners': 'superbowl-winners', 'today-snapshot': 'today-snapshot',
   'revenue-trends': 'revenue-trends', 'alters-insights': 'alters-insights', 'usaspending': 'usaspending',
+  'mental-health-parity-mco': 'mental-health-parity-mco',
 }
 
 Object.entries(ROUTE_TO_KEY).forEach(([routePath, key]) => {

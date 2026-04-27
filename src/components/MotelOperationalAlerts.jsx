@@ -8,7 +8,13 @@ const PRIORITY_ORDER = { HIGH: 3, MEDIUM: 2, LOW: 1 }
 
 function formatShortDate(value) {
   if (!value) return '—'
-  const d = new Date(value)
+  let d = null
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value.trim())) {
+    const [y, m, day] = value.trim().split('-').map(Number)
+    d = new Date(y, m - 1, day, 12, 0, 0)
+  } else {
+    d = new Date(value)
+  }
   if (Number.isNaN(d.getTime())) return '—'
   return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
 }

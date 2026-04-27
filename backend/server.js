@@ -25,6 +25,8 @@ const studioRoutes = require('./routes/studio')
 const studioAiSchemaHandler = require('./routes/studioAiSchema')
 const aiDashboardSpecRoutes = require('./routes/aiDashboardSpec')
 const aiRiskAnalysisRoutes = require('./routes/aiRiskAnalysis')
+const aiResponsibleCopilotRoutes = require('./routes/aiResponsibleCopilot')
+const { postRiskAnalysis } = require('./controllers/aiRiskAnalysisController')
 const sharedRoutes = require('./routes/shared')
 const datalakeRoutes = require('./routes/datalake')
 const ownerSummaryRoutes = require('./routes/ownerSummary')
@@ -299,11 +301,19 @@ app.post('/api/ai/dashboard-spec/', dashboardSpecHandler)
 app.get('/api/ai/dashboard-spec', (req, res) => {
   res.status(405).json({ error: 'Method not allowed', hint: 'Use POST to generate a dashboard spec' })
 })
+// POST /api/ai/risk-analysis — register explicitly (same pattern as dashboard-spec) so proxies/stacks always see the route.
+const riskAnalysisHandler = (req, res, next) => {
+  postRiskAnalysis(req, res).catch(next)
+}
+app.post('/api/ai/risk-analysis', riskAnalysisHandler)
+app.post('/api/ai/risk-analysis/', riskAnalysisHandler)
 app.use('/api/ai', aiRiskAnalysisRoutes)
 app.use('/api/ai', aiDashboardSpecRoutes)
+app.use('/api/ai', aiResponsibleCopilotRoutes)
 if (typeof handleDashboardSpec === 'function') {
   console.log('[server] POST /api/ai/dashboard-spec registered')
 }
+console.log('[server] POST /api/ai/risk-analysis registered')
 app.use('/api/shared', sharedRoutes)
 app.use('/api/datalake', datalakeRoutes)
 app.use('/api/owner-summary', ownerSummaryRoutes)
@@ -351,6 +361,7 @@ app.use((req, res) => {
       'GET /api/ai/dataset-schema',
       'GET /api/ai/dataset-data',
       'POST /api/ai/dashboard-spec',
+      'POST /api/ai/risk-analysis',
       'GET /api/training/modules',
       'GET /api/training/modules/:id',
       'GET /api/training/dataset/:name',

@@ -1,6 +1,7 @@
 const path = require("path");
 const fs = require("fs");
 const Papa = require("papaparse");
+const { mentalHealthParityDataset } = require("./mentalHealthParityDataset");
 
 const exampleDatasets = {
   sales: {
@@ -402,6 +403,9 @@ const exampleDatasets = {
       { 'Award Date': '2024-04-25', 'Award Amount': 2750000, 'Recipient Name': 'Border Security Systems', 'Awarding Agency': 'Customs and Border Protection', 'Award Type': 'Contract', State: 'TX', 'NAICS Code': 541519, Description: 'Surveillance Technology' },
       { 'Award Date': '2024-04-28', 'Award Amount': 1420000, 'Recipient Name': 'Urban Planning Institute', 'Awarding Agency': 'Department of Housing and Urban Development', 'Award Type': 'Grant', State: 'OH', 'NAICS Code': 541611, Description: 'Urban Development Study' },
     ],
+  },
+  'mental-health-parity-mco': {
+    data: mentalHealthParityDataset,
   },
 }
 
