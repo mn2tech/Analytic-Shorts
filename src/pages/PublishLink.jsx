@@ -18,6 +18,15 @@ const HOSPITAL_BLUEPRINT_IMAGE = (() => {
   return path
 })()
 
+const MEDSTAR_ER_IMAGE = (() => {
+  const base = (import.meta.env.BASE_URL || '/').replace(/\/$/, '') || ''
+  const path = `${base}/medstar-montgomery-er.png`
+  if (typeof window !== 'undefined') {
+    return new URL(path, window.location.origin).href
+  }
+  return path
+})()
+
 const TEMPLATES = {
   'hospital-bed': {
     title: 'Hospital Bed Command Center',
@@ -32,6 +41,20 @@ const TEMPLATES = {
     linkUrl: '/hospital-bed-command-center',
     tags: ['hospital', 'er', 'poll', 'delay-causation', 'command-center'],
     thumbnailUrl: HOSPITAL_BLUEPRINT_IMAGE,
+  },
+  'medstar-er-command-center': {
+    title: 'MedStar Montgomery ER Command Center',
+    caption: 'Interactive MedStar Montgomery ER floor-map operations view with live room status overlays',
+    linkUrl: '/medstar-montgomery-er-command-center',
+    tags: ['hospital', 'er', 'medstar', 'command-center'],
+    thumbnailUrl: MEDSTAR_ER_IMAGE,
+  },
+  'medstar-er-causation-poll': {
+    title: 'MedStar ER Poll: Primary Delay Cause?',
+    caption: 'Live poll for MedStar Montgomery ER operations review. Vote in comments with one option: A) Waiting Provider, B) Boarding Hold, C) Awaiting Results, D) Consult Pending, E) Transfer/Transport Delay, F) Disposition Pending. Include a short why.',
+    linkUrl: '/medstar-montgomery-er-command-center',
+    tags: ['hospital', 'er', 'medstar', 'poll', 'delay-causation', 'command-center'],
+    thumbnailUrl: MEDSTAR_ER_IMAGE,
   },
   'federal-entry': {
     title: 'Federal Entry Intelligence Report',

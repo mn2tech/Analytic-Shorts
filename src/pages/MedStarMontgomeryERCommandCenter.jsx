@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { MEDSTAR_MONTGOMERY_ER_LAYOUT } from '../data/medstarMontgomeryErLayout'
 
 const STATUS_COLORS = {
@@ -23,8 +24,13 @@ function nextStatus(current) {
 }
 
 export default function MedStarMontgomeryERCommandCenter() {
+  const importInputRef = useRef(null)
+  const mapRef = useRef(null)
+  const panelRef = useRef(null)
   const [imagePath, setImagePath] = useState('/medstar-montgomery-er.png')
   const [selectedRoomId, setSelectedRoomId] = useState(null)
+  const [layout, setLayout] = useState(MEDSTAR_MONTGOMERY_ER_LAYOUT)
+  const [isFullscreen, setIsFullscreen] = useState(false)
   const [roomStatuses, setRoomStatuses] = useState(() => {
     const initial = {}
     MEDSTAR_MONTGOMERY_ER_LAYOUT.rooms.forEach((room) => {
@@ -33,9 +39,9 @@ export default function MedStarMontgomeryERCommandCenter() {
     return initial
   })
 
-  const roomCount = MEDSTAR_MONTGOMERY_ER_LAYOUT.rooms.length
+  const roomCount = layout.rooms.length
   const metrics = useMemo(() => {
-    return MEDSTAR_MONTGOMERY_ER_LAYOUT.rooms.reduce(
+    return layout.rooms.reduce(
       (acc, room) => {
         const status = roomStatuses[room.room_id] || 'available'
         acc.total += 1
@@ -47,20 +53,83 @@ export default function MedStarMontgomeryERCommandCenter() {
       },
       { total: 0, available: 0, occupied: 0, cleaning: 0, reserved: 0 }
     )
-  }, [roomStatuses])
+  }, [layout.rooms, roomStatuses])
 
   const selectedRoom = useMemo(
-    () => MEDSTAR_MONTGOMERY_ER_LAYOUT.rooms.find((room) => room.room_id === selectedRoomId) || null,
-    [selectedRoomId]
+    () => layout.rooms.find((room) => room.room_id === selectedRoomId) || null,
+    [layout.rooms, selectedRoomId]
   )
+
+  useEffect(() => {
+    const handleFullscreenChange = () => setIsFullscreen(Boolean(document.fullscreenElement))
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
+  }, [])
 
   const onRoomClick = (roomId) => {
     setSelectedRoomId(roomId)
     setRoomStatuses((prev) => ({ ...prev, [roomId]: nextStatus(prev[roomId] || 'available') }))
   }
 
-  const width = MEDSTAR_MONTGOMERY_ER_LAYOUT.image_width
-  const height = MEDSTAR_MONTGOMERY_ER_LAYOUT.image_height
+  const resetRoomStatuses = (rooms = layout.rooms) => {
+    const next = {}
+    rooms.forEach((room) => {
+      next[room.room_id] = room.status || 'available'
+    })
+    setRoomStatuses(next)
+    setSelectedRoomId(null)
+  }
+
+  const handleRefresh = () => {
+    resetRoomStatuses()
+  }
+
+  const handleLoadFloorMapClick = () => importInputRef.current?.click()
+
+  const handleLoadFloorMapFile = (event) => {
+    const file = event.target?.files?.[0]
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(String(reader.result || '{}'))
+        const nextRooms = normalizeImportedRooms(parsed)
+        if (!nextRooms.length) {
+          alert('No rooms found. Expected a FloorMap AI export with a "rooms" array.')
+          return
+        }
+
+        const nextLayout = {
+          ...layout,
+          image_width: parsed.image_width || parsed.imageWidth || parsed.width || layout.image_width,
+          image_height: parsed.image_height || parsed.imageHeight || parsed.height || layout.image_height,
+          rooms: nextRooms,
+        }
+
+        setLayout(nextLayout)
+        resetRoomStatuses(nextRooms)
+      } catch (error) {
+        console.error('Unable to load FloorMap AI export', error)
+        alert('Unable to load that FloorMap AI export. Please choose a valid JSON file.')
+      } finally {
+        event.target.value = ''
+      }
+    }
+    reader.readAsText(file)
+  }
+
+  const toggleFullscreen = (targetRef) => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen?.().then(() => setIsFullscreen(false)).catch(() => {})
+      return
+    }
+
+    targetRef.current?.requestFullscreen?.().then(() => setIsFullscreen(true)).catch(() => {})
+  }
+
+  const width = layout.image_width
+  const height = layout.image_height
 
   return (
     <div className="min-h-screen bg-slate-950 text-white">
@@ -70,8 +139,75 @@ export default function MedStarMontgomeryERCommandCenter() {
             <h1 className="text-2xl font-bold tracking-tight">MedStar Montgomery ER Command Center</h1>
             <p className="text-sm text-slate-400">Interactive floor-map operations view</p>
           </div>
-          <div className="text-xs text-slate-400 rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2">
-            Click a room to cycle status
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            <Link
+              to="/floormap-ai"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm font-semibold transition-colors"
+            >
+              <span>🗺️</span>
+              FloorMap AI
+            </Link>
+            <button
+              type="button"
+              onClick={handleLoadFloorMapClick}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-white/20 bg-slate-800 hover:bg-slate-700 text-sm font-semibold transition-colors"
+              title="Load a FloorMap AI export (JSON)"
+            >
+              <span>📂</span>
+              Load Floor Map
+            </button>
+            <input ref={importInputRef} type="file" accept=".json,application/json" onChange={handleLoadFloorMapFile} className="hidden" />
+            <Link
+              to="/publish/link?template=medstar-er-command-center"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition-colors"
+            >
+              <span>📤</span>
+              Add to Feed
+            </Link>
+            <Link
+              to="/publish/link?template=medstar-er-causation-poll"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-colors"
+            >
+              <span>🗳️</span>
+              ER Poll
+            </Link>
+            <button
+              type="button"
+              onClick={handleRefresh}
+              className="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm font-semibold transition-colors"
+              title="Reset room statuses"
+            >
+              Refresh
+            </button>
+            {isFullscreen ? (
+              <button
+                type="button"
+                onClick={() => document.exitFullscreen?.().then(() => setIsFullscreen(false)).catch(() => {})}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-white/20 bg-slate-800 hover:bg-slate-700 text-sm font-semibold transition-colors"
+                title="Exit full screen"
+              >
+                ✕ Exit full screen
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => toggleFullscreen(mapRef)}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-white/20 bg-slate-800 hover:bg-slate-700 text-sm font-semibold transition-colors"
+                  title="Full screen map only"
+                >
+                  ⛶ Map
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleFullscreen(panelRef)}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-white/20 bg-slate-800 hover:bg-slate-700 text-sm font-semibold transition-colors"
+                  title="Full screen entire panel"
+                >
+                  ⛶ Panel
+                </button>
+              </>
+            )}
           </div>
         </header>
 
@@ -83,8 +219,8 @@ export default function MedStarMontgomeryERCommandCenter() {
           <MetricCard label="Reserved" value={metrics.reserved} color="text-cyan-300" />
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-4">
-          <div className="rounded-xl border border-slate-700 bg-slate-900/80 p-2">
+        <div ref={panelRef} className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-4 bg-slate-950">
+          <div ref={mapRef} className="rounded-xl border border-slate-700 bg-slate-900/80 p-2">
             <div className="relative overflow-auto rounded-lg border border-slate-700 bg-slate-950">
               <div className="relative min-w-[900px]" style={{ aspectRatio: `${width} / ${height}` }}>
                 <img
@@ -93,7 +229,7 @@ export default function MedStarMontgomeryERCommandCenter() {
                   className="absolute inset-0 h-full w-full object-contain"
                   onError={() => setImagePath('/best-western-blueprint.png')}
                 />
-                {MEDSTAR_MONTGOMERY_ER_LAYOUT.rooms.map((room, idx) => {
+                {layout.rooms.map((room, idx) => {
                   const status = roomStatuses[room.room_id] || 'available'
                   const bbox = room.bbox || { x: 0, y: 0, width: 0, height: 0 }
                   return (
@@ -142,6 +278,44 @@ export default function MedStarMontgomeryERCommandCenter() {
       </div>
     </div>
   )
+}
+
+function normalizeImportedRooms(exportData) {
+  if (!Array.isArray(exportData.rooms)) return []
+
+  return exportData.rooms
+    .map((room, index) => {
+      const bbox = room.bbox || room.bounds || {
+        x: room.x,
+        y: room.y,
+        width: room.width,
+        height: room.height,
+      }
+
+      if (
+        !bbox ||
+        !Number.isFinite(Number(bbox.x)) ||
+        !Number.isFinite(Number(bbox.y)) ||
+        !Number.isFinite(Number(bbox.width)) ||
+        !Number.isFinite(Number(bbox.height))
+      ) {
+        return null
+      }
+
+      return {
+        room_id: String(room.room_id || room.id || room.label || `Room ${index + 1}`),
+        type: room.type || 'patient_room',
+        status: STATUS_SEQUENCE.includes(room.status) ? room.status : 'available',
+        unit: room.unit || null,
+        bbox: {
+          x: Number(bbox.x),
+          y: Number(bbox.y),
+          width: Number(bbox.width),
+          height: Number(bbox.height),
+        },
+      }
+    })
+    .filter(Boolean)
 }
 
 function MetricCard({ label, value, color = 'text-white' }) {
