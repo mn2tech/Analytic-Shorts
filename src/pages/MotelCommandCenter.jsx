@@ -20,7 +20,6 @@ import { getRoomDisplayLabel } from '../config/motelRoomDisplayLabels'
 import { roomStatusHistory, timelineTimes } from '../data/motelRoomStatusHistory'
 import LiveStatus from '../components/LiveStatus'
 import KpiGroupCard from '../components/KpiGroupCard'
-import TimelinePlayback from '../components/TimelinePlayback'
 import MotelOperationalAlerts from '../components/MotelOperationalAlerts'
 import MotelRotatingMetricsPanel from '../components/MotelRotatingMetricsPanel'
 import { normalizeInnsoftRows, parseInnsoftFile } from '../utils/innsoftIngestion'
@@ -2783,25 +2782,6 @@ function MotelCommandCenter({
             metrics={metrics}
           />
         </div>
-        </div>
-
-        <div className={`shrink-0 ${commandCenterMode ? 'py-1' : 'space-y-2'}`}>
-          <TimelinePlayback
-            times={timelineTimeOptions}
-            selectedTime={selectedTime ?? timelineTimeOptions[0]}
-            onTimeChange={setSelectedTime}
-            isPlaying={isTimelinePlaying}
-            onPlayPause={() => { if (!selectedTime) setSelectedTime(timelineTimeOptions[0]); setIsTimelinePlaying((p) => !p) }}
-            onBackToLive={() => { setSelectedTime(null); setIsTimelinePlaying(false) }}
-            isLive={!selectedTime}
-            compact={commandCenterMode}
-            playbackIntervalMs={commandCenterMode ? 5000 : 2000}
-          />
-          {!commandCenterMode && (
-          <div className="flex flex-wrap items-center gap-4">
-            <button type="button" onClick={() => { setSelectedTime(null); setIsTimelinePlaying(false) }} className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${!selectedTime ? 'bg-emerald-600/80 text-white' : 'bg-slate-700/60 text-slate-400 hover:bg-slate-600 hover:text-white'}`} title={!selectedTime ? 'Viewing live data' : 'Click to switch to live'}>Live{!selectedTime ? ` ${liveTime}` : ''}</button>
-          </div>
-          )}
         </div>
 
         {!commandCenterMode && (
