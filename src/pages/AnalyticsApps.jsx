@@ -17,6 +17,12 @@ const APPS = [
     icon: '🏥',
   },
   {
+    name: 'MedStar Montgomery ER Command Center',
+    description: 'Interactive MedStar ER floor-map with room overlays, status controls, and live capacity KPIs.',
+    path: '/medstar-montgomery-er-command-center',
+    icon: '🚑',
+  },
+  {
     name: 'Kumon Learning Command Center',
     description: 'Real-time student seat map, learning alerts, and AI intervention insights.',
     path: '/kumon-learning-command-center',

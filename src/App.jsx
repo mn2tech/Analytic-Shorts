@@ -60,6 +60,7 @@ import ResponsibleAiCopilotBanking from './pages/ResponsibleAiCopilotBanking'
 import MentalHealthParityMcoHelpdeskDemo from './pages/MentalHealthParityMcoHelpdeskDemo'
 import InnSoftImporter from './pages/InnSoftImporter'
 import Downloads from './pages/Downloads'
+import MedStarMontgomeryERCommandCenter from './pages/MedStarMontgomeryERCommandCenter'
 
 /** Redirect /studio to /studio/chat, preserving search (e.g. ?open=:id). */
 function StudioIndexRedirect() {
@@ -131,6 +132,7 @@ function App() {
               <Route path="/motel-command-center" element={<MotelCommandCenter />} />
               <Route path="/pms/import-innsoft" element={<InnSoftImporter />} />
               <Route path="/downloads" element={<Downloads />} />
+              <Route path="/medstar-montgomery-er-command-center" element={<MedStarMontgomeryERCommandCenter />} />
               <Route path="/best-western-command-center" element={<BestWesternCommandCenter />} />
               <Route path="/migration-validation-studio" element={<MigrationValidationStudio />} />
               <Route path="/roi-calculator" element={<RoiCalculator />} />
