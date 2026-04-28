@@ -157,6 +157,11 @@ function formatCurrency(value) {
   return amount.toLocaleString(undefined, { style: 'currency', currency: 'USD' })
 }
 
+function isRlsPolicyError(error) {
+  const message = String(error?.message || '').toLowerCase()
+  return message.includes('row-level security') || message.includes('violates row-level security policy')
+}
+
 function nightsStayedSoFar(value) {
   if (!value) return 0
   const text = String(value).trim()
@@ -2100,6 +2105,7 @@ function MotelCommandCenter({
     }
     if (!reservationId) throw new Error(`No active reserved reservation found for room ${roomNumber}.`)
 
+    let paymentRecorded = true
     if (balanceDue > 0) {
       if ((Number(amountReceived) || 0) < balanceDue) {
         throw new Error('Amount received must cover the full balance due.')
@@ -2112,7 +2118,13 @@ function MotelCommandCenter({
           payment_method: paymentMethod,
           created_at: new Date().toISOString(),
         })
-      if (paymentError) throw paymentError
+      if (paymentError) {
+        if (isRlsPolicyError(paymentError)) {
+          paymentRecorded = false
+        } else {
+          throw paymentError
+        }
+      }
     }
 
     const nowIso = new Date().toISOString()
@@ -2142,7 +2154,11 @@ function MotelCommandCenter({
       return room
     }))
     setCheckInPanelRoomId(null)
-    notify(`✅ ${guestName} checked in to Room ${roomNumber}!`, 'success')
+    if (paymentRecorded) {
+      notify(`✅ ${guestName} checked in to Room ${roomNumber}!`, 'success')
+    } else {
+      notify(`✅ ${guestName} checked in to Room ${roomNumber}! Payment log was blocked by DB policy (RLS).`, 'warning')
+    }
   }, [checkInPanelRoomId, checkInRoomOverlay, notify, roomStatusMap])
 
   const handleCompleteCheckout = useCallback(async ({ checkoutDate, extraCharges, paymentMethod, paymentAmount }) => {
@@ -2181,6 +2197,7 @@ function MotelCommandCenter({
       }
     }
 
+    let paymentRecorded = true
     if ((Number(paymentAmount) || 0) > 0) {
       const { error: paymentError } = await supabase
         .from('payments')
@@ -2190,7 +2207,13 @@ function MotelCommandCenter({
           payment_method: paymentMethod,
           created_at: checkoutDate,
         })
-      if (paymentError) throw paymentError
+      if (paymentError) {
+        if (isRlsPolicyError(paymentError)) {
+          paymentRecorded = false
+        } else {
+          throw paymentError
+        }
+      }
     }
 
     const reservationUpdatePayload = {
@@ -2224,7 +2247,11 @@ function MotelCommandCenter({
       return room
     }))
     setOccupiedPanelRoomId(null)
-    notify(`✅ ${guestName} checked out from Room ${roomNumber}. Room needs cleaning.`, 'success')
+    if (paymentRecorded) {
+      notify(`✅ ${guestName} checked out from Room ${roomNumber}. Room needs cleaning.`, 'success')
+    } else {
+      notify(`✅ ${guestName} checked out from Room ${roomNumber}. Payment log was blocked by DB policy (RLS).`, 'warning')
+    }
   }, [notify, occupiedPanelRoomId, occupiedRoomOverlay, roomStatusMap])
 
   const handleMarkCleaningInProgress = useCallback(async ({ assignedTo, notes, startedAt }) => {

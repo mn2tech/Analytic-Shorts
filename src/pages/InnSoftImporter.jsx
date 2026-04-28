@@ -107,6 +107,37 @@ function toDateOnly(value) {
   return `${year}-${month}-${day}`
 }
 
+/** Next calendar day as YYYY-MM-DD (noon-based local math avoids DST edge cases). */
+function addOneCalendarDay(iso) {
+  if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null
+  const [y, m, d] = iso.split('-').map(Number)
+  const dt = new Date(y, m - 1, d, 12, 0, 0)
+  dt.setDate(dt.getDate() + 1)
+  const year = dt.getFullYear()
+  const month = String(dt.getMonth() + 1).padStart(2, '0')
+  const day = String(dt.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+/**
+ * InnSoft backups often duplicate arrival on departure. For reservations, treat
+ * missing or same/next-day-as-arrival checkout as "depart the following day".
+ */
+function normalizedCheckoutIso(checkInRaw, checkOutRaw) {
+  const inIso = toDateOnly(checkInRaw)
+  const outIso = toDateOnly(checkOutRaw)
+  if (!inIso) return outIso
+  if (!outIso || outIso <= inIso) return addOneCalendarDay(inIso)
+  return outIso
+}
+
+function isoToMdY(iso) {
+  if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null
+  const [, m, d] = iso.split('-')
+  const y = iso.slice(0, 4)
+  return `${m}/${d}/${y}`
+}
+
 function parseRate(value) {
   const raw = String(value || '').trim()
   if (!raw) return null
@@ -171,6 +202,7 @@ function buildPreviewModel(dtaBytes) {
   const rooms = parseRoomMap(buffer, guestsByName)
   const mergedRooms = rooms.map((room) => {
     const guest = room.guest
+    const checkoutIso = guest ? normalizedCheckoutIso(guest.check_in, guest.check_out) : null
     return {
       roomNumber: room.room_number,
       roomType: room.room_type || null,
@@ -180,7 +212,7 @@ function buildPreviewModel(dtaBytes) {
       source: parseSourceDisplay(guest?.source),
       rate: formatRateLabel(guest?.rate),
       checkIn: parseDateDisplay(guest?.check_in),
-      checkOut: parseDateDisplay(guest?.check_out),
+      checkOut: isoToMdY(checkoutIso) || parseDateDisplay(guest?.check_out),
       unavailableDate: room.unavail_until || null,
       guest,
     }
@@ -367,7 +399,7 @@ async function persistInnsoftImport(previewData) {
         room_id: roomId,
         guest_id: guestId,
         check_in_date: toDateOnly(guest.checkIn),
-        check_out_date: toDateOnly(guest.checkOut),
+        check_out_date: normalizedCheckoutIso(guest.checkIn, guest.checkOut),
         status: 'checked_in',
         rate_per_night: parseRate(guest.rate),
         source: guest.source || 'innsoft_import',
@@ -526,7 +558,7 @@ export default function InnSoftImporter() {
                     <td className={`px-3 py-2 font-semibold ${statusClassName(room.status)}`}>{room.status}</td>
                     <td className="px-3 py-2">{room.guest_name || '—'}</td>
                     <td className="px-3 py-2">{room.guest?.check_in || '—'}</td>
-                    <td className="px-3 py-2">{room.guest?.check_out || '—'}</td>
+                    <td className="px-3 py-2">{room.checkOut || '—'}</td>
                     <td className="px-3 py-2">{room.guest?.source || '—'}</td>
                     <td className="px-3 py-2">{room.guest?.rate ? `$${room.guest.rate}/night` : '—'}</td>
                   </tr>
