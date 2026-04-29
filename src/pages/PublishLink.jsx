@@ -20,7 +20,7 @@ const HOSPITAL_BLUEPRINT_IMAGE = (() => {
 
 const MEDSTAR_ER_IMAGE = (() => {
   const base = (import.meta.env.BASE_URL || '/').replace(/\/$/, '') || ''
-  const path = `${base}/medstar-montgomery-er.png`
+  const path = `${base}/medstar-montgomery-er2.png`
   if (typeof window !== 'undefined') {
     return new URL(path, window.location.origin).href
   }

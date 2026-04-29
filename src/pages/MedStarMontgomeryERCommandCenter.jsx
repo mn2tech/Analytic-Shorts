@@ -117,7 +117,7 @@ export default function MedStarMontgomeryERCommandCenter() {
   const panelRef = useRef(null)
   const [lastUpdated, setLastUpdated] = useState(() => new Date())
   const [currentTime, setCurrentTime] = useState(() => new Date())
-  const [imagePath, setImagePath] = useState('/medstar-montgomery-er.png')
+  const [imagePath, setImagePath] = useState('/medstar-montgomery-er2.png')
   const [uploadedImageDataUrl, setUploadedImageDataUrl] = useState(null)
   const [selectedRoomId, setSelectedRoomId] = useState(null)
   const [layout, setLayout] = useState(MEDSTAR_MONTGOMERY_ER_LAYOUT)
@@ -306,7 +306,7 @@ export default function MedStarMontgomeryERCommandCenter() {
   const handleResetSavedMap = () => {
     localStorage.removeItem(SAVED_MAP_STORAGE_KEY)
     setUploadedImageDataUrl(null)
-    setImagePath('/medstar-montgomery-er.png')
+    setImagePath('/medstar-montgomery-er2.png')
     setLayout(MEDSTAR_MONTGOMERY_ER_LAYOUT)
     resetRoomStatuses(MEDSTAR_MONTGOMERY_ER_LAYOUT.rooms)
     setLastUpdated(new Date())
@@ -504,7 +504,7 @@ export default function MedStarMontgomeryERCommandCenter() {
                   src={imagePath}
                   alt="MedStar Montgomery ER blueprint"
                   className="absolute inset-0 h-full w-full object-contain"
-                  onError={() => setImagePath('/best-western-blueprint.png')}
+                  onError={() => setImagePath('/medstar-montgomery-er2.png')}
                 />
                 {layout.rooms.map((room, idx) => {
                   const status = roomStatuses[room.room_id] || 'available'
