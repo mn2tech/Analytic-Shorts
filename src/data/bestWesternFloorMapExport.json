@@ -41,7 +41,7 @@
     { "room_id": "115", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 45, "y": 240, "width": 48, "height": 38 } },
     { "room_id": "216", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 139, "y": 204.5, "width": 42, "height": 37 } },
     { "room_id": "212", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 139, "y": 275, "width": 42, "height": 34 } },
-    { "room_id": "210", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 140, "y": 311, "width": 43, "height": 34 } },
+    { "room_id": "210", "label": "", "type": "guest_room", "status": "available", "unit": null, "bbox": { "x": 140, "y": 311, "width": 43, "height": 34 } },
     { "room_id": "220", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 329, "y": 250, "width": 37, "height": 36 } },
     { "room_id": "162", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 1041.5, "y": 414.5, "width": 49, "height": 29 } },
     { "room_id": "262", "label": "", "type": "patient_room", "status": "available", "unit": null, "bbox": { "x": 1093, "y": 415.5, "width": 50, "height": 31 } },

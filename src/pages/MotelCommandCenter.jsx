@@ -55,6 +55,28 @@ const STATUS_VISUALS = {
   maintenance: { label: 'MNT', icon: 'FIX', textColor: '#111827', badgeBg: 'rgba(229, 231, 235, 0.95)' },
   unavailable: { label: 'UNA', icon: 'N/A', textColor: '#111827', badgeBg: 'rgba(229, 231, 235, 0.95)' },
 }
+const INNSOFT_TAX_SETTINGS = {
+  cityRate: 0.08,
+  stateRate: 0.07,
+  hotelFlatPerNight: 5,
+}
+
+function calculateInnsoftTaxBreakdown(roomSubtotal, nights = 1) {
+  const taxableSubtotal = Math.max(0, Number(roomSubtotal) || 0)
+  const taxableNights = Math.max(0, Number(nights) || 0)
+  const cityTax = taxableSubtotal * INNSOFT_TAX_SETTINGS.cityRate
+  const stateTax = taxableSubtotal * INNSOFT_TAX_SETTINGS.stateRate
+  const hotelTax = taxableSubtotal > 0 ? taxableNights * INNSOFT_TAX_SETTINGS.hotelFlatPerNight : 0
+  const taxTotal = cityTax + stateTax + hotelTax
+
+  return {
+    cityTax,
+    stateTax,
+    hotelTax,
+    taxTotal,
+    totalWithTax: taxableSubtotal + taxTotal,
+  }
+}
 
 function roomsToOverlays(rooms, imageHeight = 1024) {
   if (!Array.isArray(rooms)) return []
@@ -92,6 +114,15 @@ function canonicalRoomKey(value) {
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '')
+}
+
+function formatRoomTypeLabel(value) {
+  const text = String(value || '').trim()
+  if (!text) return ''
+  return text
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase())
 }
 
 function normalizeRoomStatus(value) {
@@ -250,14 +281,23 @@ function NewReservationPanel({ isOpen, roomOverlay, roomData, onClose, onSave })
   )
   const totalAmount = useMemo(() => {
     const rate = Number(formValues.ratePerNight) || 0
+    const roomSubtotal = nights * rate
+    return calculateInnsoftTaxBreakdown(roomSubtotal, nights).totalWithTax
+  }, [formValues.ratePerNight, nights])
+  const roomSubtotal = useMemo(() => {
+    const rate = Number(formValues.ratePerNight) || 0
     return nights * rate
   }, [formValues.ratePerNight, nights])
+  const taxBreakdown = useMemo(
+    () => calculateInnsoftTaxBreakdown(roomSubtotal, nights),
+    [roomSubtotal, nights]
+  )
   const balanceDue = useMemo(() => {
     const deposit = Number(formValues.depositCollected) || 0
     return Math.max(0, totalAmount - deposit)
   }, [formValues.depositCollected, totalAmount])
 
-  const roomTypeLabel = roomOverlay?.type || roomData?.room_type || roomOverlay?.label || 'Room'
+  const roomTypeLabel = formatRoomTypeLabel(roomOverlay?.type || roomData?.room_type || roomOverlay?.label || 'Room')
   const roomDisplay = roomOverlay ? getRoomDisplayLabel(roomOverlay.id, roomOverlay) : roomData?.room || '—'
 
   const updateValue = (field, value) => {
@@ -298,6 +338,8 @@ function NewReservationPanel({ isOpen, roomOverlay, roomData, onClose, onSave })
       await onSave({
         ...formValues,
         nights,
+        roomSubtotal,
+        taxBreakdown,
         totalAmount,
         balanceDue,
       })
@@ -411,8 +453,24 @@ function NewReservationPanel({ isOpen, roomOverlay, roomData, onClose, onSave })
                   <input className={inputClass} type="number" min="0" step="0.01" value={formValues.ratePerNight} onChange={(e) => updateValue('ratePerNight', e.target.value)} />
                   {errors.ratePerNight && <p className="mt-1 text-xs text-red-400">{errors.ratePerNight}</p>}
                 </div>
+                <div>
+                  <label className={labelClass}>Room Subtotal</label>
+                  <input className={inputClass} value={roomSubtotal.toFixed(2)} readOnly />
+                </div>
+                <div>
+                  <label className={labelClass}>City Tax (8%)</label>
+                  <input className={inputClass} value={taxBreakdown.cityTax.toFixed(2)} readOnly />
+                </div>
+                <div>
+                  <label className={labelClass}>State Tax (7%)</label>
+                  <input className={inputClass} value={taxBreakdown.stateTax.toFixed(2)} readOnly />
+                </div>
+                <div>
+                  <label className={labelClass}>Hotel Tax ($5/night)</label>
+                  <input className={inputClass} value={taxBreakdown.hotelTax.toFixed(2)} readOnly />
+                </div>
                 <div className="sm:col-span-2">
-                  <label className={labelClass}>Total Amount</label>
+                  <label className={labelClass}>Total Amount Incl. Tax</label>
                   <input className={inputClass} value={totalAmount.toFixed(2)} readOnly />
                 </div>
               </div>
@@ -513,7 +571,9 @@ function ReservedCheckInPanel({ isOpen, roomOverlay, roomData, onClose, onComple
   const checkOutDate = roomData?.checkOut || roomData?.check_out
   const nights = roomData?.nights ?? dateDiffNights(checkInDate, checkOutDate)
   const ratePerNight = Number(roomData?.rate_per_night ?? roomData?.ratePerNight ?? 0) || 0
-  const totalAmount = Number(roomData?.totalAmount ?? nights * ratePerNight) || 0
+  const roomSubtotal = nights * ratePerNight
+  const taxBreakdown = calculateInnsoftTaxBreakdown(roomSubtotal, nights)
+  const totalAmount = Number(roomData?.totalAmount ?? taxBreakdown.totalWithTax) || 0
   const amountPaid = Number(roomData?.amountPaid ?? roomData?.depositCollected ?? 0) || 0
   const balanceDue = Math.max(0, Number(roomData?.balanceDue ?? totalAmount - amountPaid) || 0)
   const amountReceivedNumber = Number(amountReceived) || 0
@@ -585,6 +645,8 @@ function ReservedCheckInPanel({ isOpen, roomOverlay, roomData, onClose, onComple
                 <p className="text-slate-400">Check-out Date</p><p className="text-right text-white">{formatDateDisplay(checkOutDate)}</p>
                 <p className="text-slate-400">Number of nights</p><p className="text-right text-white">{nights}</p>
                 <p className="text-slate-400">Rate per night</p><p className="text-right text-white">{formatCurrency(ratePerNight)}</p>
+                <p className="text-slate-400">Room subtotal</p><p className="text-right text-white">{formatCurrency(roomSubtotal)}</p>
+                <p className="text-slate-400">Tax</p><p className="text-right text-white">{formatCurrency(taxBreakdown.taxTotal)}</p>
                 <p className="text-slate-400">Total amount due</p><p className="text-right text-white">{formatCurrency(totalAmount)}</p>
                 <p className="text-slate-400">Amount already paid</p><p className="text-right text-white">{formatCurrency(amountPaid)}</p>
                 <p className="text-slate-200 font-semibold">Balance remaining</p>
@@ -684,9 +746,10 @@ function OccupiedRoomPanel({ isOpen, roomOverlay, roomData, onClose, onCompleteC
   const nights = Math.max(1, roomData?.nights ?? dateDiffNights(checkInDate, checkOutDate) ?? stayed ?? 1)
   const ratePerNight = Number(roomData?.rate_per_night ?? roomData?.ratePerNight ?? 0) || 0
   const roomChargeTotal = nights * ratePerNight
+  const taxBreakdown = calculateInnsoftTaxBreakdown(roomChargeTotal, nights)
   const depositsPaid = Number(roomData?.amountPaid ?? roomData?.depositCollected ?? 0) || 0
   const extraChargesTotal = extraCharges.reduce((sum, charge) => sum + (Number(charge.amount) || 0), 0)
-  const totalCharges = roomChargeTotal + extraChargesTotal
+  const totalCharges = roomChargeTotal + taxBreakdown.taxTotal + extraChargesTotal
   const balanceBeforePayment = Math.max(0, totalCharges - depositsPaid)
   const amountReceivedNumber = Number(amountReceived) || 0
   const effectivePayment = Math.min(balanceBeforePayment, amountReceivedNumber)
@@ -728,6 +791,9 @@ function OccupiedRoomPanel({ isOpen, roomOverlay, roomData, onClose, onCompleteC
     if (!invoiceWindow) return
     const rowsHtml = [
       `<tr><td>Room charge</td><td>${nights} nights × ${formatCurrency(ratePerNight)}</td><td style="text-align:right;">${formatCurrency(roomChargeTotal)}</td></tr>`,
+      `<tr><td>City tax</td><td>8% of room charge</td><td style="text-align:right;">${formatCurrency(taxBreakdown.cityTax)}</td></tr>`,
+      `<tr><td>State tax</td><td>7% of room charge</td><td style="text-align:right;">${formatCurrency(taxBreakdown.stateTax)}</td></tr>`,
+      `<tr><td>Hotel tax</td><td>${nights} nights × ${formatCurrency(INNSOFT_TAX_SETTINGS.hotelFlatPerNight)}</td><td style="text-align:right;">${formatCurrency(taxBreakdown.hotelTax)}</td></tr>`,
       ...extraCharges.map((charge) => `<tr><td>${getChargeDescription(charge)}</td><td></td><td style="text-align:right;">${formatCurrency(charge.amount)}</td></tr>`),
     ].join('')
     const html = `
@@ -861,6 +927,18 @@ function OccupiedRoomPanel({ isOpen, roomOverlay, roomData, onClose, onCompleteC
                     <div className="grid grid-cols-12 px-3 py-2 text-sm border-t border-white/10">
                       <p className="col-span-7 text-white">Room charge ({nights} nights × {formatCurrency(ratePerNight)})</p>
                       <p className="col-span-5 text-right text-white">{formatCurrency(roomChargeTotal)}</p>
+                    </div>
+                    <div className="grid grid-cols-12 px-3 py-2 text-sm border-t border-white/10">
+                      <p className="col-span-7 text-white">City tax (8%)</p>
+                      <p className="col-span-5 text-right text-white">{formatCurrency(taxBreakdown.cityTax)}</p>
+                    </div>
+                    <div className="grid grid-cols-12 px-3 py-2 text-sm border-t border-white/10">
+                      <p className="col-span-7 text-white">State tax (7%)</p>
+                      <p className="col-span-5 text-right text-white">{formatCurrency(taxBreakdown.stateTax)}</p>
+                    </div>
+                    <div className="grid grid-cols-12 px-3 py-2 text-sm border-t border-white/10">
+                      <p className="col-span-7 text-white">Hotel tax ({nights} × {formatCurrency(INNSOFT_TAX_SETTINGS.hotelFlatPerNight)})</p>
+                      <p className="col-span-5 text-right text-white">{formatCurrency(taxBreakdown.hotelTax)}</p>
                     </div>
                     {extraCharges.map((charge) => (
                       <div key={charge.id} className="px-3 py-2 border-t border-white/10 space-y-2">
@@ -1887,7 +1965,8 @@ function MotelCommandCenter({
         const checkOutDate = contextReservation?.check_out_date || null
         const nights = dateDiffNights(checkInDate, checkOutDate)
         const ratePerNight = Number(activeReservation?.rate_per_night ?? room.rate_per_night ?? 0) || 0
-        const totalAmount = nights * ratePerNight
+        const roomSubtotal = nights * ratePerNight
+        const totalAmount = calculateInnsoftTaxBreakdown(roomSubtotal, nights).totalWithTax
         return {
           room: overlayRoomId,
           roomNumber,
@@ -1907,6 +1986,7 @@ function MotelCommandCenter({
           bookingSource: activeReservation?.source || null,
           source: activeReservation?.source || null,
           nights,
+          roomSubtotal,
           totalAmount,
           amountPaid,
           balanceDue: Math.max(0, totalAmount - amountPaid),
@@ -2178,6 +2258,9 @@ function MotelCommandCenter({
           check_out: values.checkOutDate,
           checkOut: values.checkOutDate,
           rate_per_night: Number(values.ratePerNight) || 0,
+          roomSubtotal: values.roomSubtotal,
+          totalAmount: values.totalAmount,
+          balanceDue: values.balanceDue,
         }
       }
       return room
