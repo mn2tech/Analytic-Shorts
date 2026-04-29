@@ -279,8 +279,6 @@ function NewReservationPanel({ isOpen, roomOverlay, roomData, onClose, onSave })
     const nextErrors = {}
     if (!String(formValues.firstName || '').trim()) nextErrors.firstName = 'First name is required.'
     if (!String(formValues.lastName || '').trim()) nextErrors.lastName = 'Last name is required.'
-    if (!String(formValues.email || '').trim()) nextErrors.email = 'Email is required.'
-    if (!String(formValues.phone || '').trim()) nextErrors.phone = 'Phone is required.'
     if (!formValues.checkInDate) nextErrors.checkInDate = 'Check-in date is required.'
     if (!formValues.checkOutDate) nextErrors.checkOutDate = 'Check-out date is required.'
     if (formValues.checkInDate && formValues.checkOutDate && nights <= 0) {
@@ -359,12 +357,12 @@ function NewReservationPanel({ isOpen, roomOverlay, roomData, onClose, onSave })
                   {errors.lastName && <p className="mt-1 text-xs text-red-400">{errors.lastName}</p>}
                 </div>
                 <div>
-                  <label className={labelClass}>Email{required}</label>
+                  <label className={labelClass}>Email</label>
                   <input className={inputClass} type="email" value={formValues.email} onChange={(e) => updateValue('email', e.target.value)} />
                   {errors.email && <p className="mt-1 text-xs text-red-400">{errors.email}</p>}
                 </div>
                 <div>
-                  <label className={labelClass}>Phone{required}</label>
+                  <label className={labelClass}>Phone</label>
                   <input className={inputClass} value={formValues.phone} onChange={(e) => updateValue('phone', e.target.value)} />
                   {errors.phone && <p className="mt-1 text-xs text-red-400">{errors.phone}</p>}
                 </div>
@@ -2101,23 +2099,26 @@ function MotelCommandCenter({
     const cleanFirstName = String(values.firstName || '').trim()
     const cleanLastName = String(values.lastName || '').trim()
     const cleanPhone = String(values.phone || '').trim()
-    const { data: existingGuest, error: guestLookupError } = await supabase
-      .from('guests')
-      .select('id')
-      .eq('email', cleanEmail)
-      .maybeSingle()
-    if (guestLookupError) throw guestLookupError
+    const guestPayload = {
+      first_name: cleanFirstName,
+      last_name: cleanLastName,
+      ...(cleanEmail ? { email: cleanEmail } : {}),
+      ...(cleanPhone ? { phone: cleanPhone } : {}),
+    }
+    const guestLookup = cleanEmail
+      ? await supabase
+        .from('guests')
+        .select('id')
+        .eq('email', cleanEmail)
+        .maybeSingle()
+      : { data: null, error: null }
+    if (guestLookup.error) throw guestLookup.error
 
-    let guestId = existingGuest?.id
+    let guestId = guestLookup.data?.id
     if (!guestId) {
       const { data: createdGuest, error: createGuestError } = await supabase
         .from('guests')
-        .insert({
-          first_name: cleanFirstName,
-          last_name: cleanLastName,
-          email: cleanEmail,
-          phone: cleanPhone,
-        })
+        .insert(guestPayload)
         .select('id')
         .single()
       if (createGuestError) throw createGuestError
