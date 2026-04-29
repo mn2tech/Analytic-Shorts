@@ -1710,6 +1710,7 @@ function MotelCommandCenter({
   const isDragging = useRef(false)
   const lastPan = useRef({ x: 0, y: 0 })
   const hoveredRoomRef = useRef(null)
+  const lastHoverChangeAtRef = useRef(0)
   const { notify } = useNotification()
 
   const roomOverlays = useMemo(() => customOverlays ?? defaultRoomOverlays, [customOverlays, defaultRoomOverlays])
@@ -1747,7 +1748,7 @@ function MotelCommandCenter({
     const el = containerRef.current
     if (!el) return
     const applyFit = () => {
-      if (hoveredRoomRef.current) return
+      if (hoveredRoomRef.current || Date.now() - lastHoverChangeAtRef.current < 500) return
       fitToViewport()
     }
     // Delay initial fit to ensure container is fully rendered
@@ -2042,9 +2043,19 @@ function MotelCommandCenter({
     )
     : null
   const handleRoomHover = useCallback((roomId, entering, e) => {
-    hoveredRoomRef.current = entering ? roomId : null
-    setHoveredRoom(entering ? roomId : null)
-    if (entering && e) setTooltipPos({ x: e.clientX, y: e.clientY })
+    lastHoverChangeAtRef.current = Date.now()
+    if (entering) {
+      if (hoveredRoomRef.current !== roomId) {
+        hoveredRoomRef.current = roomId
+        setHoveredRoom(roomId)
+      }
+      if (e) setTooltipPos({ x: e.clientX, y: e.clientY })
+      return
+    }
+    if (hoveredRoomRef.current === roomId) {
+      hoveredRoomRef.current = null
+      setHoveredRoom(null)
+    }
   }, [])
 
   const handleRoomClick = useCallback((roomId, e) => {
