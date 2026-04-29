@@ -12,6 +12,7 @@ import {
   Cell,
 } from 'recharts'
 import apiClient from '../config/api'
+import CommandCenterHeader from '../components/CommandCenterHeader'
 import {
   applyDemoSurge,
   buildAlertQueue,
@@ -311,12 +312,16 @@ export default function KumonLearningCommandCenter() {
           width: `${100 / viewZoom}%`,
         }}
       >
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div>
-            <h1 className="text-2xl font-bold">Kumon Learning Command Center</h1>
-            <p className="text-sm text-slate-400">Real-time student flow, performance, and AI-driven intervention</p>
-          </div>
-          <div className="flex items-center gap-2">
+        <CommandCenterHeader
+          appName="Learning Command Center"
+          facilityName="Kumon Learning"
+          facilityType="Student Flow & Performance"
+          mode="Command Center"
+          logoFallback="K"
+          className="-mx-4 -mt-5"
+        />
+
+        <div className="flex items-center justify-end flex-wrap gap-2">
             <button
               type="button"
               onClick={handleToggleFullscreen}
@@ -351,7 +356,6 @@ export default function KumonLearningCommandCenter() {
             <button type="button" onClick={handleExportSpec} className="px-3 py-1.5 text-xs rounded bg-blue-600 hover:bg-blue-500">
               Export DashboardSpec JSON
             </button>
-          </div>
         </div>
         {demoMode && (
           <div className="rounded-lg border border-rose-300/50 bg-rose-950/35 px-3 py-2 text-sm text-rose-100">

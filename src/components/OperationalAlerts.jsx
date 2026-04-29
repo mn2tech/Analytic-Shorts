@@ -243,7 +243,7 @@ export default function OperationalAlerts({
   if (alerts.length === 0 && delayBreakdown.length === 0) return null
 
   return (
-    <div className={`rounded-lg border px-4 py-3 space-y-2 transition-colors ${highlightAlerts ? 'border-amber-500/70 bg-amber-500/20 ring-2 ring-amber-500/30' : 'border-amber-500/30 bg-amber-500/10'}`}>
+    <div className={`rounded-2xl border px-4 py-3 space-y-2 bg-[#0b1728] text-[#e5f0ff] shadow-[0_0_10px_rgba(0,0,0,0.4)] transition-colors ${highlightAlerts ? 'border-amber-500/70 ring-2 ring-amber-500/30' : 'border-[#1e3a5f]'}`}>
       <h3 className="text-xs font-bold text-amber-400 uppercase tracking-widest">Operational Alerts</h3>
       <ul className="space-y-1.5">
         {alerts.map((a) => (

@@ -92,7 +92,7 @@ export default function MotelOperationalAlerts({
     return list
   }, [guestRooms, metrics.turningOverToday, roomStatusMap])
 
-  const containerClass = `rounded-lg border border-white/10 px-4 py-3 ${highlightAlerts ? 'bg-slate-800/60' : 'bg-slate-800/40'}`
+  const containerClass = `rounded-2xl border border-[#1e3a5f] bg-[#0b1728] px-4 py-3 text-[#e5f0ff] shadow-[0_0_10px_rgba(0,0,0,0.4)] ${highlightAlerts ? 'ring-2 ring-cyan-400/20' : ''}`
 
   return (
     <div className="space-y-3">

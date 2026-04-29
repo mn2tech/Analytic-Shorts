@@ -26,7 +26,7 @@ import {
   PRESSURE_LABELS,
 } from '../utils/losPressure'
 import LiveStatus from '../components/LiveStatus'
-import KpiGroupCard from '../components/KpiGroupCard'
+import CommandCenterHeader from '../components/CommandCenterHeader'
 import TimelinePlayback from '../components/TimelinePlayback'
 import PatientFlowPanel from '../components/PatientFlowPanel'
 import OperationalAlerts from '../components/OperationalAlerts'
@@ -152,41 +152,85 @@ function formatAvgLOS(mins) {
 }
 
 function KpiPanels({ metrics, statusFilter, onFilterChange }) {
+  const cards = [
+    { icon: '▣', label: 'ER Occupancy', value: `${metrics.utilizationPct ?? 0}%`, tone: 'bg-cyan-400/15 text-cyan-200 ring-cyan-300/40' },
+    { icon: '✓', label: 'Available Beds', value: metrics.available, filterKey: 'available', tone: 'bg-emerald-400/15 text-emerald-200 ring-emerald-300/40' },
+    { icon: '●', label: 'Occupied Beds', value: metrics.occupied, filterKey: 'occupied', tone: 'bg-rose-400/15 text-rose-200 ring-rose-300/40' },
+    { icon: '◆', label: 'Cleaning / Dirty', value: metrics.cleaning, filterKey: 'cleaning', tone: 'bg-amber-300/15 text-amber-200 ring-amber-300/40' },
+    { icon: '◷', label: 'Reserved Beds', value: metrics.reserved, filterKey: 'reserved', tone: 'bg-sky-400/15 text-sky-200 ring-sky-300/40' },
+    { icon: '⌁', label: 'Avg LOS', value: formatAvgLOS(metrics.avgLOS), tone: 'bg-violet-400/15 text-violet-200 ring-violet-300/40' },
+    { icon: '!', label: 'Waiting Patients', value: metrics.waitingForProvider ?? 0, filterKey: 'waitingProvider', tone: 'bg-orange-400/15 text-orange-200 ring-orange-300/40' },
+    { icon: '↗', label: 'Transfers Pending', value: metrics.predictedAvailable ?? 0, filterKey: 'predicted', tone: 'bg-blue-400/15 text-blue-200 ring-blue-300/40' },
+  ]
+
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 w-full">
-      <KpiGroupCard
-        title="CAPACITY"
-        metrics={[
-          { label: 'Total Beds', value: metrics.total },
-          { label: 'Occupied', value: metrics.occupied, filterKey: 'occupied' },
-          { label: 'Available', value: metrics.available, filterKey: 'available' },
-          { label: 'Utilization', value: `${metrics.utilizationPct ?? 0}%` },
-        ]}
-        onMetricClick={onFilterChange}
-        activeFilter={statusFilter}
-      />
-      <KpiGroupCard
-        title="TURNOVER"
-        metrics={[
-          { label: 'Cleaning', value: metrics.cleaning, filterKey: 'cleaning' },
-          { label: 'Reserved', value: metrics.reserved, filterKey: 'reserved' },
-          { label: 'Predicted Available', value: metrics.predictedAvailable, filterKey: 'predicted' },
-        ]}
-        onMetricClick={onFilterChange}
-        activeFilter={statusFilter}
-      />
-      <KpiGroupCard
-        title="FLOW PRESSURE"
-        metrics={[
-          { label: 'Avg LOS', value: formatAvgLOS(metrics.avgLOS) },
-          { label: 'Door-to-Provider', value: formatD2PMinutes(metrics.avgD2P) },
-          { label: 'Waiting Provider', value: metrics.waitingForProvider ?? 0, filterKey: 'waitingProvider', valueColor: metrics.waitingForProvider > 0 ? '#f59e0b' : undefined },
-          { label: 'High Pressure', value: metrics.highPressureRooms ?? 0, filterKey: 'highPressure', valueColor: '#ff9800' },
-          { label: 'Critical', value: metrics.criticalRooms ?? 0, filterKey: 'critical', valueColor: '#e53935' },
-        ]}
-        onMetricClick={onFilterChange}
-        activeFilter={statusFilter}
-      />
+    <div className="w-full overflow-x-auto pb-1">
+      <div className="grid min-w-[1040px] grid-cols-8 gap-3">
+        {cards.map((card) => {
+          const isActive = card.filterKey && statusFilter === card.filterKey
+          const content = (
+            <>
+              <div className="flex items-center justify-between gap-2">
+                <span className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-xs font-black ring-1 ${card.tone}`}>
+                  {card.icon}
+                </span>
+                {card.subtext ? <span className="text-[10px] text-[#8aa4c2]">{card.subtext}</span> : null}
+              </div>
+              <div className="mt-2 text-2xl font-black text-[#e5f0ff]">{card.value ?? '—'}</div>
+              <div className="mt-1 text-[10px] font-bold uppercase tracking-[0.14em] text-[#8aa4c2]">{card.label}</div>
+            </>
+          )
+          const className = `rounded-2xl border bg-[#0b1728] p-3 text-left shadow-[0_0_10px_rgba(0,0,0,0.4)] transition ${
+            isActive ? 'border-cyan-300/80 ring-2 ring-cyan-300/20' : 'border-[#1e3a5f] hover:border-cyan-300/50'
+          }`
+
+          return card.filterKey ? (
+            <button key={card.label} type="button" onClick={() => onFilterChange(isActive ? null : card.filterKey)} className={className}>
+              {content}
+            </button>
+          ) : (
+            <div key={card.label} className={className}>{content}</div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function HospitalRoomContextCard({ roomData, patientFlow, unit }) {
+  if (!roomData) {
+    return (
+      <div className="rounded-2xl border border-[#1e3a5f] bg-[#0b1728] p-4 shadow-[0_0_10px_rgba(0,0,0,0.4)]">
+        <h3 className="text-xs font-bold uppercase tracking-[0.16em] text-[#8aa4c2]">Selected Room</h3>
+        <p className="mt-3 text-sm text-[#8aa4c2]">Select a room on the map for patient flow context.</p>
+      </div>
+    )
+  }
+
+  const admittedDisplay = roomData.admitted_at ?? (roomData.admitted_at_iso ? new Date(roomData.admitted_at_iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '—')
+  const { losLabel } = getRoomPressureLevel(roomData)
+  const phase = patientFlow?.currentPhase || patientFlow?.action || roomData.flow_status || (unit === 'WAITING' ? 'Waiting Room' : STATUS_LABELS[roomData.status] || roomData.status)
+
+  return (
+    <div className="rounded-2xl border border-[#1e3a5f] bg-[#0b1728] p-4 shadow-[0_0_10px_rgba(0,0,0,0.4)]">
+      <h3 className="text-xs font-bold uppercase tracking-[0.16em] text-[#8aa4c2]">Selected Room</h3>
+      <p className="mt-2 text-xl font-black text-[#e5f0ff]">{roomData.room}</p>
+      <div className="mt-3 space-y-2 text-sm">
+        <ContextRow label="Patient" value={patientFlow?.patientId || roomData.patient_name || '—'} />
+        <ContextRow label="Admission" value={patientFlow?.arrivalTime || admittedDisplay || '—'} />
+        <ContextRow label="LOS" value={losLabel || '—'} />
+        <ContextRow label="Current Phase" value={phase || '—'} />
+        <ContextRow label="Next Destination" value={patientFlow?.next || '—'} />
+      </div>
+    </div>
+  )
+}
+
+function ContextRow({ label, value }) {
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <span className="text-[#8aa4c2]">{label}</span>
+      <span className="text-right font-semibold text-[#e5f0ff]">{value}</span>
     </div>
   )
 }
@@ -1586,6 +1630,17 @@ function HospitalBedCommandCenter() {
         )}
 
         {!commandCenterMode && (
+          <CommandCenterHeader
+            appName="Hospital Command Center"
+            facilityName="Hospital Bed"
+            facilityType="Blueprint Floor Map"
+            mode="Command Center"
+            logoFallback="H"
+            className="-mx-4 -mt-6"
+          />
+        )}
+
+        {!commandCenterMode && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <TransferSummary selectedTime={displayTime} />
           <WaitingRoomWidget
@@ -1617,21 +1672,8 @@ function HospitalBedCommandCenter() {
 
         {/* Header - hidden in Command Center Mode */}
         {!commandCenterMode && (
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-slate-700 flex items-center justify-center text-2xl border border-white/10">
-              🏥
-            </div>
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
-                Hospital Command Center
-              </h1>
-              <p className="text-sm text-slate-400 mt-0.5">
-                Blueprint floor map
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center justify-end gap-3">
             <Link
               to="/floormap-ai"
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm font-semibold transition-colors"
@@ -1948,7 +1990,7 @@ function HospitalBedCommandCenter() {
         {/* Blueprint image with Zoom/Pan */}
         <div
           ref={containerRef}
-          className={`relative rounded-xl border border-white/10 overflow-hidden bg-slate-900 flex-1 min-w-0 min-h-0 flex flex-col ${commandCenterMode ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'}`}
+          className={`relative rounded-2xl border border-[#1e3a5f] overflow-hidden bg-[#020817] flex-[1_1_70%] min-w-0 min-h-[60vh] flex flex-col shadow-[0_0_10px_rgba(0,0,0,0.4)] ${commandCenterMode ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'}`}
           onMouseDown={commandCenterMode ? undefined : handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
@@ -1965,7 +2007,7 @@ function HospitalBedCommandCenter() {
             style={{
               transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})`,
               transformOrigin: 'center center',
-              minHeight: commandCenterMode ? 280 : 480,
+              minHeight: commandCenterMode ? 520 : 620,
             }}
           >
             {error ? (
@@ -2051,7 +2093,12 @@ function HospitalBedCommandCenter() {
         </div>
 
         {/* Side Panel: Scenario Controls + Patient Flow + Alerts */}
-        <div className={`flex flex-col gap-3 shrink-0 order-first lg:order-last ${commandCenterMode ? 'w-full lg:w-56 min-w-0' : 'w-full lg:w-72'}`}>
+        <div className={`flex flex-col gap-3 shrink-0 order-last ${commandCenterMode ? 'w-full lg:w-64 min-w-0' : 'w-full lg:w-80'}`}>
+          <HospitalRoomContextCard
+            roomData={hoveredRoomData}
+            patientFlow={patientFlowForTooltip}
+            unit={activeRoomId ? roomIdToUnit.get(activeRoomId) : null}
+          />
           {/* Scenario Demo Mode Controls */}
           <div className="space-y-3">
             <ScenarioControlPanel

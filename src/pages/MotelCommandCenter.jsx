@@ -19,7 +19,7 @@ import {
 import { getRoomDisplayLabel } from '../config/motelRoomDisplayLabels'
 import { roomStatusHistory, timelineTimes } from '../data/motelRoomStatusHistory'
 import LiveStatus from '../components/LiveStatus'
-import KpiGroupCard from '../components/KpiGroupCard'
+import CommandCenterHeader from '../components/CommandCenterHeader'
 import MotelOperationalAlerts from '../components/MotelOperationalAlerts'
 import MotelRotatingMetricsPanel from '../components/MotelRotatingMetricsPanel'
 import { normalizeInnsoftRows, parseInnsoftFile } from '../utils/innsoftIngestion'
@@ -1496,30 +1496,87 @@ function BlueprintImage({
 }
 
 function KpiPanels({ metrics, statusFilter, onFilterChange }) {
+  const cards = [
+    { icon: '▣', label: 'Occupancy %', value: `${metrics.occupancyRatePct ?? metrics.utilizationPct ?? 0}%`, tone: 'bg-cyan-400/15 text-cyan-200 ring-cyan-300/40' },
+    { icon: '✓', label: 'Available Rooms', value: metrics.available, filterKey: 'available', tone: 'bg-emerald-400/15 text-emerald-200 ring-emerald-300/40' },
+    { icon: '●', label: 'Occupied Rooms', value: metrics.occupied, filterKey: 'occupied', tone: 'bg-rose-400/15 text-rose-200 ring-rose-300/40' },
+    { icon: '◆', label: 'Dirty Rooms', value: metrics.dirty, filterKey: 'dirty', tone: 'bg-amber-300/15 text-amber-200 ring-amber-300/40' },
+    { icon: '◷', label: 'Reserved Rooms', value: metrics.reserved, filterKey: 'reserved', tone: 'bg-sky-400/15 text-sky-200 ring-sky-300/40' },
+    { icon: '⇥', label: 'Check-ins Today', value: metrics.reserved ?? 0, subtext: 'pending', tone: 'bg-blue-400/15 text-blue-200 ring-blue-300/40' },
+    { icon: '⇤', label: 'Check-outs Today', value: metrics.turningOverToday ?? 0, tone: 'bg-violet-400/15 text-violet-200 ring-violet-300/40' },
+    { icon: '!', label: 'Maintenance Issues', value: metrics.maintenance ?? 0, filterKey: 'maintenance', tone: 'bg-orange-400/15 text-orange-200 ring-orange-300/40' },
+  ]
+
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 w-full">
-      <KpiGroupCard
-        title="CAPACITY"
-        metrics={[
-          { label: 'Total Rooms', value: metrics.total },
-          { label: 'Occupied', value: metrics.occupied, filterKey: 'occupied' },
-          { label: 'Available', value: metrics.available, filterKey: 'available' },
-          { label: 'Occupancy Rate', value: `${metrics.occupancyRatePct ?? metrics.utilizationPct ?? 0}%` },
-        ]}
-        onMetricClick={onFilterChange}
-        activeFilter={statusFilter}
-      />
-      <KpiGroupCard
-        title="TURNOVER"
-        metrics={[
-          { label: 'Dirty', value: metrics.dirty, filterKey: 'dirty' },
-          { label: 'Reserved', value: metrics.reserved, filterKey: 'reserved' },
-          { label: 'Maintenance', value: metrics.maintenance ?? 0, filterKey: 'maintenance' },
-          { label: 'Turning Over Today', value: metrics.turningOverToday ?? 0 },
-        ]}
-        onMetricClick={onFilterChange}
-        activeFilter={statusFilter}
-      />
+    <div className="w-full overflow-x-auto pb-1">
+      <div className="grid min-w-[1040px] grid-cols-8 gap-3">
+        {cards.map((card) => {
+          const isActive = card.filterKey && statusFilter === card.filterKey
+          const content = (
+            <>
+              <div className="flex items-center justify-between gap-2">
+                <span className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-xs font-black ring-1 ${card.tone}`}>
+                  {card.icon}
+                </span>
+                {card.subtext ? <span className="text-[10px] text-[#8aa4c2]">{card.subtext}</span> : null}
+              </div>
+              <div className="mt-2 text-2xl font-black text-[#e5f0ff]">{card.value ?? '—'}</div>
+              <div className="mt-1 text-[10px] font-bold uppercase tracking-[0.14em] text-[#8aa4c2]">{card.label}</div>
+            </>
+          )
+          const className = `rounded-2xl border bg-[#0b1728] p-3 text-left shadow-[0_0_10px_rgba(0,0,0,0.4)] transition ${
+            isActive ? 'border-cyan-300/80 ring-2 ring-cyan-300/20' : 'border-[#1e3a5f] hover:border-cyan-300/50'
+          }`
+
+          return card.filterKey ? (
+            <button key={card.label} type="button" onClick={() => onFilterChange(isActive ? null : card.filterKey)} className={className}>
+              {content}
+            </button>
+          ) : (
+            <div key={card.label} className={className}>{content}</div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function MotelRoomContextCard({ roomData, roomOverlays = [] }) {
+  if (!roomData) {
+    return (
+      <div className="rounded-2xl border border-[#1e3a5f] bg-[#0b1728] p-4 shadow-[0_0_10px_rgba(0,0,0,0.4)]">
+        <h3 className="text-xs font-bold uppercase tracking-[0.16em] text-[#8aa4c2]">Selected Room</h3>
+        <p className="mt-3 text-sm text-[#8aa4c2]">Select a room on the map for guest and housekeeping context.</p>
+      </div>
+    )
+  }
+
+  const overlay = roomOverlays.find((o) => o.id === roomData.room)
+  const statusLabel = DISPLAY_STATUS_LABELS[roomData.status] || roomData.status || '—'
+  const housekeeping = roomData.housekeeping_status || (roomData.status === 'dirty' ? 'Pending' : roomData.status === 'maintenance' ? 'In progress' : 'Ready')
+  const nextReservation = roomData.next_reservation || (roomData.status === 'reserved' ? 'Reserved at 3:00 PM' : '—')
+
+  return (
+    <div className="rounded-2xl border border-[#1e3a5f] bg-[#0b1728] p-4 shadow-[0_0_10px_rgba(0,0,0,0.4)]">
+      <h3 className="text-xs font-bold uppercase tracking-[0.16em] text-[#8aa4c2]">Selected Room</h3>
+      <p className="mt-2 text-xl font-black text-[#e5f0ff]">{getRoomDisplayLabel(roomData.room, overlay)}</p>
+      <div className="mt-3 space-y-2 text-sm">
+        <ContextRow label="Guest" value={roomData.guestName || roomData.guest_name || roomData.guest_id || '—'} />
+        <ContextRow label="Status" value={statusLabel} />
+        <ContextRow label="Check-in" value={formatDateDisplay(roomData.checkIn || roomData.check_in)} />
+        <ContextRow label="Checkout" value={formatDateDisplay(roomData.checkOut || roomData.check_out)} />
+        <ContextRow label="Housekeeping" value={housekeeping} />
+        <ContextRow label="Next Reservation" value={nextReservation} />
+      </div>
+    </div>
+  )
+}
+
+function ContextRow({ label, value }) {
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <span className="text-[#8aa4c2]">{label}</span>
+      <span className="text-right font-semibold text-[#e5f0ff]">{value || '—'}</span>
     </div>
   )
 }
@@ -2543,17 +2600,19 @@ function MotelCommandCenter({
         )}
 
         {!commandCenterMode && (
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-slate-700 flex items-center justify-center text-2xl border border-white/10">{brandIcon}</div>
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">{brandName}</h1>
-              <p className="text-sm text-slate-400 mt-0.5">{brandSubtitle}</p>
-              <p className="text-xs text-slate-500 mt-1">Data Source: Innsoft Export</p>
-              <p className="text-xs text-slate-500">Update Mode: Near Real-Time (CSV / Scheduled)</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
+          <CommandCenterHeader
+            appName="Hospitality Command Center"
+            facilityName={brandName.replace(/\s*-\s*Live Command Center$/i, '').replace(/\s*Command Center$/i, '')}
+            facilityType={brandSubtitle}
+            mode="Command Center"
+            logoFallback={String(brandIcon || 'M').replace(/[^\w]/g, '').slice(0, 2) || 'M'}
+            className="-mx-4 -mt-4"
+          />
+        )}
+
+        {!commandCenterMode && (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center justify-end gap-3">
             <Link
               to="/floormap-ai"
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm font-semibold transition-colors"
@@ -2704,7 +2763,7 @@ function MotelCommandCenter({
         <div className={`flex flex-col flex-1 min-h-0 w-full ${commandCenterMode ? 'lg:flex-row gap-3 lg:gap-4' : 'lg:flex-row gap-4'}`}>
         <div
           ref={containerRef}
-          className={`relative rounded-xl border border-white/10 overflow-hidden bg-slate-900 flex-1 min-w-0 min-h-[400px] flex flex-col ${commandCenterMode ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'}`}
+          className={`relative rounded-2xl border border-[#1e3a5f] overflow-hidden bg-[#020817] flex-[1_1_70%] min-w-0 min-h-[60vh] flex flex-col shadow-[0_0_10px_rgba(0,0,0,0.4)] ${commandCenterMode ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'}`}
           onMouseDown={commandCenterMode ? undefined : handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
@@ -2721,7 +2780,7 @@ function MotelCommandCenter({
             style={{
               transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})`,
               transformOrigin: 'center center',
-              minHeight: 400,
+              minHeight: commandCenterMode ? 520 : 620,
             }}
           >
             {error ? (
@@ -2772,7 +2831,8 @@ function MotelCommandCenter({
           )}
         </div>
 
-        <div className={`flex flex-col gap-3 shrink-0 order-first lg:order-last ${commandCenterMode ? 'w-full lg:w-56 min-w-0' : 'w-full lg:w-72'}`}>
+        <div className={`flex flex-col gap-3 shrink-0 order-last ${commandCenterMode ? 'w-full lg:w-64 min-w-0' : 'w-full lg:w-80'}`}>
+          <MotelRoomContextCard roomData={hoveredRoomData} roomOverlays={roomOverlays} />
           <SidePanelComponent
             selectedTime={displayTime}
             roomOverlays={roomOverlays}

@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { MEDSTAR_MONTGOMERY_ER_LAYOUT } from '../data/medstarMontgomeryErLayout'
-import LiveStatus from '../components/LiveStatus'
 
 const facilityConfig = {
   name: 'MedStar Montgomery ER',
@@ -88,13 +87,38 @@ const ER_STATUS_BY_ROOM_STATUS = {
   dirty: ['EVS Dispatched', 'Cleaning in progress', 'Needs turnover'],
 }
 
+const SAVED_MAP_STORAGE_KEY = 'medstar-montgomery-er-command-center.saved-map'
+
+function MedStarLogo() {
+  const [logoMissing, setLogoMissing] = useState(false)
+
+  if (logoMissing) {
+    return (
+      <div className="mr-3 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border border-[#1e3a5f] bg-[#0b1728] text-xs font-black text-cyan-200">
+        MS
+      </div>
+    )
+  }
+
+  return (
+    <img
+      src="/assets/medstar-logo.png"
+      alt="MedStar"
+      className="mr-3 h-8 w-auto flex-shrink-0"
+      onError={() => setLogoMissing(true)}
+    />
+  )
+}
+
 export default function MedStarMontgomeryERCommandCenter() {
   const importInputRef = useRef(null)
   const imageInputRef = useRef(null)
   const mapRef = useRef(null)
   const panelRef = useRef(null)
   const [lastUpdated, setLastUpdated] = useState(() => new Date())
+  const [currentTime, setCurrentTime] = useState(() => new Date())
   const [imagePath, setImagePath] = useState('/medstar-montgomery-er.png')
+  const [uploadedImageDataUrl, setUploadedImageDataUrl] = useState(null)
   const [selectedRoomId, setSelectedRoomId] = useState(null)
   const [layout, setLayout] = useState(MEDSTAR_MONTGOMERY_ER_LAYOUT)
   const [isFullscreen, setIsFullscreen] = useState(false)
@@ -146,6 +170,31 @@ export default function MedStarMontgomeryERCommandCenter() {
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
   }, [])
 
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000)
+    return () => clearInterval(timer)
+  }, [])
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(SAVED_MAP_STORAGE_KEY)
+      if (!saved) return
+
+      const parsed = JSON.parse(saved)
+      if (parsed.imageDataUrl) {
+        setUploadedImageDataUrl(parsed.imageDataUrl)
+        setImagePath(parsed.imageDataUrl)
+      }
+      if (parsed.layout?.rooms?.length) {
+        setLayout(parsed.layout)
+        resetRoomStatuses(parsed.layout.rooms)
+      }
+      setLastUpdated(parsed.savedAt ? new Date(parsed.savedAt) : new Date())
+    } catch (error) {
+      console.warn('Unable to restore saved MedStar ER map', error)
+    }
+  }, [])
+
   const onRoomClick = (roomId) => {
     setSelectedRoomId(roomId)
   }
@@ -182,9 +231,15 @@ export default function MedStarMontgomeryERCommandCenter() {
       return
     }
 
-    setImagePath(URL.createObjectURL(file))
-    setLastUpdated(new Date())
-    event.target.value = ''
+    const reader = new FileReader()
+    reader.onload = () => {
+      const dataUrl = String(reader.result || '')
+      setUploadedImageDataUrl(dataUrl)
+      setImagePath(dataUrl || URL.createObjectURL(file))
+      setLastUpdated(new Date())
+      event.target.value = ''
+    }
+    reader.readAsDataURL(file)
   }
 
   const handleLoadFloorMapFile = (event) => {
@@ -230,25 +285,93 @@ export default function MedStarMontgomeryERCommandCenter() {
     targetRef.current?.requestFullscreen?.().then(() => setIsFullscreen(true)).catch(() => {})
   }
 
+  const handleSaveMap = () => {
+    try {
+      localStorage.setItem(
+        SAVED_MAP_STORAGE_KEY,
+        JSON.stringify({
+          imageDataUrl: uploadedImageDataUrl,
+          layout,
+          savedAt: new Date().toISOString(),
+        })
+      )
+      setLastUpdated(new Date())
+      alert('Map saved in this browser. It will stay after refresh.')
+    } catch (error) {
+      console.error('Unable to save MedStar ER map', error)
+      alert('Unable to save this map. The image may be too large for browser storage.')
+    }
+  }
+
+  const handleResetSavedMap = () => {
+    localStorage.removeItem(SAVED_MAP_STORAGE_KEY)
+    setUploadedImageDataUrl(null)
+    setImagePath('/medstar-montgomery-er.png')
+    setLayout(MEDSTAR_MONTGOMERY_ER_LAYOUT)
+    resetRoomStatuses(MEDSTAR_MONTGOMERY_ER_LAYOUT.rooms)
+    setLastUpdated(new Date())
+  }
+
   const width = layout.image_width
   const height = layout.image_height
-  const facilityTitle = `${facilityConfig.name} ${facilityConfig.mode}`
+  const facilityName = facilityConfig.name
+  const facilityTitle = `${facilityName} ${facilityConfig.mode}`
+  const currentDateLabel = currentTime.toLocaleDateString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
+  const currentTimeLabel = currentTime.toLocaleTimeString(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  })
 
   return (
     <div className="min-h-screen bg-[#020817] text-[#e5f0ff]">
-      <div className="mx-auto max-w-[1900px] px-3 py-4 sm:px-4 space-y-4">
-        <header className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <div className="flex flex-wrap items-center gap-3">
-              <h1 className="text-2xl font-bold tracking-tight">{facilityTitle}</h1>
-              <span className="rounded-full border border-emerald-300/40 bg-emerald-400/10 px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-200">
-                Demo Mode
-              </span>
-            </div>
-            <p className="mt-1 text-sm text-[#8aa4c2]">Interactive Real-Time Operations Dashboard</p>
+      <header className="border-b border-[#1e3a5f] bg-[#020817] px-4 py-3 sm:px-5">
+        <div className="grid items-center gap-3 lg:grid-cols-[1fr_auto_1fr]">
+          <div className="text-sm font-medium uppercase tracking-[0.18em] text-[#8aa4c2]">
+            Hospital Command Center
           </div>
-          <div className="flex flex-wrap items-center justify-end gap-3">
-            <LiveStatus lastUpdated={lastUpdated} className="px-3 py-2 rounded-lg border border-white/10 bg-slate-800/80" />
+
+          <div className="flex min-w-0 items-center justify-start lg:justify-center">
+            <MedStarLogo />
+            <div className="min-w-0">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <h1 className="truncate text-lg font-semibold leading-tight text-[#e5f0ff]">{facilityTitle}</h1>
+                <span className="rounded-full border border-emerald-300/40 bg-emerald-400/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-200">
+                  Demo Mode
+                </span>
+              </div>
+              <p className="mt-0.5 text-xs text-[#8aa4c2]">{facilityConfig.type} - Interactive Real-Time Operations Dashboard</p>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-start gap-3 lg:justify-end">
+            <div className="text-left leading-tight sm:text-right">
+              <p className="text-xs font-semibold text-[#e5f0ff]">{currentDateLabel}</p>
+              <p className="text-sm font-bold text-[#e5f0ff]">{currentTimeLabel}</p>
+            </div>
+            <div className="flex items-center gap-2 rounded-full border border-green-500 bg-green-500/10 px-3 py-1">
+              <span className="h-2 w-2 animate-pulse rounded-full bg-green-400 shadow-[0_0_12px_rgba(74,222,128,0.95)]" />
+              <span className="text-sm font-semibold text-green-400">LIVE</span>
+            </div>
+            <button
+              type="button"
+              className="hidden h-9 items-center justify-center rounded-lg border border-[#1e3a5f] bg-[#0b1728] px-3 text-xs font-semibold text-[#8aa4c2] hover:text-[#e5f0ff] sm:flex"
+              aria-label="Open command center menu"
+              title="Menu"
+            >
+              Menu
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <div className="mx-auto max-w-[1900px] px-3 py-4 sm:px-4 space-y-4">
+        <div className="flex flex-wrap items-center justify-end gap-3">
             <Link
               to="/floormap-ai"
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm font-semibold transition-colors"
@@ -276,6 +399,23 @@ export default function MedStarMontgomeryERCommandCenter() {
               Upload Image
             </button>
             <input ref={imageInputRef} type="file" accept="image/*" onChange={handleUploadImageFile} className="hidden" />
+            <button
+              type="button"
+              onClick={handleSaveMap}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-emerald-300/30 bg-emerald-900/20 hover:bg-emerald-900/30 text-sm font-semibold transition-colors"
+              title="Save uploaded image and floor-map JSON in this browser"
+            >
+              <span>💾</span>
+              Save Map
+            </button>
+            <button
+              type="button"
+              onClick={handleResetSavedMap}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-white/15 bg-slate-900/70 hover:bg-slate-800 text-sm font-semibold transition-colors"
+              title="Clear saved map and return to the default MedStar map"
+            >
+              Reset Saved
+            </button>
             <Link
               to="/publish/link?template=medstar-er-command-center"
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition-colors"
@@ -327,8 +467,7 @@ export default function MedStarMontgomeryERCommandCenter() {
                 </button>
               </>
             )}
-          </div>
-        </header>
+        </div>
 
         <div className="space-y-2">
           <MedStarKpiPanels metrics={metrics} statusFilter={statusFilter} onFilterChange={setStatusFilter} />

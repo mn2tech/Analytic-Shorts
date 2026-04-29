@@ -33,9 +33,9 @@ export default function TimelinePlayback({
   const sliderValue = currentIndex >= 0 ? currentIndex : 0
 
   return (
-    <div className={`rounded-lg border border-white/10 bg-slate-800/60 px-4 py-4 space-y-3 ${compact ? 'py-3' : ''}`}>
+    <div className={`rounded-2xl border border-[#1e3a5f] bg-[#0b1728] px-4 py-4 space-y-3 text-[#e5f0ff] shadow-[0_0_10px_rgba(0,0,0,0.4)] ${compact ? 'py-3' : ''}`}>
       <div className="flex items-center justify-between gap-4">
-        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+        <h3 className="text-xs font-bold text-[#8aa4c2] uppercase tracking-widest">
           {compact ? 'Timeline' : 'Hospital Operations Timeline'}
         </h3>
         <div className="flex items-center gap-3">
