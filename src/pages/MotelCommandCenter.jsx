@@ -104,6 +104,32 @@ function normalizeRoomStatus(value) {
   return normalized
 }
 
+function clearGuestContextForAvailableRoom(room, statusOverride = room?.status) {
+  if (!room) return room
+  const status = normalizeRoomStatus(statusOverride)
+  if (status !== 'available') return { ...room, status }
+  return {
+    ...room,
+    status,
+    guestName: null,
+    guest_name: null,
+    guest_id: null,
+    checkIn: null,
+    check_in: null,
+    checkOut: null,
+    check_out: null,
+    actual_check_in: null,
+    actual_check_out: null,
+    reservation_id: null,
+    bookingSource: null,
+    source: null,
+    nights: 0,
+    totalAmount: 0,
+    amountPaid: 0,
+    balanceDue: 0,
+  }
+}
+
 function formatDateDisplay(value) {
   if (!value) return '—'
   const text = String(value).trim()
@@ -1541,10 +1567,12 @@ function KpiPanels({ metrics, statusFilter, onFilterChange }) {
   )
 }
 
+const ROOM_CONTEXT_CARD_CLASS = 'rounded-2xl border border-[#1e3a5f] bg-[#0b1728] p-4 shadow-[0_0_10px_rgba(0,0,0,0.4)] min-h-[236px]'
+
 function MotelRoomContextCard({ roomData, roomOverlays = [] }) {
   if (!roomData) {
     return (
-      <div className="rounded-2xl border border-[#1e3a5f] bg-[#0b1728] p-4 shadow-[0_0_10px_rgba(0,0,0,0.4)]">
+      <div className={ROOM_CONTEXT_CARD_CLASS}>
         <h3 className="text-xs font-bold uppercase tracking-[0.16em] text-[#8aa4c2]">Selected Room</h3>
         <p className="mt-3 text-sm text-[#8aa4c2]">Select a room on the map for guest and housekeeping context.</p>
       </div>
@@ -1557,7 +1585,7 @@ function MotelRoomContextCard({ roomData, roomOverlays = [] }) {
   const nextReservation = roomData.next_reservation || (roomData.status === 'reserved' ? 'Reserved at 3:00 PM' : '—')
 
   return (
-    <div className="rounded-2xl border border-[#1e3a5f] bg-[#0b1728] p-4 shadow-[0_0_10px_rgba(0,0,0,0.4)]">
+    <div className={ROOM_CONTEXT_CARD_CLASS}>
       <h3 className="text-xs font-bold uppercase tracking-[0.16em] text-[#8aa4c2]">Selected Room</h3>
       <p className="mt-2 text-xl font-black text-[#e5f0ff]">{getRoomDisplayLabel(roomData.room, overlay)}</p>
       <div className="mt-3 space-y-2 text-sm">
@@ -1681,6 +1709,7 @@ function MotelCommandCenter({
   const fullscreenRef = useRef(null)
   const isDragging = useRef(false)
   const lastPan = useRef({ x: 0, y: 0 })
+  const hoveredRoomRef = useRef(null)
   const { notify } = useNotification()
 
   const roomOverlays = useMemo(() => customOverlays ?? defaultRoomOverlays, [customOverlays, defaultRoomOverlays])
@@ -1718,6 +1747,7 @@ function MotelCommandCenter({
     const el = containerRef.current
     if (!el) return
     const applyFit = () => {
+      if (hoveredRoomRef.current) return
       fitToViewport()
     }
     // Delay initial fit to ensure container is fully rendered
@@ -1884,7 +1914,7 @@ function MotelCommandCenter({
           updatedAt: new Date().toISOString(),
         }
       })
-      setRoomData(addMock(normalizedRooms))
+      setRoomData(addMock(normalizedRooms.map((room) => clearGuestContextForAvailableRoom(room))))
       setLastUpdated(new Date())
     } catch (err) {
       setError(err?.message || 'Failed to load room status from Supabase.')
@@ -1924,7 +1954,10 @@ function MotelCommandCenter({
       const snapshot = timelineHistory.find((s) => s.time === selectedTime)
       if (snapshot?.rooms) {
         Object.entries(snapshot.rooms).forEach(([roomId, status]) => {
-          merged[roomId] = { ...(merged[roomId] || { room: roomId }), status }
+          merged[roomId] = clearGuestContextForAvailableRoom(
+            { ...(merged[roomId] || { room: roomId }), status },
+            status
+          )
         })
       }
     }
@@ -2009,6 +2042,7 @@ function MotelCommandCenter({
     )
     : null
   const handleRoomHover = useCallback((roomId, entering, e) => {
+    hoveredRoomRef.current = entering ? roomId : null
     setHoveredRoom(entering ? roomId : null)
     if (entering && e) setTooltipPos({ x: e.clientX, y: e.clientY })
   }, [])
@@ -2548,7 +2582,7 @@ function MotelCommandCenter({
           room: resolveOverlayRoomId(row.roomNumber),
         }))
         setDataSourceMode('innsoft')
-        setRoomData(addMock(mappedRows))
+        setRoomData(addMock(mappedRows.map((room) => clearGuestContextForAvailableRoom(room))))
         setLastUpdated(new Date())
       }
     } catch (err) {
@@ -2566,7 +2600,7 @@ function MotelCommandCenter({
       room: resolveOverlayRoomId(row.roomNumber),
     }))
     setDataSourceMode('demo')
-    setRoomData(addMock(mappedRows))
+    setRoomData(addMock(mappedRows.map((room) => clearGuestContextForAvailableRoom(room))))
     setLastUpdated(new Date())
   }
 
@@ -2760,7 +2794,7 @@ function MotelCommandCenter({
           </div>
         )}
 
-        <div className={`flex flex-col flex-1 min-h-0 w-full ${commandCenterMode ? 'lg:flex-row gap-3 lg:gap-4' : 'lg:flex-row gap-4'}`}>
+        <div className={`flex flex-col flex-1 min-h-0 w-full ${commandCenterMode ? 'lg:flex-row gap-3 lg:gap-4 lg:max-w-[1920px] lg:mx-auto lg:self-center' : 'lg:flex-row gap-4'}`}>
         <div
           ref={containerRef}
           className={`relative rounded-2xl border border-[#1e3a5f] overflow-hidden bg-[#020817] flex-[1_1_70%] min-w-0 min-h-[60vh] flex flex-col shadow-[0_0_10px_rgba(0,0,0,0.4)] ${commandCenterMode ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'}`}
@@ -2776,7 +2810,7 @@ function MotelCommandCenter({
             </div>
           )}
           <div
-            className="w-full h-full flex items-center justify-center"
+            className="w-full flex-1 min-h-0 flex items-center justify-center"
             style={{
               transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})`,
               transformOrigin: 'center center',
