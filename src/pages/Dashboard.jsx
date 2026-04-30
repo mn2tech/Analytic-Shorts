@@ -16,6 +16,7 @@ import ContractMapWidget, { getStateAbbr, getStateDisplayLabel } from '../compon
 import DateRangeSlider from '../components/DateRangeSlider'
 import SubawardDrilldownModal from '../components/SubawardDrilldownModal'
 import UpgradePrompt from '../components/UpgradePrompt'
+import AskClaudePanel from '../components/AskClaude/AskClaudePanel'
 import { useAuth } from '../contexts/AuthContext'
 import { getSubscription } from '../services/subscriptionService'
 import { PLANS } from '../config/pricing'
@@ -39,6 +40,7 @@ function Dashboard() {
   const { user } = useAuth()
   const [data, setData] = useState(null)
   const [filteredData, setFilteredData] = useState(null)
+  const [dataSourceInfo, setDataSourceInfo] = useState({})
   const [columns, setColumns] = useState([])
   const [numericColumns, setNumericColumns] = useState([])
   const [categoricalColumns, setCategoricalColumns] = useState([])
@@ -623,6 +625,10 @@ function Dashboard() {
       setNumericColumns(parsedData.numericColumns || [])
       setCategoricalColumns(parsedData.categoricalColumns || [])
       setDateColumns(parsedData.dateColumns || [])
+      setDataSourceInfo({
+        filename: parsedData.filename || parsedData.fileName || parsedData.name || parsedData.datasetName || parsedData.source || '',
+        source: parsedData.source || parsedData.datasetName || '',
+      })
 
       const sourceDashboardId = parsedData?.dashboardId || parsedData?.id || null
       if (sourceDashboardId) {
@@ -3113,6 +3119,32 @@ function Dashboard() {
   }
 
   const stats = calculateStats
+  const askClaudeDataContext = useMemo(() => ({
+    data: dashboardFilteredData || filteredData || data || [],
+    columns: columns || [],
+    filename: dataSourceInfo.filename || dashboardTitle || 'Analytics Dashboard',
+    dashboardId: savedDashboardId || null,
+    selectedNumeric,
+    selectedCategorical,
+    selectedDate,
+    numericColumns: effectiveNumericColumns || [],
+    categoricalColumns: categoricalColumns || [],
+    dateColumns: dateColumns || [],
+  }), [
+    dashboardFilteredData,
+    filteredData,
+    data,
+    columns,
+    dataSourceInfo.filename,
+    dashboardTitle,
+    savedDashboardId,
+    selectedNumeric,
+    selectedCategorical,
+    selectedDate,
+    effectiveNumericColumns,
+    categoricalColumns,
+    dateColumns,
+  ])
 
   const handleMetadataUpdate = (newMetadata) => {
     try {
@@ -4541,6 +4573,7 @@ function Dashboard() {
             ?.filter((id) => id && id !== '') || []
         }
       />
+      <AskClaudePanel dataContext={askClaudeDataContext} />
     </div>
   )
 }

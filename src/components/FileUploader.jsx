@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react'
 import apiClient from '../config/api'
+import GoogleSheetsImport from './GoogleSheetsImport'
 
 function FileUploader({ onUploadSuccess, onError, onUpgradeRequired }) {
   const [isDragging, setIsDragging] = useState(false)
@@ -167,6 +168,7 @@ function FileUploader({ onUploadSuccess, onError, onUpgradeRequired }) {
   }
 
   return (
+    <>
     <div
       className={`border-2 border-dashed rounded-xl p-4 sm:p-8 text-center transition-all duration-300 ${
         isDragging
@@ -251,6 +253,13 @@ function FileUploader({ onUploadSuccess, onError, onUpgradeRequired }) {
         </div>
       )}
     </div>
+    <div className="my-5 flex items-center gap-3">
+      <div className="h-px flex-1 bg-gray-200" />
+      <span className="text-xs font-medium uppercase tracking-wide text-gray-400">or import from Google Sheets</span>
+      <div className="h-px flex-1 bg-gray-200" />
+    </div>
+    <GoogleSheetsImport onDataLoaded={onUploadSuccess} onError={onError} />
+    </>
   )
 }
 
