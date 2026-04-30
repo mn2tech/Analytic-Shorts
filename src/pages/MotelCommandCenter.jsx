@@ -537,7 +537,7 @@ function NewReservationPanel({ isOpen, roomOverlay, roomData, onClose, onSave })
   )
 }
 
-function ReservedCheckInPanel({ isOpen, roomOverlay, roomData, onClose, onComplete }) {
+function ReservedCheckInPanel({ isOpen, roomOverlay, roomData, onClose, onComplete, hotelName = 'Gateway Inn' }) {
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState('')
   const [checklist, setChecklist] = useState({
@@ -581,8 +581,70 @@ function ReservedCheckInPanel({ isOpen, roomOverlay, roomData, onClose, onComple
   const checklistComplete = Object.values(checklist).every(Boolean)
   const canSubmit = checklistComplete && !isSaving
 
+  const printCheckInReceipt = (receiptWindow) => {
+    const targetWindow = receiptWindow || window.open('', '_blank', 'width=900,height=700')
+    if (!targetWindow) return
+    const paymentCollected = balanceDue > 0 ? balanceDue : 0
+    const totalPayments = amountPaid + paymentCollected
+    const remainingBalance = Math.max(0, totalAmount - totalPayments)
+    const html = `
+      <!doctype html>
+      <html>
+      <head>
+        <title>Check-In Receipt - Room ${roomDisplay}</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 28px; color: #0f172a; }
+          h1 { margin: 0; font-size: 28px; }
+          .sub { color: #334155; margin-top: 6px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+          th, td { border-bottom: 1px solid #cbd5e1; padding: 10px 6px; text-align: left; }
+          .summary { margin-top: 16px; width: 360px; margin-left: auto; }
+          .summary p { display: flex; justify-content: space-between; margin: 6px 0; }
+          .zero { color: #166534; font-weight: 700; }
+          .footer { margin-top: 24px; color: #475569; }
+          .actions { margin-top: 24px; }
+          .actions button { padding: 10px 16px; }
+          @media print { .actions { display: none; } }
+        </style>
+      </head>
+      <body>
+        <h1>${hotelName}</h1>
+        <p class="sub">Check-In Receipt</p>
+        <p><strong>${guestName}</strong> — Room ${roomDisplay}</p>
+        <p class="sub">Check-in: ${formatDateDisplay(checkInDate)} | Check-out: ${formatDateDisplay(checkOutDate)} | Nights: ${nights}</p>
+        <table>
+          <thead><tr><th>Item</th><th>Details</th><th style="text-align:right;">Amount</th></tr></thead>
+          <tbody>
+            <tr><td>Room charge</td><td>${nights} nights × ${formatCurrency(ratePerNight)}</td><td style="text-align:right;">${formatCurrency(roomSubtotal)}</td></tr>
+            <tr><td>City tax</td><td>8% of room charge</td><td style="text-align:right;">${formatCurrency(taxBreakdown.cityTax)}</td></tr>
+            <tr><td>State tax</td><td>7% of room charge</td><td style="text-align:right;">${formatCurrency(taxBreakdown.stateTax)}</td></tr>
+            <tr><td>Hotel tax</td><td>${nights} nights × ${formatCurrency(INNSOFT_TAX_SETTINGS.hotelFlatPerNight)}</td><td style="text-align:right;">${formatCurrency(taxBreakdown.hotelTax)}</td></tr>
+            ${paymentCollected > 0 ? `<tr><td>Payment collected at check-in</td><td>${paymentMethod}</td><td style="text-align:right;">-${formatCurrency(paymentCollected)}</td></tr>` : ''}
+          </tbody>
+        </table>
+        <div class="summary">
+          <p><span>Total stay charges</span><strong>${formatCurrency(totalAmount)}</strong></p>
+          <p><span>Prior payments / deposits</span><strong>${formatCurrency(amountPaid)}</strong></p>
+          <p><span>Collected at check-in</span><strong>${formatCurrency(paymentCollected)}</strong></p>
+          <p><span>Balance remaining</span><strong class="${remainingBalance === 0 ? 'zero' : ''}">${formatCurrency(remainingBalance)}</strong></p>
+          ${changeDue > 0 ? `<p><span>Cash change due</span><strong>${formatCurrency(changeDue)}</strong></p>` : ''}
+        </div>
+        <p class="footer">Thank you. This receipt confirms check-in payment activity; final charges may change if additional items are added during the stay.</p>
+        <div class="actions"><button onclick="window.print()">Print</button></div>
+      </body>
+      </html>
+    `
+    targetWindow.document.open()
+    targetWindow.document.write(html)
+    targetWindow.document.close()
+  }
+
   const handleSubmit = async () => {
     if (!canSubmit) return
+    const receiptWindow = window.open('', '_blank', 'width=900,height=700')
+    if (receiptWindow) {
+      receiptWindow.document.write('<p style="font-family: Arial, sans-serif; padding: 24px;">Preparing check-in receipt...</p>')
+    }
     setError('')
     setIsSaving(true)
     try {
@@ -591,7 +653,9 @@ function ReservedCheckInPanel({ isOpen, roomOverlay, roomData, onClose, onComple
         paymentMethod,
         amountReceived: amountReceivedNumber,
       })
+      printCheckInReceipt(receiptWindow)
     } catch (err) {
+      receiptWindow?.close()
       setError(err?.message || 'Unable to complete check-in.')
       setIsSaving(false)
       return
@@ -729,7 +793,7 @@ function ReservedCheckInPanel({ isOpen, roomOverlay, roomData, onClose, onComple
   )
 }
 
-function OccupiedRoomPanel({ isOpen, roomOverlay, roomData, onClose, onCompleteCheckout, hotelName = 'Gateway Inn' }) {
+function OccupiedRoomPanel({ isOpen, roomOverlay, roomData, onClose, onCompleteCheckout }) {
   const [isCheckoutMode, setIsCheckoutMode] = useState(false)
   const [extraCharges, setExtraCharges] = useState([])
   const [paymentMethod, setPaymentMethod] = useState('Cash')
@@ -786,60 +850,6 @@ function OccupiedRoomPanel({ isOpen, roomOverlay, roomData, onClose, onCompleteC
     return String(charge.customDescription || '').trim() || 'Other'
   }
 
-  const printInvoice = ({ checkoutDate }) => {
-    const invoiceWindow = window.open('', '_blank', 'width=900,height=700')
-    if (!invoiceWindow) return
-    const rowsHtml = [
-      `<tr><td>Room charge</td><td>${nights} nights × ${formatCurrency(ratePerNight)}</td><td style="text-align:right;">${formatCurrency(roomChargeTotal)}</td></tr>`,
-      `<tr><td>City tax</td><td>8% of room charge</td><td style="text-align:right;">${formatCurrency(taxBreakdown.cityTax)}</td></tr>`,
-      `<tr><td>State tax</td><td>7% of room charge</td><td style="text-align:right;">${formatCurrency(taxBreakdown.stateTax)}</td></tr>`,
-      `<tr><td>Hotel tax</td><td>${nights} nights × ${formatCurrency(INNSOFT_TAX_SETTINGS.hotelFlatPerNight)}</td><td style="text-align:right;">${formatCurrency(taxBreakdown.hotelTax)}</td></tr>`,
-      ...extraCharges.map((charge) => `<tr><td>${getChargeDescription(charge)}</td><td></td><td style="text-align:right;">${formatCurrency(charge.amount)}</td></tr>`),
-    ].join('')
-    const html = `
-      <!doctype html>
-      <html>
-      <head>
-        <title>Invoice - Room ${roomDisplay}</title>
-        <style>
-          body { font-family: Arial, sans-serif; margin: 28px; color: #0f172a; }
-          h1 { margin: 0; font-size: 28px; }
-          .sub { color: #334155; margin-top: 6px; }
-          table { width: 100%; border-collapse: collapse; margin-top: 16px; }
-          th, td { border-bottom: 1px solid #cbd5e1; padding: 10px 6px; text-align: left; }
-          .summary { margin-top: 16px; width: 340px; margin-left: auto; }
-          .summary p { display: flex; justify-content: space-between; margin: 6px 0; }
-          .zero { color: #166534; font-weight: 700; }
-          .footer { margin-top: 24px; color: #475569; }
-          .actions { margin-top: 24px; }
-          .actions button { padding: 10px 16px; }
-          @media print { .actions { display: none; } }
-        </style>
-      </head>
-      <body>
-        <h1>${hotelName}</h1>
-        <p class="sub">Guest Invoice</p>
-        <p><strong>${guestName}</strong> — Room ${roomDisplay}</p>
-        <p class="sub">Check-in: ${formatDateDisplay(checkInDate)} | Check-out: ${formatDateDisplay(checkoutDate)} | Nights: ${nights}</p>
-        <table>
-          <thead><tr><th>Item</th><th>Details</th><th style="text-align:right;">Amount</th></tr></thead>
-          <tbody>${rowsHtml}</tbody>
-        </table>
-        <div class="summary">
-          <p><span>Total charges</span><strong>${formatCurrency(totalCharges)}</strong></p>
-          <p><span>Payments made (incl. deposits)</span><strong>${formatCurrency(depositsPaid + effectivePayment)}</strong></p>
-          <p><span>Balance</span><strong class="zero">${formatCurrency(0)}</strong></p>
-        </div>
-        <p class="footer">Thank you for staying with us. We appreciate your business.</p>
-        <div class="actions"><button onclick="window.print()">Print</button></div>
-      </body>
-      </html>
-    `
-    invoiceWindow.document.open()
-    invoiceWindow.document.write(html)
-    invoiceWindow.document.close()
-  }
-
   const handleComplete = async () => {
     if (!canCompleteCheckout) return
     setError('')
@@ -859,7 +869,6 @@ function OccupiedRoomPanel({ isOpen, roomOverlay, roomData, onClose, onCompleteC
         paymentAmount: effectivePayment,
         waiveBalance: remainingBalance > 0 && waiveBalance,
       })
-      printInvoice({ checkoutDate })
       setIsSaving(false)
     } catch (err) {
       setError(err?.message || 'Unable to complete check-out.')
@@ -2992,6 +3001,7 @@ function MotelCommandCenter({
         roomData={checkInRoomData}
         onClose={() => setCheckInPanelRoomId(null)}
         onComplete={handleCompleteCheckIn}
+        hotelName={brandName}
       />
       <OccupiedRoomPanel
         isOpen={!!occupiedPanelRoomId}
@@ -2999,7 +3009,6 @@ function MotelCommandCenter({
         roomData={occupiedRoomData}
         onClose={() => setOccupiedPanelRoomId(null)}
         onCompleteCheckout={handleCompleteCheckout}
-        hotelName={brandName}
       />
       <HousekeepingPanel
         isOpen={!!housekeepingPanelRoomId}
