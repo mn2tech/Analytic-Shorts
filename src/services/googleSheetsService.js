@@ -9,7 +9,7 @@ function friendlyGoogleSheetsError(error) {
     return 'Please paste a Google Sheets link (docs.google.com/spreadsheets/...)'
   }
   if (code === 'PRIVATE_SHEET') {
-    return 'This sheet is private. In Google Sheets, click Share > Anyone with the link > Viewer, then try again.'
+    return 'Could not access this sheet. Confirm Share is set to Anyone with the link > Viewer, and try a tab-specific link that includes #gid=...'
   }
   if (code === 'EMPTY_SHEET') {
     return 'This sheet appears to be empty.'

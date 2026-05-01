@@ -53,7 +53,7 @@ function parseGoogleSheetsUrl(rawUrl) {
   }
 
   const hashGid = parsed.hash.match(/gid=(\d+)/)?.[1]
-  const gid = parsed.searchParams.get('gid') || hashGid || '0'
+  const gid = parsed.searchParams.get('gid') || hashGid || null
   return { sheetId, gid }
 }
 
@@ -146,18 +146,32 @@ router.post('/google-sheets', googleSheetsLimiter, async (req, res) => {
 
   try {
     const { sheetId, gid } = parseGoogleSheetsUrl(url)
-    const exportUrl = `https://docs.google.com/spreadsheets/d/${encodeURIComponent(sheetId)}/export?format=csv&gid=${encodeURIComponent(gid)}`
+    const baseExportUrl = `https://docs.google.com/spreadsheets/d/${encodeURIComponent(sheetId)}/export?format=csv`
+    const candidateUrls = gid
+      ? [`${baseExportUrl}&gid=${encodeURIComponent(gid)}`, baseExportUrl]
+      : [baseExportUrl]
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), 10000)
 
     let response
+    let text = ''
+    let contentType = ''
+    let fetched = false
     try {
-      response = await fetchImpl(exportUrl, {
-        signal: controller.signal,
-        headers: {
-          Accept: 'text/csv,text/plain,*/*',
-        },
-      })
+      for (const exportUrl of candidateUrls) {
+        response = await fetchImpl(exportUrl, {
+          signal: controller.signal,
+          headers: {
+            Accept: 'text/csv,text/plain,*/*',
+          },
+        })
+        contentType = String(response.headers.get('content-type') || '').toLowerCase()
+        text = await response.text()
+        if (response.ok && !looksLikePrivateOrHtml(contentType, text)) {
+          fetched = true
+          break
+        }
+      }
     } catch (error) {
       if (error?.name === 'AbortError') {
         const err = new Error('Could not reach Google Sheets. Please try again.')
@@ -171,10 +185,7 @@ router.post('/google-sheets', googleSheetsLimiter, async (req, res) => {
       clearTimeout(timer)
     }
 
-    const contentType = String(response.headers.get('content-type') || '').toLowerCase()
-    const text = await response.text()
-
-    if (!response.ok || looksLikePrivateOrHtml(contentType, text)) {
+    if (!fetched) {
       const err = new Error(PRIVATE_SHEET_MESSAGE)
       err.code = 'PRIVATE_SHEET'
       throw err
