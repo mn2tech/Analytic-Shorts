@@ -41,6 +41,7 @@ const followRoutes = require('./routes/follow')
 const liveRoutes = require('./routes/live')
 const reportsRoutes = require('./routes/reports')
 const hospitalRoutes = require('./routes/hospital')
+const innsoftRoutes = require('./routes/innsoft')
 // Optional route: aiHealthChat may not be deployed in some environments.
 let aiHealthChatRoutes = null
 try {
@@ -281,6 +282,7 @@ app.use('/api/profiles', profilesRoutes)
 app.use('/api/studio', studioRoutes)
 app.use('/api/reports', reportsRoutes)
 app.use('/api/hospital', hospitalRoutes)
+app.use('/api/innsoft', innsoftRoutes)
 if (aiHealthChatRoutes) app.use('/api', aiHealthChatRoutes)
 app.use('/api', askClaudeRoutes)
 app.use('/api/validation', validationRoutes)

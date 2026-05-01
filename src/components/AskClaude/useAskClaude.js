@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import apiClient from '../../config/api'
+import { trackEvent } from '../../utils/analytics'
 
 const WELCOME_MESSAGE = {
   id: 'ask-claude-welcome',
@@ -42,7 +43,8 @@ function toHistory(messages) {
     .slice(-12)
 }
 
-export default function useAskClaude(dataContext) {
+export default function useAskClaude(dataContext, options = {}) {
+  const { onDashboardUpdate, onChartLayoutUpdate } = options
   const [messages, setMessages] = useState([WELCOME_MESSAGE])
   const [isLoading, setIsLoading] = useState(false)
   const [toolStatus, setToolStatus] = useState('')
@@ -56,6 +58,10 @@ export default function useAskClaude(dataContext) {
     if (!message || isLoading) return
 
     const userMessage = createMessage('user', message)
+    trackEvent('ask_claude', {
+      event_category: 'engagement',
+      event_label: 'question_asked',
+    })
     const pendingHistory = [...messages, userMessage]
     setMessages(pendingHistory)
     setIsLoading(true)
@@ -69,7 +75,6 @@ export default function useAskClaude(dataContext) {
       })
 
       const payload = response.data || {}
-      if (import.meta.env.DEV) console.log('[AskClaude] raw API response:', payload)
       const responseText = getResponseText(payload)
       const assistantMessage = createMessage('assistant', responseText || 'I found an answer, but the response was empty.', {
         toolUsed: payload.toolUsed || null,
@@ -79,6 +84,12 @@ export default function useAskClaude(dataContext) {
         upgradeRequired: !!payload.upgradeRequired,
       })
       setMessages((prev) => [...prev, assistantMessage])
+      if (payload.dashboardSpec && onDashboardUpdate) {
+        onDashboardUpdate(payload.dashboardSpec, payload)
+      }
+      if (payload.chartOperations && onChartLayoutUpdate) {
+        onChartLayoutUpdate(payload.chartOperations, payload)
+      }
     } catch (error) {
       const status = error?.response?.data
       const assistantMessage = createMessage(
@@ -94,7 +105,7 @@ export default function useAskClaude(dataContext) {
       setIsLoading(false)
       setToolStatus('')
     }
-  }, [dataContext, isLoading, messages])
+  }, [dataContext, isLoading, messages, onDashboardUpdate, onChartLayoutUpdate])
 
   const resetConversation = useCallback(() => {
     setMessages([WELCOME_MESSAGE])

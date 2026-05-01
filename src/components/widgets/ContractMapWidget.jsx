@@ -296,8 +296,8 @@ function ContractMapWidget({
                         stroke={isStateSelected(fips) ? '#1d4ed8' : '#fff'}
                         strokeWidth={isStateSelected(fips) ? 1.5 : 0.5}
                         style={{
-                          default: { outline: 'none', cursor: onChartFilter ? 'pointer' : 'default' },
-                          hover: { outline: 'none', filter: 'brightness(1.1)' },
+                          default: { outline: 'none', cursor: 'default' },
+                          hover: { outline: 'none', filter: 'brightness(1.1)', cursor: 'default' },
                           pressed: { outline: 'none' }
                         }}
                         onMouseEnter={() => setTooltip({ stateName, val, fips })}

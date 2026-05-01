@@ -34,6 +34,7 @@ dataset and can:
 
 Current dataset context will be provided with each message.
 When creating dashboards, always call the create_dashboard tool.
+When users ask to add/remove/replace chart widgets, include concise chart control intent in your answer so the UI can apply layout changes.
 When asked about government contracts, always call run_federal_report.
 Keep responses concise and actionable. Lead with the answer, 
 then explain. Never say you cannot access the data - it is provided 
@@ -347,6 +348,72 @@ function normalizeHistory(history) {
     : []
 }
 
+function deriveChartOperationsFromMessage(message) {
+  const text = String(message || '').toLowerCase()
+  if (!text.trim()) return null
+
+  const ops = {}
+
+  const wantsEverything = /\b(show|add|bring)\s+(everything|all charts|all widgets)\b/.test(text)
+  if (wantsEverything) {
+    ops.showMap = true
+    ops.showLineChart = true
+    ops.showBarChart = true
+    ops.showPieChart = true
+    ops.showKPIs = true
+    ops.showTable = true
+  }
+
+  if (/\b(remove|hide)\b.*\b(geo ?map|map)\b/.test(text)) ops.showMap = false
+  if (/\b(add|show|restore)\b.*\b(geo ?map|map)\b/.test(text)) ops.showMap = true
+
+  if (/\b(remove|hide)\b.*\bline\b/.test(text)) ops.showLineChart = false
+  if (/\b(add|show|restore|replace).*?\bline\b/.test(text)) ops.showLineChart = true
+
+  if (/\b(remove|hide)\b.*\bbar\b/.test(text)) ops.showBarChart = false
+  if (/\b(add|show|restore|replace).*?\bbar\b/.test(text)) ops.showBarChart = true
+
+  if (/\b(remove|hide)\b.*\bpie\b/.test(text)) ops.showPieChart = false
+  if (/\b(add|show|restore|replace).*?\bpie\b/.test(text)) ops.showPieChart = true
+
+  if (/\b(remove|hide)\b.*\b(kpi|kpis|metric|metrics)\b/.test(text)) ops.showKPIs = false
+  if (/\b(add|show|restore)\b.*\b(kpi|kpis|metric|metrics)\b/.test(text)) ops.showKPIs = true
+
+  if (/\b(remove|hide)\b.*\btable\b/.test(text)) ops.showTable = false
+  if (/\b(add|show|restore)\b.*\btable\b/.test(text)) ops.showTable = true
+
+  if (/\bshow only\b/.test(text)) {
+    ops.showMap = false
+    ops.showLineChart = false
+    ops.showBarChart = false
+    ops.showPieChart = false
+    ops.showKPIs = false
+    ops.showTable = false
+    if (/\bbar\b/.test(text)) ops.showBarChart = true
+    if (/\bline\b/.test(text)) ops.showLineChart = true
+    if (/\bpie\b/.test(text)) ops.showPieChart = true
+    if (/\bmap\b/.test(text)) ops.showMap = true
+    if (/\bkpi|kpis|metric|metrics\b/.test(text)) ops.showKPIs = true
+    if (/\btable\b/.test(text)) ops.showTable = true
+  }
+
+  if (/\breplace\b.*\bmap\b.*\bline\b/.test(text)) {
+    ops.showMap = false
+    ops.showLineChart = true
+    ops.replaceMap = 'line'
+  } else if (/\breplace\b.*\bmap\b.*\bbar\b/.test(text)) {
+    ops.showMap = false
+    ops.showBarChart = true
+    ops.replaceMap = 'bar'
+  } else if (/\breplace\b.*\bmap\b.*\bpie\b/.test(text)) {
+    ops.showMap = false
+    ops.showPieChart = true
+    ops.replaceMap = 'pie'
+  }
+
+  return Object.keys(ops).length ? ops : null
+}
+
 router.post('/ask-claude', optionalAuth, async (req, res) => {
   try {
     const { message, dataContext = {}, conversationHistory = [] } = req.body || {}
@@ -444,13 +511,17 @@ router.post('/ask-claude', optionalAuth, async (req, res) => {
 
     if (!isPaidPlan(plan)) await recordPreviewUsage(req)
 
-    return res.json({
+    const chartOperations = deriveChartOperationsFromMessage(message)
+
+    const responsePayload = {
       response: finalText,
       toolUsed,
       dashboardSpec,
+      chartOperations,
       exampleDataset,
       federalReport,
-    })
+    }
+    return res.json(responsePayload)
   } catch (error) {
     console.error('[ask-claude] error:', error)
     return res.status(500).json({

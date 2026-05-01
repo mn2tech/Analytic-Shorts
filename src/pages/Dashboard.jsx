@@ -12,16 +12,18 @@ import ForecastChart from '../components/ForecastChart'
 import DataMetadataEditor from '../components/DataMetadataEditor'
 import TimeSeriesReport from '../components/TimeSeriesReport'
 import AnomalyDetectionPanel from '../components/anomaly/AnomalyDetectionPanel'
-import ContractMapWidget, { getStateAbbr, getStateDisplayLabel } from '../components/widgets/ContractMapWidget'
+import { getStateAbbr, getStateDisplayLabel } from '../components/widgets/ContractMapWidget'
 import DateRangeSlider from '../components/DateRangeSlider'
 import SubawardDrilldownModal from '../components/SubawardDrilldownModal'
 import UpgradePrompt from '../components/UpgradePrompt'
 import AskClaudePanel from '../components/AskClaude/AskClaudePanel'
+import DashboardRenderer from '../components/aiVisualBuilder/DashboardRenderer'
 import { useAuth } from '../contexts/AuthContext'
 import { getSubscription } from '../services/subscriptionService'
 import { PLANS } from '../config/pricing'
 import { saveAs } from 'file-saver'
 import { generateShareId, saveSharedDashboard, getShareableUrl, copyToClipboard } from '../utils/shareUtils'
+import { trackEvent } from '../utils/analytics'
 import { clearAnalyticsDataAndReload } from '../utils/analyticsStorage'
 import { saveDashboard, updateDashboard } from '../services/dashboardService'
 import apiClient from '../config/api'
@@ -53,6 +55,19 @@ function Dashboard() {
   const [shareId, setShareId] = useState(null)
   const [shareLinkCopied, setShareLinkCopied] = useState(false)
   const [dashboardView, setDashboardView] = useState('simple') // 'simple', 'advanced', 'custom', 'timeseries', 'data', 'ai-insights'
+  const [claudeDashboardSpec, setClaudeDashboardSpec] = useState(null)
+  const [dashboardKey, setDashboardKey] = useState(0)
+  const [isClaudePanelVisible, setIsClaudePanelVisible] = useState(true)
+  const [chartLayout, setChartLayout] = useState({
+    showMap: true,
+    showLineChart: true,
+    showBarChart: true,
+    showPieChart: true,
+    showKPIs: true,
+    showTable: false,
+    chartOrder: ['kpis', 'line', 'bar', 'pie', 'map'],
+    cardHeights: {},
+  })
   const [dashboardTitle, setDashboardTitle] = useState('Analytics Dashboard')
   const [isEditingTitle, setIsEditingTitle] = useState(false)
   const [titleDraft, setTitleDraft] = useState('')
@@ -3146,6 +3161,73 @@ function Dashboard() {
     dateColumns,
   ])
 
+  const handleClaudeDashboardSpec = useCallback((spec) => {
+    if (!spec) return
+    const chart = spec.charts?.find(c =>
+      ['line', 'area', 'bar', 'pie'].includes(c.type)
+    ) || spec.charts?.[0]
+
+    // Try to match yField to actual numeric columns
+    const yFieldCandidates = [
+      chart?.yField, chart?.metric, chart?.field,
+      'Total', 'Subtotal', 'Unit Price'
+    ].filter(Boolean)
+
+    const nextNumeric = yFieldCandidates.find(f =>
+      numericColumns?.includes(f)
+    ) || numericColumns?.[0]
+
+    // Try to match dimension to actual categorical columns
+    const xFieldCandidates = [
+      chart?.dimension, chart?.xField, chart?.category,
+      'Product Title', 'City', 'State', 'Sales Channel'
+    ].filter(Boolean)
+
+    const nextCategorical = xFieldCandidates.find(f =>
+      categoricalColumns?.includes(f)
+    ) || categoricalColumns?.[0]
+
+    // Try to match date field
+    const dateCandidates = [
+      chart?.dateField, chart?.xField, 'Order Date'
+    ].filter(Boolean)
+
+    const nextDate = dateCandidates.find(f =>
+      dateColumns?.includes(f)
+    ) || dateColumns?.[0]
+
+    setSelectedNumeric(nextNumeric)
+    setSelectedCategorical(nextCategorical)
+    if (nextDate) setSelectedDate(nextDate)
+    setClaudeDashboardSpec(spec)
+    // Keep using the main left DashboardCharts flow so Claude updates the same view users already use.
+    setDashboardView('simple')
+    setDashboardKey((prev) => prev + 1)
+  }, [dateColumns, selectedDate, selectedNumeric, selectedCategorical, dashboardView])
+
+  const handleChartLayoutUpdate = useCallback((operations) => {
+    if (!operations || typeof operations !== 'object') return
+    setChartLayout((prev) => ({
+      ...prev,
+      showMap: operations.showMap ?? prev.showMap,
+      showLineChart: operations.showLineChart ?? prev.showLineChart,
+      showBarChart: operations.showBarChart ?? prev.showBarChart,
+      showPieChart: operations.showPieChart ?? prev.showPieChart,
+      showKPIs: operations.showKPIs ?? prev.showKPIs,
+      showTable: operations.showTable ?? prev.showTable,
+      chartOrder: Array.isArray(operations.chartOrder) ? operations.chartOrder : prev.chartOrder,
+      cardHeights: operations.cardHeights && typeof operations.cardHeights === 'object'
+        ? { ...(prev.cardHeights || {}), ...operations.cardHeights }
+        : (prev.cardHeights || {}),
+      hiddenAdvancedCards: operations.hiddenAdvancedCards && typeof operations.hiddenAdvancedCards === 'object'
+        ? { ...(prev.hiddenAdvancedCards || {}), ...operations.hiddenAdvancedCards }
+        : (prev.hiddenAdvancedCards || {}),
+      advancedTopOrder: Array.isArray(operations.advancedTopOrder) ? operations.advancedTopOrder : (prev.advancedTopOrder || ['adv-line', 'adv-donut']),
+      advancedBottomOrder: Array.isArray(operations.advancedBottomOrder) ? operations.advancedBottomOrder : (prev.advancedBottomOrder || ['adv-distribution', 'adv-sunburst', 'adv-bar']),
+    }))
+    setDashboardKey((prev) => prev + 1)
+  }, [])
+
   const handleMetadataUpdate = (newMetadata) => {
     try {
       // Set flag to prevent data loss during update
@@ -3681,6 +3763,8 @@ function Dashboard() {
   // Get current date for header
   const currentDate = new Date()
   const monthYear = currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+  // Reserve room for the persistent Ask Claude right dock on desktop.
+  const askClaudeDockPaddingClass = isClaudePanelVisible ? 'lg:pr-[460px] xl:pr-[520px]' : ''
 
   // Fullscreen content
   if (isFullscreen) {
@@ -3873,13 +3957,22 @@ function Dashboard() {
               onMetadataUpdate={handleMetadataUpdate}
             />
           ) : dashboardView === 'ai-insights' ? (
-            <AiInsightsTab
-              data={dashboardFilteredData || data || []}
-              columns={columns}
-              numericColumns={effectiveNumericColumns}
-              categoricalColumns={categoricalColumns}
-              dateColumns={dateColumns}
-            />
+            claudeDashboardSpec ? (
+              <DashboardRenderer
+                spec={claudeDashboardSpec}
+                data={dashboardFilteredData || filteredData || data || []}
+                filterValues={{}}
+                onFilterChange={() => {}}
+              />
+            ) : (
+              <AiInsightsTab
+                data={dashboardFilteredData || data || []}
+                columns={columns}
+                numericColumns={effectiveNumericColumns}
+                categoricalColumns={categoricalColumns}
+                dateColumns={dateColumns}
+              />
+            )
           ) : dashboardView === 'timeseries' ? (
             <TimeSeriesReport
               data={dashboardFilteredData || data}
@@ -3890,18 +3983,10 @@ function Dashboard() {
             />
           ) : (
             <>
-              {showMapTab && (
-                <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden p-4 mb-6" style={{ minHeight: '360px' }}>
-                  <ContractMapWidget
-                    data={dashboardFilteredData || data}
-                    selectedCategorical="state"
-                    selectedNumeric={effectiveNumericColumns?.includes('award_amount') ? 'award_amount' : effectiveNumericColumns?.includes('opportunity_count') ? 'opportunity_count' : null}
-                    chartFilter={chartFilter}
-                    onChartFilter={handleChartFilter}
-                  />
-                </div>
-              )}
               <DashboardCharts
+                key={`dashboard-main-${dashboardKey}`}
+                chartLayout={chartLayout}
+                onChartLayoutUpdate={handleChartLayoutUpdate}
                 data={data}
                 filteredData={dashboardFilteredData}
                 selectedNumeric={selectedNumeric}
@@ -3912,13 +3997,17 @@ function Dashboard() {
                 pieFilteredData={opportunityPieDataByOrg}
                 pieDimensionOverride={opportunityPieDataByOrg ? 'organization' : undefined}
                 pieTitleOverride={opportunityPieDataByOrg ? `By organization (${selectedOpportunityNoticeType})` : undefined}
-                showVesselMap={vesselMapConfig.show}
+                showGeoMap={showMapTab && chartLayout.showMap}
+                geoMapData={dashboardFilteredData || data}
+                geoSelectedCategorical="state"
+                geoSelectedNumeric={effectiveNumericColumns?.includes('award_amount') ? 'award_amount' : effectiveNumericColumns?.includes('opportunity_count') ? 'opportunity_count' : null}
+                showVesselMap={vesselMapConfig.show && chartLayout.showMap}
                 vesselMapData={dashboardFilteredData}
                 vesselLatCol={vesselMapConfig.latCol}
                 vesselLonCol={vesselMapConfig.lonCol}
               />
               {/* Metric Cards - Only in simple view */}
-              {dashboardView === 'simple' && (
+              {dashboardView === 'simple' && chartLayout.showKPIs && (
                 <MetricCards
                   data={dashboardFilteredData}
                   numericColumns={effectiveNumericColumns}
@@ -4037,7 +4126,7 @@ function Dashboard() {
       
       {/* Date Range Slider and Network View Button - Top of Dashboard */}
       <div className="bg-white border-b border-gray-200 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className={`max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 ${askClaudeDockPaddingClass}`}>
           <div className="flex flex-col gap-2 py-3 md:flex-row md:items-center md:justify-between">
             <div className="flex-1">
               {selectedDate && dateColumns.includes(selectedDate) && (
@@ -4071,7 +4160,7 @@ function Dashboard() {
         </div>
       </div>
 
-      <div ref={shortRootRef} className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 relative">
+      <div ref={shortRootRef} className={`max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 relative ${askClaudeDockPaddingClass}`}>
         {/* Header */}
         <div className="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center animate-fade-in">
           <div>
@@ -4274,6 +4363,10 @@ function Dashboard() {
                   alert('Failed to update shared dashboard. Please try again.')
                   return
                 }
+                trackEvent('share_dashboard', {
+                  event_category: 'engagement',
+                  event_label: 'share_clicked',
+                })
 
                 if (!shareId) {
                   setShareId(effectiveShareId)
@@ -4426,6 +4519,8 @@ function Dashboard() {
                 categoricalColumns={categoricalColumns}
                 numericColumns={effectiveNumericColumns}
                 dateColumns={dateColumns}
+                chartLayout={chartLayout}
+                onChartLayoutUpdate={handleChartLayoutUpdate}
               />
             </>
           ) : dashboardView === 'custom' ? (
@@ -4443,18 +4538,10 @@ function Dashboard() {
             />
           ) : (
             <>
-              {showMapTab && (
-                <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden p-4 mb-6" style={{ minHeight: '360px' }}>
-                  <ContractMapWidget
-                    data={dashboardFilteredData || data}
-                    selectedCategorical="state"
-                    selectedNumeric={effectiveNumericColumns?.includes('award_amount') ? 'award_amount' : effectiveNumericColumns?.includes('opportunity_count') ? 'opportunity_count' : null}
-                    chartFilter={chartFilter}
-                    onChartFilter={handleChartFilter}
-                  />
-                </div>
-              )}
               <DashboardCharts
+                key={`dashboard-main-alt-${dashboardKey}`}
+                chartLayout={chartLayout}
+                onChartLayoutUpdate={handleChartLayoutUpdate}
                 data={data}
                 filteredData={dashboardFilteredData}
                 selectedNumeric={selectedNumeric}
@@ -4467,7 +4554,11 @@ function Dashboard() {
                 pieFilteredData={opportunityPieDataByOrg}
                 pieDimensionOverride={opportunityPieDataByOrg ? 'organization' : undefined}
                 pieTitleOverride={opportunityPieDataByOrg ? `By organization (${selectedOpportunityNoticeType})` : undefined}
-                showVesselMap={vesselMapConfig.show}
+                showGeoMap={showMapTab && chartLayout.showMap}
+                geoMapData={dashboardFilteredData || data}
+                geoSelectedCategorical="state"
+                geoSelectedNumeric={effectiveNumericColumns?.includes('award_amount') ? 'award_amount' : effectiveNumericColumns?.includes('opportunity_count') ? 'opportunity_count' : null}
+                showVesselMap={vesselMapConfig.show && chartLayout.showMap}
                 vesselMapData={dashboardFilteredData}
                 vesselLatCol={vesselMapConfig.latCol}
                 vesselLonCol={vesselMapConfig.lonCol}
@@ -4479,7 +4570,7 @@ function Dashboard() {
         {renderOpportunityListPanel()}
 
         {/* Metric Cards - Only in simple view */}
-        {dashboardView === 'simple' && (
+        {dashboardView === 'simple' && chartLayout.showKPIs && (
           <MetricCards
             data={dashboardFilteredData}
             numericColumns={effectiveNumericColumns}
@@ -4573,7 +4664,15 @@ function Dashboard() {
             ?.filter((id) => id && id !== '') || []
         }
       />
-      <AskClaudePanel dataContext={askClaudeDataContext} />
+      <AskClaudePanel
+        dataContext={askClaudeDataContext}
+        lockOpen
+        startOpen
+        showInlineDashboardPreview={false}
+        onDashboardUpdate={handleClaudeDashboardSpec}
+        onChartLayoutUpdate={handleChartLayoutUpdate}
+        onVisibilityChange={setIsClaudePanelVisible}
+      />
     </div>
   )
 }

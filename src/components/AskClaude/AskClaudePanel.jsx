@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import DashboardMessage from './DashboardMessage'
 import useAskClaude from './useAskClaude'
@@ -16,7 +17,7 @@ function getToolLabel(toolUsed, fallback) {
   return TOOL_LABELS[toolUsed] || ''
 }
 
-function MessageBubble({ message, dataContext, onUpgrade }) {
+function MessageBubble({ message, dataContext, onUpgrade, showInlineDashboardPreview }) {
   const [copied, setCopied] = useState(false)
   const isUser = message.role === 'user'
   const toolLabel = getToolLabel(message.toolUsed)
@@ -49,7 +50,7 @@ function MessageBubble({ message, dataContext, onUpgrade }) {
         {message.content && (
           <div className="whitespace-pre-wrap text-sm leading-relaxed">{message.content}</div>
         )}
-        {!isUser && message.dashboardSpec && (
+        {!isUser && showInlineDashboardPreview && message.dashboardSpec && (
           <DashboardMessage spec={message.dashboardSpec} data={dataContext?.data} />
         )}
         {!isUser && message.federalReport?.reportRunId && (
@@ -101,12 +102,24 @@ function LoadingSkeleton({ toolStatus }) {
   )
 }
 
-export default function AskClaudePanel({ dataContext }) {
+export default function AskClaudePanel({
+  dataContext,
+  startOpen = false,
+  lockOpen = false,
+  showInlineDashboardPreview = false,
+  onDashboardUpdate,
+  onChartLayoutUpdate,
+  onVisibilityChange,
+}) {
   const navigate = useNavigate()
-  const [isOpen, setIsOpen] = useState(false)
-  const [isFullScreen, setIsFullScreen] = useState(false)
+  const [isOpen, setIsOpen] = useState(Boolean(startOpen || lockOpen))
+  const [isExpanded, setIsExpanded] = useState(false)
+  const [isMinimized, setIsMinimized] = useState(false)
   const [draft, setDraft] = useState('')
-  const { messages, isLoading, toolStatus, canAsk, askClaude, resetConversation } = useAskClaude(dataContext)
+  const { messages, isLoading, toolStatus, canAsk, askClaude, resetConversation } = useAskClaude(dataContext, {
+    onDashboardUpdate,
+    onChartLayoutUpdate,
+  })
   const scrollRef = useRef(null)
 
   useEffect(() => {
@@ -116,9 +129,18 @@ export default function AskClaudePanel({ dataContext }) {
 
   const goToPricing = () => {
     setIsOpen(false)
-    setIsFullScreen(false)
+    setIsExpanded(false)
     navigate('/pricing', { state: { reason: 'ask-claude-upgrade' } })
   }
+
+  useEffect(() => {
+    if (lockOpen) setIsOpen(true)
+  }, [lockOpen])
+
+  useEffect(() => {
+    const isVisible = isOpen && !isMinimized
+    onVisibilityChange?.(isVisible)
+  }, [isOpen, isMinimized, onVisibilityChange])
 
   useEffect(() => {
     const latest = messages[messages.length - 1]
@@ -134,26 +156,38 @@ export default function AskClaudePanel({ dataContext }) {
     setDraft('')
   }
 
-  return (
+  const panelUi = (
     <>
-      {!isOpen && (
+      {!isOpen && !lockOpen && (
         <button
           type="button"
           onClick={() => setIsOpen(true)}
-          className="fixed bottom-5 right-5 z-[90] inline-flex items-center gap-2 rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-xl shadow-blue-900/20 transition hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-200"
+          className="fixed right-0 top-1/2 z-[9999] inline-flex -translate-y-1/2 translate-x-[28%] flex-col items-center gap-2 rounded-l-xl border border-blue-500/40 bg-blue-600 px-2 py-4 text-[11px] font-semibold uppercase tracking-[0.18em] text-white shadow-2xl shadow-blue-900/25 transition-all duration-200 hover:translate-x-0 hover:bg-blue-700 focus:translate-x-0 focus:outline-none focus:ring-4 focus:ring-blue-200"
           aria-label="Open Ask Claude"
         >
-          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white/15">AI</span>
+          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/15 text-[10px] tracking-normal">AI</span>
+          <span className="[writing-mode:vertical-rl] [text-orientation:mixed]">Claude</span>
+        </button>
+      )}
+
+      {(isMinimized || (!isOpen && lockOpen)) && (
+        <button
+          type="button"
+          onClick={() => {
+            setIsOpen(true)
+            setIsMinimized(false)
+          }}
+          className="fixed right-0 top-1/2 z-[9999] inline-flex -translate-y-1/2 items-center gap-2 rounded-l-xl border border-blue-500/40 bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-2xl shadow-blue-900/25 transition-colors hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-200"
+          aria-label="Restore Ask Claude panel"
+        >
           Ask Claude
         </button>
       )}
 
-      {isOpen && (
-        <div className={`pointer-events-none fixed inset-0 z-[100] flex p-0 ${isFullScreen ? 'items-stretch justify-stretch' : 'items-end justify-end sm:p-3'}`}>
-          <section className={`pointer-events-auto relative flex flex-col overflow-hidden bg-gray-50 shadow-2xl ${
-            isFullScreen
-              ? 'h-screen w-screen'
-              : 'h-[92vh] w-full rounded-t-3xl sm:h-[760px] sm:max-h-[calc(100vh-1.5rem)] sm:w-[560px] sm:rounded-3xl lg:w-[640px] xl:w-[720px]'
+      {isOpen && !isMinimized && (
+        <div className="fixed inset-y-0 right-0 z-[100] flex items-stretch justify-end">
+          <section className={`relative flex h-full w-full flex-col overflow-hidden border-l border-gray-200 bg-gray-50 shadow-2xl sm:w-[480px] ${
+            isExpanded ? 'lg:w-[640px] xl:w-[760px]' : 'lg:w-[440px] xl:w-[500px]'
           }`}>
             <header className="border-b border-gray-200 bg-white px-5 py-3">
               <div className="flex items-start justify-between gap-3">
@@ -166,10 +200,18 @@ export default function AskClaudePanel({ dataContext }) {
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => setIsFullScreen((value) => !value)}
+                    onClick={() => setIsMinimized(true)}
+                    className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                    title="Minimize"
+                  >
+                    Minimize
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsExpanded((value) => !value)}
                     className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-700"
                   >
-                    {isFullScreen ? 'Exit full' : 'Full screen'}
+                    {isExpanded ? 'Narrow' : 'Expand'}
                   </button>
                   <button
                     type="button"
@@ -178,30 +220,37 @@ export default function AskClaudePanel({ dataContext }) {
                   >
                     Reset
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsOpen(false)
-                      setIsFullScreen(false)
-                    }}
-                    className="flex h-8 w-8 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-700"
-                    aria-label="Close Ask Claude"
-                  >
-                    <span className="text-xl leading-none">&times;</span>
-                  </button>
+                  {!lockOpen && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsOpen(false)
+                        setIsExpanded(false)
+                      }}
+                      className="flex h-8 w-8 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                      aria-label="Close Ask Claude"
+                    >
+                      <span className="text-xl leading-none">&times;</span>
+                    </button>
+                  )}
                 </div>
               </div>
             </header>
 
-            <div ref={scrollRef} className={`flex-1 space-y-4 overflow-y-auto px-3 py-4 sm:px-4 ${isFullScreen ? 'mx-auto w-full max-w-6xl' : ''}`}>
+            <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto px-3 py-4 sm:px-4">
               {messages.map((message) => (
-                <MessageBubble key={message.id} message={message} dataContext={dataContext} onUpgrade={goToPricing} />
+                <MessageBubble
+                  key={message.id}
+                  message={message}
+                  dataContext={dataContext}
+                  onUpgrade={goToPricing}
+                  showInlineDashboardPreview={showInlineDashboardPreview}
+                />
               ))}
               {isLoading && <LoadingSkeleton toolStatus={toolStatus} />}
             </div>
 
             <form onSubmit={submit} className="border-t border-gray-200 bg-white p-3 sm:p-4">
-              <div className={isFullScreen ? 'mx-auto w-full max-w-6xl' : ''}>
               {!canAsk && (
                 <p className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
                   Upload or open a dataset before asking Claude about your data.
@@ -230,11 +279,13 @@ export default function AskClaudePanel({ dataContext }) {
                   Send
                 </button>
               </div>
-              </div>
             </form>
           </section>
         </div>
       )}
     </>
   )
+
+  if (typeof document === 'undefined') return panelUi
+  return createPortal(panelUi, document.body)
 }

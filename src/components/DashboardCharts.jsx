@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState, memo } from 'react'
-import { LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import { useEffect, useMemo, useRef, useState, memo } from 'react'
+import { LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts'
 import ChartInsights from './ChartInsights'
 import DateRangeSlider from './DateRangeSlider'
 import { parseNumericValue } from '../utils/numberUtils'
 import VesselMapWidget from './widgets/VesselMapWidget'
+import ContractMapWidget from './widgets/ContractMapWidget'
 
 const COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444', '#6366f1', '#14b8a6']
 
@@ -19,10 +20,22 @@ const sampleDataForCharts = (data, maxRows = 5000) => {
   return sampled
 }
 
-function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategorical, selectedDate, onChartFilter, chartFilter, onDateRangeFilter, onSubawardDrilldown, pieFilteredData, pieDimensionOverride, pieTitleOverride, showVesselMap, vesselMapData, vesselLatCol, vesselLonCol }) {
+function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategorical, selectedDate, onChartFilter, chartFilter, onDateRangeFilter, onSubawardDrilldown, pieFilteredData, pieDimensionOverride, pieTitleOverride, showVesselMap, vesselMapData, vesselLatCol, vesselLonCol, showGeoMap, geoMapData, geoSelectedNumeric, geoSelectedCategorical, chartLayout, onChartLayoutUpdate }) {
   const [hoveredSegment, setHoveredSegment] = useState(null)
   const [chartInsights, setChartInsights] = useState(null)
   const [maximized, setMaximized] = useState(null) // { type: 'line' | 'pie', title: string } | null
+  const [draggedChartId, setDraggedChartId] = useState(null)
+  const [selectedTableRowIndex, setSelectedTableRowIndex] = useState(null)
+  const [cardHeights, setCardHeights] = useState(chartLayout?.cardHeights || {})
+  const [resizingCardId, setResizingCardId] = useState(null)
+  const resizeStartRef = useRef({ id: null, startY: 0, startHeight: 0 })
+  const cardHeightsRef = useRef(cardHeights)
+  useEffect(() => {
+    cardHeightsRef.current = cardHeights
+  }, [cardHeights])
+  useEffect(() => {
+    setCardHeights(chartLayout?.cardHeights || {})
+  }, [chartLayout?.cardHeights])
   // Heuristic: pick "avg-like" vs "sum-like" aggregation for a metric when grouping.
   // This avoids misleading totals like summing snapshot/rate metrics (e.g. ADR, occupancy_rate, rooms_available).
   const preferredAggregationForMetric = (field) => {
@@ -156,6 +169,24 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
 
   }, [sampledPieData, pieDimensionOverride, selectedCategorical, selectedNumeric])
 
+  const prepareBarChartData = useMemo(() => {
+    if (!sampledDisplayData || sampledDisplayData.length === 0) return []
+    if (!selectedCategorical || !selectedNumeric) return []
+    const grouped = new Map()
+    sampledDisplayData.forEach((row) => {
+      const key = String(row?.[selectedCategorical] ?? 'Unknown')
+      const raw = row?.[selectedNumeric]
+      if (raw === null || raw === undefined || raw === '') return
+      const value = parseNumericValue(raw)
+      if (!Number.isFinite(value)) return
+      grouped.set(key, (grouped.get(key) || 0) + value)
+    })
+    return Array.from(grouped.entries())
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 10)
+  }, [sampledDisplayData, selectedCategorical, selectedNumeric])
+
   const handlePieClick = (data, index) => {
     const categoryColumn = pieDimensionOverride || selectedCategorical
     if (categoryColumn && data && data.name) {
@@ -238,7 +269,152 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
 
   const showLineChart = !showVesselMap && lineQuality.isMeaningful
   const showPieChart = pieQuality.isMeaningful
-  const chartCount = (showVesselMap ? 1 : showLineChart ? 1 : 0) + (showPieChart ? 1 : 0)
+  const showBarChart = Array.isArray(prepareBarChartData) && prepareBarChartData.length > 0
+  const chartFlags = {
+    showMap: chartLayout?.showMap !== false,
+    showLineChart: chartLayout?.showLineChart !== false,
+    showBarChart: chartLayout?.showBarChart !== false,
+    showPieChart: chartLayout?.showPieChart !== false,
+    showTable: chartLayout?.showTable === true,
+  }
+  const chartCount =
+    ((showGeoMap && chartFlags.showMap) ? 1 : ((showVesselMap && chartFlags.showMap) ? 1 : (showLineChart && chartFlags.showLineChart ? 1 : 0))) +
+    ((showBarChart && chartFlags.showBarChart) ? 1 : 0) +
+    ((showPieChart && chartFlags.showPieChart) ? 1 : 0) +
+    (chartFlags.showTable ? 1 : 0)
+  const defaultOrder = ['map', 'line', 'bar', 'pie', 'table']
+  const chartOrderFromProps = Array.isArray(chartLayout?.chartOrder) && chartLayout.chartOrder.length > 0
+    ? chartLayout.chartOrder
+    : defaultOrder
+  const [localChartOrder, setLocalChartOrder] = useState(chartOrderFromProps)
+  useEffect(() => {
+    setLocalChartOrder(chartOrderFromProps)
+  }, [chartOrderFromProps])
+  const getOrder = (id) => {
+    const idx = localChartOrder.indexOf(id)
+    return idx === -1 ? 999 : idx
+  }
+  const onCardDragStart = (id, e) => {
+    setDraggedChartId(id)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', id)
+  }
+  const onCardDrop = (targetId, e) => {
+    const sourceId = e.dataTransfer.getData('text/plain') || draggedChartId
+    if (!sourceId || !targetId || sourceId === targetId) return
+    const next = [...localChartOrder]
+    const from = next.indexOf(sourceId)
+    const to = next.indexOf(targetId)
+    if (from === -1 || to === -1) return
+    next.splice(from, 1)
+    next.splice(to, 0, sourceId)
+    setLocalChartOrder(next)
+    onChartLayoutUpdate?.({ chartOrder: next })
+    setDraggedChartId(null)
+  }
+  const defaultCardHeight = (id) => {
+    if (id === 'table') return 360
+    if (id === 'map') return 440
+    return 420
+  }
+  const getCardHeight = (id) => Math.max(280, Number(cardHeights?.[id] || defaultCardHeight(id)))
+  const getChartHeight = (id) => Math.max(220, getCardHeight(id) - 120)
+  const startResizeCard = (id, e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    resizeStartRef.current = {
+      id,
+      startY: e.clientY,
+      startHeight: getCardHeight(id),
+    }
+    setResizingCardId(id)
+  }
+  const hideChartById = (id) => {
+    const patch = {}
+    if (id === 'map') patch.showMap = false
+    if (id === 'line') patch.showLineChart = false
+    if (id === 'bar') patch.showBarChart = false
+    if (id === 'pie') patch.showPieChart = false
+    if (id === 'table') patch.showTable = false
+    onChartLayoutUpdate?.(patch)
+  }
+  const restoreChartById = (id) => {
+    const patch = {}
+    if (id === 'map') patch.showMap = true
+    if (id === 'line') patch.showLineChart = true
+    if (id === 'bar') patch.showBarChart = true
+    if (id === 'pie') patch.showPieChart = true
+    if (id === 'table') patch.showTable = true
+    onChartLayoutUpdate?.(patch)
+  }
+  const renderAddChartIcon = (id) => {
+    if (id === 'line') {
+      return (
+        <svg className="w-3.5 h-3.5 text-blue-600" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+          <path d="M3 14l4-4 3 2 6-6" />
+          <circle cx="3" cy="14" r="1" fill="currentColor" stroke="none" />
+          <circle cx="7" cy="10" r="1" fill="currentColor" stroke="none" />
+          <circle cx="10" cy="12" r="1" fill="currentColor" stroke="none" />
+          <circle cx="16" cy="6" r="1" fill="currentColor" stroke="none" />
+        </svg>
+      )
+    }
+    if (id === 'bar') {
+      return (
+        <svg className="w-3.5 h-3.5 text-indigo-600" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <rect x="3" y="10" width="3" height="7" rx="1" />
+          <rect x="8.5" y="6" width="3" height="11" rx="1" />
+          <rect x="14" y="3" width="3" height="14" rx="1" />
+        </svg>
+      )
+    }
+    if (id === 'pie') {
+      return (
+        <svg className="w-3.5 h-3.5 text-pink-600" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path d="M10 2a8 8 0 108 8h-8V2z" />
+          <path d="M12 2.3A8 8 0 0117.7 8H12V2.3z" />
+        </svg>
+      )
+    }
+    if (id === 'table') {
+      return (
+        <svg className="w-3.5 h-3.5 text-emerald-600" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <rect x="2.5" y="3.5" width="15" height="13" rx="1.5" />
+          <path d="M2.5 8h15M2.5 12h15M8 3.5v13M13 3.5v13" stroke="white" strokeWidth="1" />
+        </svg>
+      )
+    }
+    return (
+      <svg className="w-3.5 h-3.5 text-gray-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path d="M4 3a1 1 0 00-1 1v12a1 1 0 001 1h12a1 1 0 001-1V4a1 1 0 00-1-1H4zm2 3h3v3H6V6zm0 5h3v3H6v-3zm5-5h3v8h-3V6z" />
+      </svg>
+    )
+  }
+
+  useEffect(() => {
+    if (!resizingCardId) return undefined
+    const onMove = (e) => {
+      const { id, startY, startHeight } = resizeStartRef.current
+      if (!id) return
+      const delta = e.clientY - startY
+      const nextHeight = Math.max(280, startHeight + delta)
+      setCardHeights((prev) => ({ ...prev, [id]: nextHeight }))
+    }
+    const onUp = () => {
+      const id = resizeStartRef.current.id
+      if (id) {
+        onChartLayoutUpdate?.({ cardHeights: { [id]: cardHeightsRef.current?.[id] || getCardHeight(id) } })
+      }
+      resizeStartRef.current = { id: null, startY: 0, startHeight: 0 }
+      setResizingCardId(null)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+  }, [resizingCardId, onChartLayoutUpdate])
 
   const handleChartClick = (chartType, chartData, chartTitle) => {
     // Convert chart data back to original row format for insights
@@ -320,18 +496,89 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
 
   return (
     <>
+    {(() => {
+      const hiddenCharts = []
+      if (!chartFlags.showMap) hiddenCharts.push({ id: 'map', label: 'Map' })
+      if (!chartFlags.showLineChart) hiddenCharts.push({ id: 'line', label: 'Line' })
+      if (!chartFlags.showBarChart) hiddenCharts.push({ id: 'bar', label: 'Bar' })
+      if (!chartFlags.showPieChart) hiddenCharts.push({ id: 'pie', label: 'Pie' })
+      if (!chartFlags.showTable) hiddenCharts.push({ id: 'table', label: 'Table' })
+      if (hiddenCharts.length === 0) return null
+      return (
+        <div className="mb-4 bg-white rounded-lg border border-gray-200 p-3 flex flex-wrap items-center gap-2">
+          <span className="text-sm text-gray-600 inline-flex items-center gap-1.5">
+            <svg className="w-4 h-4 text-gray-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path d="M4 3a1 1 0 00-1 1v12a1 1 0 001 1h12a1 1 0 001-1V4a1 1 0 00-1-1H4zm2 3h3v3H6V6zm0 5h3v3H6v-3zm5-5h3v8h-3V6z" />
+            </svg>
+            Add charts:
+          </span>
+          {hiddenCharts.map((chart) => (
+            <button
+              key={chart.id}
+              type="button"
+              onClick={() => restoreChartById(chart.id)}
+              className="px-2 py-1 text-xs rounded border border-gray-300 text-gray-700 hover:bg-gray-50 inline-flex items-center gap-1.5"
+            >
+              {renderAddChartIcon(chart.id)}
+              Add {chart.label}
+            </button>
+          ))}
+        </div>
+      )
+    })()}
     <div
       className={`grid gap-6 mb-6 ${
         chartCount <= 1 ? 'grid-cols-1 max-w-4xl mx-auto' : 'grid-cols-1 lg:grid-cols-2'
       }`}
     >
+      {/* Geo map card (state-based contract map) */}
+      {showGeoMap && chartFlags.showMap && (
+      <div
+        className={`bg-white rounded-lg shadow-sm ${chartCardPadding} border border-gray-200 hover:shadow-md transition-shadow relative group cursor-move`}
+        style={{ order: getOrder('map'), minHeight: getCardHeight('map') }}
+        draggable
+        onDragStart={(e) => onCardDragStart('map', e)}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => onCardDrop('map', e)}
+        onDragEnd={() => setDraggedChartId(null)}
+      >
+        <div className="flex justify-between items-center mb-4">
+          <h3 className={`${chartTitleClass} font-semibold text-gray-900 pr-2 break-words`}>
+            Opportunity count by state
+          </h3>
+          <button type="button" onClick={() => hideChartById('map')} className="text-gray-400 hover:text-red-600">×</button>
+        </div>
+        <ContractMapWidget
+          data={geoMapData || filteredData || data}
+          selectedCategorical={geoSelectedCategorical || 'state'}
+          selectedNumeric={geoSelectedNumeric || selectedNumeric}
+          chartFilter={chartFilter}
+          onChartFilter={onChartFilter}
+        />
+        <div
+          className="absolute right-2 bottom-2 h-4 w-4 cursor-nwse-resize rounded-sm border border-gray-300 bg-white/90"
+          onMouseDown={(e) => startResizeCard('map', e)}
+          title="Resize chart"
+        />
+      </div>
+      )}
+
       {/* Vessel Map (Maritime lat/lon) - replaces line chart when data has vessel positions */}
-      {showVesselMap && (
-      <div className={`bg-white rounded-lg shadow-sm ${chartCardPadding} border border-gray-200 hover:shadow-md transition-shadow relative group`}>
+      {!showGeoMap && showVesselMap && chartFlags.showMap && (
+      <div
+        className={`bg-white rounded-lg shadow-sm ${chartCardPadding} border border-gray-200 hover:shadow-md transition-shadow relative group cursor-move`}
+        style={{ order: getOrder('map'), minHeight: getCardHeight('map') }}
+        draggable
+        onDragStart={(e) => onCardDragStart('map', e)}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => onCardDrop('map', e)}
+        onDragEnd={() => setDraggedChartId(null)}
+      >
         <div className="flex justify-between items-center mb-4">
           <h3 className={`${chartTitleClass} font-semibold text-gray-900 pr-2 break-words`}>
             Vessel positions
           </h3>
+          <button type="button" onClick={() => hideChartById('map')} className="text-gray-400 hover:text-red-600">×</button>
         </div>
         <VesselMapWidget
           data={vesselMapData || filteredData || data}
@@ -339,12 +586,25 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
           lonCol={vesselLonCol || 'lon'}
           tooltipFields={['mmsi', 'vessel_type', 'sog', 'cog']}
         />
+        <div
+          className="absolute right-2 bottom-2 h-4 w-4 cursor-nwse-resize rounded-sm border border-gray-300 bg-white/90"
+          onMouseDown={(e) => startResizeCard('map', e)}
+          title="Resize chart"
+        />
       </div>
       )}
 
       {/* Line Chart */}
-      {showLineChart && (
-      <div className={`bg-white rounded-lg shadow-sm ${chartCardPadding} border border-gray-200 hover:shadow-md transition-shadow relative group`}>
+      {showLineChart && chartFlags.showLineChart && (
+      <div
+        className={`bg-white rounded-lg shadow-sm ${chartCardPadding} border border-gray-200 hover:shadow-md transition-shadow relative group cursor-move`}
+        style={{ order: getOrder('line'), minHeight: getCardHeight('line') }}
+        draggable
+        onDragStart={(e) => onCardDragStart('line', e)}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => onCardDrop('line', e)}
+        onDragEnd={() => setDraggedChartId(null)}
+      >
         <div className="flex justify-between items-center mb-4">
           <h3 className={`${chartTitleClass} font-semibold text-gray-900 pr-2 break-words`}>
             {selectedNumeric || 'Value'} {selectedDate ? 'Over Time' : ''}
@@ -384,10 +644,11 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
                 </button>
               </>
             )}
+            <button type="button" onClick={() => hideChartById('line')} className="text-gray-400 hover:text-red-600">×</button>
           </div>
         </div>
         {hasValidLineData ? (
-          <ResponsiveContainer width="100%" height={baseChartHeight}>
+          <ResponsiveContainer width="100%" height={getChartHeight('line')}>
             <LineChart data={lineData} key={`line-${lineData.length}-${selectedNumeric}`}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
               <XAxis 
@@ -413,11 +674,12 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
                 stroke="#3b82f6" 
                 strokeWidth={2}
                 dot={(props) => {
+                  const { dataKey, payload, value, ...svgProps } = props || {}
                   const isSelected = chartFilter?.type === 'date' && 
                     props.payload?.date === chartFilter?.value
                   return (
                     <circle
-                      {...props}
+                      {...svgProps}
                       fill={isSelected ? '#ef4444' : '#3b82f6'}
                       r={isSelected ? 5 : 3}
                       cursor="pointer"
@@ -429,11 +691,12 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
                   )
                 }}
                 activeDot={(props) => {
+                  const { dataKey, payload, value, ...svgProps } = props || {}
                   const isSelected = chartFilter?.type === 'date' && 
                     props.payload?.date === chartFilter?.value
                   return (
                     <circle
-                      {...props}
+                      {...svgProps}
                       r={isSelected ? 7 : 6}
                       fill={isSelected ? '#ef4444' : '#2563eb'}
                       stroke="#fff"
@@ -452,16 +715,69 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
             </LineChart>
           </ResponsiveContainer>
         ) : (
-          <div className="h-[300px] flex items-center justify-center text-gray-400">
+          <div className="h-[220px] flex items-center justify-center text-gray-400">
             Select columns to view chart
           </div>
         )}
+        <div
+          className="absolute right-2 bottom-2 h-4 w-4 cursor-nwse-resize rounded-sm border border-gray-300 bg-white/90"
+          onMouseDown={(e) => startResizeCard('line', e)}
+          title="Resize chart"
+        />
+      </div>
+      )}
+
+      {showBarChart && chartFlags.showBarChart && (
+      <div
+        className={`bg-white rounded-lg shadow-sm ${chartCardPadding} border border-gray-200 hover:shadow-md transition-shadow relative group cursor-move`}
+        style={{ order: getOrder('bar'), minHeight: getCardHeight('bar') }}
+        draggable
+        onDragStart={(e) => onCardDragStart('bar', e)}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => onCardDrop('bar', e)}
+        onDragEnd={() => setDraggedChartId(null)}
+      >
+        <div className="flex justify-between items-center mb-4">
+          <h3 className={`${chartTitleClass} font-semibold text-gray-900 pr-2 break-words`}>
+            {selectedNumeric || 'Value'} by {selectedCategorical || 'Category'}
+          </h3>
+          <button type="button" onClick={() => hideChartById('bar')} className="text-gray-400 hover:text-red-600">×</button>
+        </div>
+        <ResponsiveContainer width="100%" height={getChartHeight('bar')}>
+          <BarChart data={prepareBarChartData}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+            <XAxis dataKey="name" stroke="#6b7280" style={{ fontSize: axisFontSize }} />
+            <YAxis stroke="#6b7280" style={{ fontSize: axisFontSize }} />
+            <Tooltip
+              contentStyle={{
+                backgroundColor: '#fff',
+                border: '1px solid #e5e7eb',
+                borderRadius: '6px',
+                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+              }}
+            />
+            <Bar dataKey="value" fill="#3b82f6" radius={[6, 6, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+        <div
+          className="absolute right-2 bottom-2 h-4 w-4 cursor-nwse-resize rounded-sm border border-gray-300 bg-white/90"
+          onMouseDown={(e) => startResizeCard('bar', e)}
+          title="Resize chart"
+        />
       </div>
       )}
 
       {/* Pie/Donut Chart */}
-      {showPieChart && (
-      <div className={`bg-white rounded-lg shadow-sm ${chartCardPadding} border border-gray-200 hover:shadow-md transition-shadow relative group`}>
+      {showPieChart && chartFlags.showPieChart && (
+      <div
+        className={`bg-white rounded-lg shadow-sm ${chartCardPadding} border border-gray-200 hover:shadow-md transition-shadow relative group cursor-move`}
+        style={{ order: getOrder('pie'), minHeight: getCardHeight('pie') }}
+        draggable
+        onDragStart={(e) => onCardDragStart('pie', e)}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => onCardDrop('pie', e)}
+        onDragEnd={() => setDraggedChartId(null)}
+      >
         <div className="flex justify-between items-center mb-4">
           <h3 className={`${chartTitleClass} font-semibold text-gray-900 pr-2 break-words`}>
             {pieTitle}
@@ -502,6 +818,7 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
                 </svg>
               </button>
+              <button type="button" onClick={() => hideChartById('pie')} className="text-gray-400 hover:text-red-600">×</button>
             </div>
           )}
         </div>
@@ -514,7 +831,7 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
               }`}
               style={{ minHeight: baseChartHeight }}
             >
-              <ResponsiveContainer width="100%" height={baseChartHeight}>
+              <ResponsiveContainer width="100%" height={getChartHeight('pie')}>
                 <PieChart key={`pie-${pieData.length}-${selectedCategorical}`}>
                   <Pie
                     data={pieData}
@@ -612,10 +929,69 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
             </div>
           </div>
         ) : (
-          <div className="h-[300px] flex items-center justify-center text-gray-400">
+          <div className="h-[220px] flex items-center justify-center text-gray-400">
             Select category column to view distribution
           </div>
         )}
+        <div
+          className="absolute right-2 bottom-2 h-4 w-4 cursor-nwse-resize rounded-sm border border-gray-300 bg-white/90"
+          onMouseDown={(e) => startResizeCard('pie', e)}
+          title="Resize chart"
+        />
+      </div>
+      )}
+
+      {chartFlags.showTable && (
+      <div
+        className={`bg-white rounded-lg shadow-sm ${chartCardPadding} border border-gray-200 hover:shadow-md transition-shadow relative group cursor-move`}
+        style={{ order: getOrder('table'), minHeight: getCardHeight('table') }}
+        draggable
+        onDragStart={(e) => {
+          if (e.target instanceof Element && e.target.closest('[data-no-drag="true"]')) {
+            e.preventDefault()
+            return
+          }
+          onCardDragStart('table', e)
+        }}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => onCardDrop('table', e)}
+        onDragEnd={() => setDraggedChartId(null)}
+      >
+        <h3 className="text-lg font-semibold text-gray-900 mb-3">Data Table</h3>
+        <button type="button" onClick={() => hideChartById('table')} className="absolute top-3 right-3 text-gray-400 hover:text-red-600">×</button>
+        <div
+          className="overflow-auto max-h-72 cursor-default"
+          data-no-drag="true"
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <table className="min-w-full text-sm cursor-default">
+            <thead className="bg-gray-50 sticky top-0">
+              <tr>
+                {Object.keys((displayData && displayData[0]) || {}).slice(0, 8).map((col) => (
+                  <th key={col} className="px-3 py-2 text-left font-medium text-gray-700">{col}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {(displayData || []).slice(0, 12).map((row, idx) => (
+                <tr
+                  key={idx}
+                  className={`border-t ${selectedTableRowIndex === idx ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
+                  onClick={() => setSelectedTableRowIndex((prev) => (prev === idx ? null : idx))}
+                >
+                  {Object.keys((displayData && displayData[0]) || {}).slice(0, 8).map((col) => (
+                    <td key={col} className="px-3 py-2 text-gray-700">{String(row?.[col] ?? '')}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div
+          className="absolute right-2 bottom-2 h-4 w-4 cursor-nwse-resize rounded-sm border border-gray-300 bg-white/90"
+          onMouseDown={(e) => startResizeCard('table', e)}
+          title="Resize chart"
+        />
       </div>
       )}
     </div>

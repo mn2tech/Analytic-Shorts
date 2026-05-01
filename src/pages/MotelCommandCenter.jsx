@@ -596,6 +596,17 @@ function ReservedCheckInPanel({ isOpen, roomOverlay, roomData, onClose, onComple
     const paymentCollected = balanceDue > 0 ? balanceDue : 0
     const totalPayments = amountPaid + paymentCollected
     const remainingBalance = Math.max(0, totalAmount - totalPayments)
+    const hasDetailedBreakdown = roomSubtotal > 0 || taxBreakdown.taxTotal > 0
+    const lineItemsHtml = hasDetailedBreakdown
+      ? `
+            <tr><td>Room charge</td><td>${nights} nights × ${formatCurrency(ratePerNight)}</td><td style="text-align:right;">${formatCurrency(roomSubtotal)}</td></tr>
+            <tr><td>City tax</td><td>8% of room charge</td><td style="text-align:right;">${formatCurrency(taxBreakdown.cityTax)}</td></tr>
+            <tr><td>State tax</td><td>7% of room charge</td><td style="text-align:right;">${formatCurrency(taxBreakdown.stateTax)}</td></tr>
+            <tr><td>Hotel tax</td><td>${nights} nights × ${formatCurrency(INNSOFT_TAX_SETTINGS.hotelFlatPerNight)}</td><td style="text-align:right;">${formatCurrency(taxBreakdown.hotelTax)}</td></tr>
+          `
+      : `
+            <tr><td>Stay charges</td><td>Total stay amount (includes tax)</td><td style="text-align:right;">${formatCurrency(totalAmount)}</td></tr>
+          `
     const html = `
       <!doctype html>
       <html>
@@ -624,10 +635,7 @@ function ReservedCheckInPanel({ isOpen, roomOverlay, roomData, onClose, onComple
         <table>
           <thead><tr><th>Item</th><th>Details</th><th style="text-align:right;">Amount</th></tr></thead>
           <tbody>
-            <tr><td>Room charge</td><td>${nights} nights × ${formatCurrency(ratePerNight)}</td><td style="text-align:right;">${formatCurrency(roomSubtotal)}</td></tr>
-            <tr><td>City tax</td><td>8% of room charge</td><td style="text-align:right;">${formatCurrency(taxBreakdown.cityTax)}</td></tr>
-            <tr><td>State tax</td><td>7% of room charge</td><td style="text-align:right;">${formatCurrency(taxBreakdown.stateTax)}</td></tr>
-            <tr><td>Hotel tax</td><td>${nights} nights × ${formatCurrency(INNSOFT_TAX_SETTINGS.hotelFlatPerNight)}</td><td style="text-align:right;">${formatCurrency(taxBreakdown.hotelTax)}</td></tr>
+            ${lineItemsHtml}
             ${paymentCollected > 0 ? `<tr><td>Payment collected at check-in</td><td>${paymentMethod}</td><td style="text-align:right;">-${formatCurrency(paymentCollected)}</td></tr>` : ''}
           </tbody>
         </table>

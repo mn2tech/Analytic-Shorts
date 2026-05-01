@@ -14,6 +14,7 @@ import { getIndustryNaics } from '../config/industryNaicsMap'
 import { getSubscription } from '../services/subscriptionService'
 import { hasFeature, PLANS, FEDERAL_ENTRY_FREE_MINUTES } from '../config/pricing'
 import { useAuth } from '../contexts/AuthContext'
+import { trackEvent } from '../utils/analytics'
 
 const INDUSTRY_OPTIONS = [
   { value: '', label: 'Select Industry' },
@@ -191,6 +192,10 @@ function FederalEntryReport() {
       try {
         const { data } = await apiClient.get(`/api/reports/federal-entry/${id}/summary`)
         if (data.status === 'completed') {
+          trackEvent('federal_report', {
+            event_category: 'engagement',
+            event_label: 'report_generated',
+          })
           setSummary(data.summary || {})
           setShortlist(data.first_win_shortlist || [])
           setBarrierScore(data.barrierScore)

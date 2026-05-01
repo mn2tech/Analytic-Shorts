@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { PLANS } from '../config/pricing'
+import { trackEvent } from '../utils/analytics'
 
 function UpgradePrompt({ 
   error, 
@@ -174,6 +175,12 @@ function UpgradePrompt({
         <div className="flex gap-3">
           <Link
             to="/pricing"
+            onClick={() => {
+              trackEvent('upgrade_click', {
+                event_category: 'conversion',
+                event_label: 'upgrade_to_pro',
+              })
+            }}
             className="flex-1 bg-blue-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-blue-700 transition-colors text-center"
           >
             Upgrade to {upgradePlan.name}

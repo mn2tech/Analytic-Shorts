@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react'
 import apiClient from '../config/api'
 import GoogleSheetsImport from './GoogleSheetsImport'
+import { trackEvent } from '../utils/analytics'
 
 function FileUploader({ onUploadSuccess, onError, onUpgradeRequired }) {
   const [isDragging, setIsDragging] = useState(false)
@@ -63,6 +64,10 @@ function FileUploader({ onUploadSuccess, onError, onUpgradeRequired }) {
             }
           }
         },
+      })
+      trackEvent('file_upload', {
+        event_category: 'engagement',
+        event_label: 'csv_upload',
       })
       onUploadSuccess(response.data)
     } catch (error) {
