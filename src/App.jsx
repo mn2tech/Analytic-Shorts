@@ -77,15 +77,16 @@ function NavigateToStudioWithOpen() {
 // Track page views for Google Analytics
 function PageViewTracker() {
   const location = useLocation()
+  const measurementId = 'G-DKP5MKFBM6'
 
   useEffect(() => {
     // Track page view if Google Analytics is loaded
     if (window.gtag) {
-      window.gtag('config', 'G-XXXXXXXXXX', {
+      window.gtag('config', measurementId, {
         page_path: location.pathname + location.search
       })
     }
-  }, [location])
+  }, [location, measurementId])
 
   return null
 }
