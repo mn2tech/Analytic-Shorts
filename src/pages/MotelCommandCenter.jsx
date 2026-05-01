@@ -119,6 +119,7 @@ function canonicalRoomKey(value) {
 function formatRoomTypeLabel(value) {
   const text = String(value || '').trim()
   if (!text) return ''
+  if (text.toLowerCase().replace(/[\s-]+/g, '_') === 'patient_room') return 'Guest Room'
   return text
     .replace(/[_-]+/g, ' ')
     .replace(/\s+/g, ' ')
@@ -297,7 +298,7 @@ function NewReservationPanel({ isOpen, roomOverlay, roomData, onClose, onSave })
     return Math.max(0, totalAmount - deposit)
   }, [formValues.depositCollected, totalAmount])
 
-  const roomTypeLabel = formatRoomTypeLabel(roomOverlay?.type || roomData?.room_type || roomOverlay?.label || 'Room')
+  const roomTypeLabel = formatRoomTypeLabel(roomData?.room_type || roomOverlay?.type || roomOverlay?.label || 'Room')
   const roomDisplay = roomOverlay ? getRoomDisplayLabel(roomOverlay.id, roomOverlay) : roomData?.room || '—'
 
   const updateValue = (field, value) => {
@@ -579,7 +580,9 @@ function ReservedCheckInPanel({ isOpen, roomOverlay, roomData, onClose, onComple
   const amountReceivedNumber = Number(amountReceived) || 0
   const changeDue = paymentMethod === 'Cash' ? Math.max(0, amountReceivedNumber - balanceDue) : 0
   const checklistComplete = Object.values(checklist).every(Boolean)
-  const canSubmit = checklistComplete && !isSaving
+  const hasBalanceDue = balanceDue > 0
+  const hasSufficientPayment = !hasBalanceDue || amountReceivedNumber >= balanceDue
+  const canSubmit = checklistComplete && hasSufficientPayment && !isSaving
 
   const printCheckInReceipt = (receiptWindow) => {
     const targetWindow = receiptWindow || window.open('', '_blank', 'width=900,height=700')
@@ -640,7 +643,14 @@ function ReservedCheckInPanel({ isOpen, roomOverlay, roomData, onClose, onComple
   }
 
   const handleSubmit = async () => {
-    if (!canSubmit) return
+    if (!checklistComplete) {
+      setError('Complete all pre check-in checklist items before continuing.')
+      return
+    }
+    if (!hasSufficientPayment) {
+      setError('Amount received must cover the full balance due.')
+      return
+    }
     const receiptWindow = window.open('', '_blank', 'width=900,height=700')
     if (receiptWindow) {
       receiptWindow.document.write('<p style="font-family: Arial, sans-serif; padding: 24px;">Preparing check-in receipt...</p>')
@@ -665,6 +675,7 @@ function ReservedCheckInPanel({ isOpen, roomOverlay, roomData, onClose, onComple
 
   const toggleChecklist = (key) => {
     setChecklist((prev) => ({ ...prev, [key]: !prev[key] }))
+    setError('')
   }
 
   const checklistItems = [
@@ -749,7 +760,10 @@ function ReservedCheckInPanel({ isOpen, roomOverlay, roomData, onClose, onComple
                     <select
                       className="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-emerald-500/70"
                       value={paymentMethod}
-                      onChange={(e) => setPaymentMethod(e.target.value)}
+                      onChange={(e) => {
+                        setPaymentMethod(e.target.value)
+                        setError('')
+                      }}
                     >
                       <option>Cash</option>
                       <option>Credit Card</option>
@@ -764,12 +778,18 @@ function ReservedCheckInPanel({ isOpen, roomOverlay, roomData, onClose, onComple
                       min="0"
                       step="0.01"
                       value={amountReceived}
-                      onChange={(e) => setAmountReceived(e.target.value)}
+                      onChange={(e) => {
+                        setAmountReceived(e.target.value)
+                        setError('')
+                      }}
                     />
                   </div>
                   <p className="text-sm text-slate-200">
                     Change due: <span className="font-semibold text-emerald-400">{formatCurrency(changeDue)}</span>
                   </p>
+                  {!hasSufficientPayment && (
+                    <p className="text-sm text-red-400">Amount received must cover the full balance due.</p>
+                  )}
                 </div>
               </section>
             )}
