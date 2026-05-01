@@ -78,6 +78,10 @@ function calculateInnsoftTaxBreakdown(roomSubtotal, nights = 1) {
   }
 }
 
+function toCents(value) {
+  return Math.round((Number(value) || 0) * 100)
+}
+
 function roomsToOverlays(rooms, imageHeight = 1024) {
   if (!Array.isArray(rooms)) return []
   const withUnits = assignUnitFromPosition(rooms, imageHeight)
@@ -579,9 +583,11 @@ function ReservedCheckInPanel({ isOpen, roomOverlay, roomData, onClose, onComple
   const balanceDue = Math.max(0, Number(roomData?.balanceDue ?? totalAmount - amountPaid) || 0)
   const amountReceivedNumber = Number(amountReceived) || 0
   const changeDue = paymentMethod === 'Cash' ? Math.max(0, amountReceivedNumber - balanceDue) : 0
+  const balanceDueCents = toCents(balanceDue)
+  const amountReceivedCents = toCents(amountReceivedNumber)
   const checklistComplete = Object.values(checklist).every(Boolean)
   const hasBalanceDue = balanceDue > 0
-  const hasSufficientPayment = !hasBalanceDue || amountReceivedNumber >= balanceDue
+  const hasSufficientPayment = !hasBalanceDue || amountReceivedCents >= balanceDueCents
   const canSubmit = checklistComplete && hasSufficientPayment && !isSaving
 
   const printCheckInReceipt = (receiptWindow) => {
@@ -2321,7 +2327,7 @@ function MotelCommandCenter({
 
     let paymentRecorded = true
     if (balanceDue > 0) {
-      if ((Number(amountReceived) || 0) < balanceDue) {
+      if (toCents(amountReceived) < toCents(balanceDue)) {
         throw new Error('Amount received must cover the full balance due.')
       }
       const { error: paymentError } = await supabase
