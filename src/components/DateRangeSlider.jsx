@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
+import { TD } from '../constants/terminalDashboardPalette'
 
 /**
  * DateRangeSlider - A sliding date range filter component for the top of the dashboard
@@ -201,50 +202,60 @@ function DateRangeSlider({
   }
 
   return (
-    <div className="bg-white border-b border-gray-200 shadow-sm">
+    <div
+      style={{
+        background: TD.CARD_BG,
+        borderBottom: `0.5px solid ${TD.CARD_BORDER}`,
+      }}
+    >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-4">
-            <label className="text-sm font-medium text-gray-700">
-              Date Range: <span className="text-gray-900">{selectedDate}</span>
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-4">
+            <label className="text-sm font-medium" style={{ color: TD.TEXT_2 }}>
+              Date Range:{' '}
+              <span style={{ color: TD.TEXT_1 }}>{selectedDate}</span>
             </label>
-            <div className="text-sm text-gray-600">
+            <div className="text-sm" style={{ color: TD.TEXT_2 }}>
               {formatDate(startDate)} - {formatDate(endDate)}
             </div>
-            <div className="text-xs text-gray-500">
+            <div className="text-xs" style={{ color: TD.TEXT_3 }}>
               ({filteredCount.toLocaleString()} of {data?.length.toLocaleString()} records)
             </div>
           </div>
           <button
+            type="button"
             onClick={resetRange}
-            className="text-xs text-blue-600 hover:text-blue-800 font-medium px-2 py-1 rounded hover:bg-blue-50 transition-colors"
+            className="text-xs font-medium px-2 py-1 rounded transition-colors"
+            style={{ color: TD.ACCENT_MID }}
           >
             Reset
           </button>
         </div>
-        
+
         <div className="relative">
           {/* Slider Track */}
           <div
             id="date-range-slider"
-            className="relative h-2 bg-gray-200 rounded-full cursor-pointer"
-            style={{ width: '100%' }}
+            className="relative h-2 rounded-full cursor-pointer"
+            style={{ width: '100%', background: TD.GRID }}
           >
             {/* Selected Range */}
             <div
-              className="absolute h-2 bg-blue-500 rounded-full"
+              className="absolute h-2 rounded-full"
               style={{
                 left: `${startPercent}%`,
-                width: `${endPercent - startPercent}%`
+                width: `${endPercent - startPercent}%`,
+                background: TD.BAR_FILL,
               }}
             />
-            
-            {/* Start Handle - always show */}
+
+            {/* Start Handle */}
             <div
-              className="absolute w-4 h-4 bg-blue-600 rounded-full shadow-md cursor-grab active:cursor-grabbing transform -translate-x-1/2 -translate-y-1 top-1/2 hover:scale-110 transition-transform"
-              style={{ 
+              className="absolute w-4 h-4 rounded-full shadow-md cursor-grab active:cursor-grabbing transform -translate-x-1/2 -translate-y-1 top-1/2 hover:scale-110 transition-transform"
+              style={{
                 left: `${Math.max(0, Math.min(100, startPercent))}%`,
-                zIndex: endPercent - startPercent < 1 ? 30 : 20
+                zIndex: endPercent - startPercent < 1 ? 30 : 20,
+                background: TD.ACCENT_BLUE,
               }}
               onMouseDown={(e) => {
                 e.preventDefault()
@@ -252,15 +263,14 @@ function DateRangeSlider({
               }}
               title={`Start: ${formatDate(startDate)}`}
             />
-            
-            {/* End Handle - always show, use different color if very close to start */}
+
+            {/* End Handle */}
             <div
-              className={`absolute w-4 h-4 rounded-full shadow-md cursor-grab active:cursor-grabbing transform -translate-x-1/2 -translate-y-1 top-1/2 hover:scale-110 transition-transform ${
-                endPercent - startPercent < 1 ? 'bg-green-600' : 'bg-blue-600'
-              }`}
-              style={{ 
+              className="absolute w-4 h-4 rounded-full shadow-md cursor-grab active:cursor-grabbing transform -translate-x-1/2 -translate-y-1 top-1/2 hover:scale-110 transition-transform"
+              style={{
                 left: `${Math.max(startPercent + 0.3, Math.min(100, endPercent))}%`,
-                zIndex: endPercent - startPercent < 1 ? 31 : 21
+                zIndex: endPercent - startPercent < 1 ? 31 : 21,
+                background: endPercent - startPercent < 1 ? TD.SUCCESS_ALT : TD.ACCENT_BLUE,
               }}
               onMouseDown={(e) => {
                 e.preventDefault()
@@ -269,9 +279,8 @@ function DateRangeSlider({
               title={`End: ${formatDate(endDate)}`}
             />
           </div>
-          
-          {/* Date Labels */}
-          <div className="flex justify-between mt-2 text-xs text-gray-500">
+
+          <div className="flex justify-between mt-2 text-xs" style={{ color: TD.TEXT_3 }}>
             <span>{formatDate(dateRange.min)}</span>
             <span>{formatDate(dateRange.max)}</span>
           </div>

@@ -5,11 +5,9 @@
  */
 
 import { useMemo, useState, useEffect, useCallback, useRef, memo } from 'react'
-import GridLayout, { WidthProvider } from 'react-grid-layout/legacy'
+import GridLayout from 'react-grid-layout/legacy'
 import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
-
-const ResponsiveGridLayout = WidthProvider(GridLayout)
 import {
   LineChart,
   Line,
@@ -34,35 +32,245 @@ import {
   LabelList
 } from 'recharts'
 import { parseNumericValue } from '../../utils/numberUtils'
-import OwnerSummaryCard from '../OwnerSummaryCard'
-import { generateOwnerSummary } from '../../studio/utils/ownerSummary'
+import { formatCompact } from '../../utils/formatNumber'
 
-// Format number for display (currency, percent, decimals)
-function formatValue(val, format = {}) {
-  if (val == null || Number.isNaN(val)) return '—'
-  const num = Number(val)
-  const { type, decimals = 2, prefix = '', suffix = '', grouping } = typeof format === 'object' ? format : {}
-  let s = num
-  if (type === 'currency') {
-    s = num.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
-    return (prefix || '$') + s + (suffix || '')
+const MANUAL_CHART_LAYOUT_STORAGE_KEY = 'nm2_dashboard_renderer_manual_chart_layout_v1'
+
+/** Dark chrome for Custom dashboard chart/KPI tiles */
+const DARK_CARD_STYLE = {
+  background: '#1e293b',
+  border: '0.5px solid #334155',
+  borderRadius: '12px'
+}
+const DARK_CHART_TITLE = '#f8fafc'
+const DARK_CHART_SUBTITLE = '#64748b'
+const DARK_DATA_LABEL_FILL = '#64748b'
+
+const KPI_GRID_WRAPPER_STYLE = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+  gap: '12px',
+  width: '100%'
+}
+const CHART_GRID_WRAPPER_STYLE = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+  gap: '16px',
+  width: '100%',
+  minWidth: 0
+}
+const CHART_GRID_OUTER_STYLE = {
+  contain: 'layout',
+  width: '100%',
+  minWidth: 0,
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '16px'
+}
+
+function dataColumnKeys(data) {
+  if (!data?.length) return []
+  return Object.keys(data[0] || {}).filter(Boolean)
+}
+
+/** Default KPI row definitions when spec has no kpis — avoids summing IDs, dates, etc. */
+function getDefaultKPIs(data, columns) {
+  if (!data?.length || !columns?.length) return []
+
+  const finalCols = getOrderedBusinessNumericColumns(data, columns)
+
+  const kpis = []
+  kpis.push({ label: 'Total Records', value: data.length.toLocaleString(), raw: data.length })
+
+  finalCols.slice(0, 2).forEach((col) => {
+    const key = resolveFieldName(data[0], col) || col
+    const total = data.reduce((sum, row) => sum + parseNumericValue(row[key]), 0)
+    kpis.push({ label: `Total ${col}`, value: formatCompact(total), raw: total })
+  })
+
+  const topProduct = getTopProduct(data, columns)
+  if (topProduct && topProduct !== '—') {
+    kpis.push({ label: 'Top Product', value: topProduct, raw: topProduct })
   }
-  if (type === 'percent') {
-    s = (num * 100).toFixed(decimals) + '%'
-    return prefix + s + suffix
+
+  const topChannel = getTopChannel(data, columns)
+  if (topChannel && topChannel !== '—') {
+    kpis.push({ label: 'Best Channel', value: topChannel, raw: topChannel })
   }
-  if (grouping === true) {
-    const d = (typeof decimals === 'number' && Number.isFinite(decimals)) ? Math.max(0, Math.min(10, decimals)) : 2
-    s = num.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d, useGrouping: true })
-    return prefix + s + suffix
+
+  return kpis
+}
+
+function defaultKpiCardSlug(label, index) {
+  const slug = String(label || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48)
+  return slug || `kpi-${index}`
+}
+
+function formatKPIValue(value, label) {
+  if (value === null || value === undefined) return '—'
+
+  if (typeof value === 'string' && Number.isNaN(Number(value.trim()))) return value
+
+  const num = Number(typeof value === 'string' ? value.replace(/[$,]/g, '') : value)
+  if (Number.isNaN(num)) return String(value)
+
+  const labelLower = (label || '').toLowerCase()
+
+  if (
+    labelLower.includes('count') ||
+    labelLower.includes('number') ||
+    labelLower.includes('orders') ||
+    labelLower.includes('records') ||
+    labelLower.includes('quantity') ||
+    labelLower.includes('rank') ||
+    labelLower.includes('column')
+  ) {
+    return Math.round(num).toLocaleString()
   }
-  // Use locale grouping for large integers so labels don't get cut off and are readable (e.g. 914,100)
-  if (num % 1 === 0 && Math.abs(num) >= 1000) {
-    s = num.toLocaleString('en-US', { maximumFractionDigits: 0 })
-  } else {
-    s = num % 1 === 0 ? String(num) : num.toFixed(decimals ?? 2)
+
+  if (
+    labelLower.includes('product') ||
+    labelLower.includes('channel') ||
+    labelLower.includes('category') ||
+    labelLower.includes('name') ||
+    labelLower.includes('status') ||
+    labelLower.includes('type')
+  ) {
+    if (!Number.isNaN(num) && num > 100) return formatCompact(num)
+    return String(value)
   }
-  return prefix + s + suffix
+
+  return formatCompact(num)
+}
+
+function getTopProduct(data, columns) {
+  if (!data?.length || !columns?.length) return '—'
+  const productCol = columns.find((col) => {
+    const l = String(col).toLowerCase()
+    return l.includes('product') || l.includes('title') || l.includes('sku') || (l.includes('name') && !l.includes('customer'))
+  })
+  const valueCol = columns.find((col) => {
+    const l = String(col).toLowerCase()
+    return (
+      l.includes('subtotal') ||
+      l.includes('revenue') ||
+      l.includes('total') ||
+      l.includes('amount') ||
+      l.includes('sales')
+    )
+  })
+
+  const firstRow = data[0]
+  const pk = productCol ? (resolveFieldName(firstRow, productCol) || productCol) : null
+  const vk = valueCol ? (resolveFieldName(firstRow, valueCol) || valueCol) : null
+  if (!pk || !vk) return '—'
+
+  const grouped = {}
+  for (const row of data) {
+    const key = row[pk]
+    if (key == null || key === '') continue
+    grouped[key] = (grouped[key] || 0) + (parseNumericValue(row[vk]) ?? 0)
+  }
+  const sorted = Object.entries(grouped).sort((a, b) => b[1] - a[1])
+  return sorted.length > 0 ? String(sorted[0][0]) : '—'
+}
+
+function getTopChannel(data, columns) {
+  if (!data?.length || !columns?.length) return '—'
+  const channelCol = columns.find((col) => {
+    const l = String(col).toLowerCase()
+    return l.includes('channel') || l.includes('source') || l.includes('medium')
+  })
+  const valueCol = columns.find((col) => {
+    const l = String(col).toLowerCase()
+    return l.includes('subtotal') || l.includes('revenue') || l.includes('total') || l.includes('amount')
+  })
+
+  const firstRow = data[0]
+  const ck = channelCol ? (resolveFieldName(firstRow, channelCol) || channelCol) : null
+  const vk = valueCol ? (resolveFieldName(firstRow, valueCol) || valueCol) : null
+  if (!ck || !vk) return '—'
+
+  const grouped = {}
+  for (const row of data) {
+    const key = row[ck]
+    if (key == null || key === '') continue
+    grouped[key] = (grouped[key] || 0) + (parseNumericValue(row[vk]) ?? 0)
+  }
+  const sorted = Object.entries(grouped).sort((a, b) => b[1] - a[1])
+  return sorted.length > 0 ? String(sorted[0][0]) : '—'
+}
+
+/** Client-only summary copy for Summary tab (no API). */
+function getSummaryText(data, columns, _spec) {
+  if (!data || data.length === 0) return 'Upload data to see your summary.'
+
+  const numericColsOrdered = getOrderedBusinessNumericColumns(data, columns || [])
+  const numericSet = new Set(numericColsOrdered)
+  const catCols = (columns || []).filter((col) => !numericSet.has(col))
+
+  const firstRow = data[0]
+  const topNumCol = numericColsOrdered[0]
+  const numKeyForTotal =
+    topNumCol && firstRow ? resolveFieldName(firstRow, topNumCol) || topNumCol : null
+  const total = numKeyForTotal
+    ? data.reduce((sum, row) => sum + parseNumericValue(row[numKeyForTotal]), 0)
+    : 0
+
+  const topCatCol = catCols.find((col) => {
+    const l = String(col).toLowerCase()
+    return l.includes('product') || l.includes('channel') || l.includes('category') || (l.includes('name') && !l.includes('customer'))
+  })
+
+  let topCatValue = ''
+  if (topCatCol && topNumCol && data.length > 0 && firstRow) {
+    const catKey = resolveFieldName(firstRow, topCatCol) || topCatCol
+    const numKey = resolveFieldName(firstRow, topNumCol) || topNumCol
+    const grouped = {}
+    for (const row of data) {
+      const key = row[catKey]
+      if (key == null || key === '') continue
+      grouped[key] = (grouped[key] || 0) + (parseNumericValue(row[numKey]) ?? 0)
+    }
+    const sorted = Object.entries(grouped).sort((a, b) => b[1] - a[1])
+    if (sorted.length > 0 && sorted[0][0] != null && String(sorted[0][0]).trim() !== '') {
+      topCatValue = String(sorted[0][0])
+    }
+  }
+
+  const parts = [`Your dataset has ${data.length} records across ${(columns || []).length} columns.`]
+
+  if (topNumCol && total !== 0) {
+    parts.push(`Total ${topNumCol}: ${formatCompact(total)}.`)
+  }
+
+  if (topCatValue) {
+    parts.push(`Top performer: ${topCatValue}.`)
+  }
+
+  return parts.join(' ')
+}
+
+function specKpiLabelImpliesTopProduct(label) {
+  const l = String(label || '').toLowerCase()
+  return (
+    /\btop\b.*\bproduct\b/.test(l) ||
+    /\bbest\b.*\bproduct\b/.test(l) ||
+    /\btop\s*performing\s*product\b/.test(l)
+  )
+}
+
+function specKpiLabelImpliesTopChannel(label) {
+  const l = String(label || '').toLowerCase()
+  return (
+    /\bbest\b.*\b(channel|sale)\b/.test(l) ||
+    /\btop\b.*\bchannel\b/.test(l) ||
+    /\bbest\s*sales\s*channel\b/.test(l)
+  )
 }
 
 // Theme-based chart colors (grid, axis, tooltip)
@@ -79,17 +287,61 @@ function getChartTheme(theme) {
 }
 
 const GRID_COLS = 12
-const ROW_HEIGHT = 100
+/** Row height & margin match react-grid-layout chart grid props (explicit width via ResizeObserver). */
+const CHART_GRID_ROW_HEIGHT = 40
+const CHART_GRID_MARGIN = [12, 12]
+
+function generateLayoutFromCharts(charts) {
+  if (!charts || charts.length === 0) return []
+
+  const cols = GRID_COLS
+  const layouts = []
+
+  charts.forEach((chart, i) => {
+    const isWide =
+      chart.type === 'bar' ||
+      chart.type === 'line' ||
+      chart.type === 'area' ||
+      chart.fullWidth === true
+    const isTall = chart.type === 'map'
+
+    const w = isWide || charts.length === 1 ? cols : cols / 2
+    const h = isTall ? 14 : 10
+
+    let x = 0
+    let y = 0
+
+    if (w === cols) {
+      const prevFullWidths = layouts.filter((l) => l.w === cols)
+      y = prevFullWidths.reduce((sum, l) => sum + l.h, 0)
+    } else {
+      const prevRows = layouts.filter((l) => l.w < cols)
+      const rowsAbove = Math.floor(prevRows.length / 2)
+      y = rowsAbove * 10
+      const isRight = i % 2 === 1
+      x = isRight ? cols / 2 : 0
+    }
+
+    const id = chart.id != null ? String(chart.id) : `chart-${i}`
+    layouts.push({
+      i: id,
+      x,
+      y,
+      w,
+      h,
+      minW: 3,
+      minH: 6
+    })
+  })
+
+  return layouts
+}
+
 const KPI_DEFAULT_W = 3
 const KPI_DEFAULT_H = 1
-const CHART_DEFAULT_W = 7
-const CHART_DEFAULT_H = 5
-
-function buildDefaultLayout(spec) {
+function buildDefaultLayout({ kpis = [], charts = [] }) {
   const layout = []
   let y = 0
-  const kpis = spec?.kpis || []
-  const charts = spec?.charts || []
   let x = 0
   kpis.forEach((k) => {
     layout.push({ i: k.id, x: x % GRID_COLS, y, w: KPI_DEFAULT_W, h: KPI_DEFAULT_H, minW: 1, minH: 1 })
@@ -100,16 +352,63 @@ function buildDefaultLayout(spec) {
     }
   })
   if (kpis.length > 0) y += KPI_DEFAULT_H
-  charts.forEach((c, idx) => {
-    const col = (idx % 2) * CHART_DEFAULT_W
-    const row = y + Math.floor(idx / 2) * CHART_DEFAULT_H
-    layout.push({ i: c.id, x: col, y: row, w: CHART_DEFAULT_W, h: CHART_DEFAULT_H, minW: 2, minH: 2 })
+  const chartItems = generateLayoutFromCharts(charts)
+  chartItems.forEach((item) => {
+    layout.push({ ...item, y: item.y + y })
   })
   return layout
 }
 
 function isGridLayout(layout) {
   return Array.isArray(layout) && layout.length > 0 && layout.every((item) => item && typeof item.i === 'string' && typeof item.x === 'number' && typeof item.y === 'number' && typeof item.w === 'number' && typeof item.h === 'number')
+}
+
+/** True when saved react-grid-layout cells include every KPI and chart id (So persisted drag sizes survive reload). */
+function gridLayoutCoversWidgets(layoutFromSpec, kpis, charts) {
+  if (!isGridLayout(layoutFromSpec)) return false
+  const ids = new Set(layoutFromSpec.map((l) => String(l.i)))
+  if ((charts || []).some((c) => c?.id != null && !ids.has(String(c.id)))) return false
+  if ((kpis || []).some((k) => k?.id != null && !ids.has(String(k.id)))) return false
+  return true
+}
+
+function stringifyLayoutSlots(layout) {
+  if (!Array.isArray(layout)) return ''
+  try {
+    return JSON.stringify(layout.map((l) => ({ i: l.i, x: l.x, y: l.y, w: l.w, h: l.h })))
+  } catch {
+    return ''
+  }
+}
+
+function getSpecSliceForLayout(spec, tabs, safeTabIndex) {
+  if (!spec) return { layoutFromSpec: [], kpis: [], charts: [] }
+  const t = tabs && tabs[safeTabIndex] ? tabs[safeTabIndex] : null
+  return {
+    layoutFromSpec: t ? (t.layout ?? []) : (spec.layout ?? []),
+    kpis: t ? (t.kpis ?? []) : (spec.kpis ?? []),
+    charts: t ? (t.charts ?? []) : (spec.charts ?? []),
+  }
+}
+
+/** Matches requested formula (h × 52) − chrome; clamps so charts stay readable. */
+function chartPlotHeightFromGrid(h) {
+  if (h == null || !Number.isFinite(h)) return 380
+  return Math.max(260, h * 52 - 80)
+}
+
+function ChartPlotFrame({ plotHeight, hasData, children }) {
+  return (
+    <div style={{ height: plotHeight, width: '100%', minHeight: 180 }} className="min-w-0 min-h-0">
+      {hasData ? (
+        <ResponsiveContainer width="100%" height="100%">
+          {children}
+        </ResponsiveContainer>
+      ) : (
+        <div className="h-full flex items-center justify-center text-gray-500 text-base">No data</div>
+      )}
+    </div>
+  )
 }
 
 const CHART_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444', '#6366f1', '#14b8a6']
@@ -263,6 +562,101 @@ function resolveFieldName(row, fieldName) {
   return key ?? fieldName
 }
 
+/** Exclude ID-ish / PII-ish columns from KPIs & Summary totals (normalized header match). */
+function isExcludedMetricColumn(col) {
+  const normalized = String(col ?? '')
+    .toLowerCase()
+    .replace(/[\s_-]/g, '')
+  const excludeList = [
+    'id',
+    'orderid',
+    'orderno',
+    'ordernumber',
+    'date',
+    'time',
+    'timestamp',
+    'createdat',
+    'updatedat',
+    'email',
+    'phone',
+    'address',
+    'zip',
+    'postal',
+    'sku',
+    'code',
+    'key',
+    'customeremail',
+    'customername',
+    'firstname',
+    'lastname',
+    'city',
+    'state',
+    'country',
+    'street',
+    'name'
+  ]
+  return excludeList.some((p) => normalized === p || normalized.endsWith(p) || normalized.startsWith(p))
+}
+
+/** Heuristic: sequential-looking large integers (Order IDs). */
+function looksLikeIdColumn(data, col) {
+  if (!data?.length || col == null || col === '') return false
+  const key = resolveFieldName(data[0], col) || col
+  const vals = data
+    .slice(0, 10)
+    .map((row) => Number(row[key]))
+    .filter((v) => !Number.isNaN(v))
+  if (vals.length === 0) return false
+  const allIntegers = vals.every((v) => Number.isInteger(v))
+  const allLarge = vals.every((v) => v > 999)
+  const hasSmallRange = Math.max(...vals) - Math.min(...vals) < vals.length * 2
+  return allIntegers && allLarge && hasSmallRange
+}
+
+/** Sample-based numeric detection for money/count columns (drops IDs > 1e6 in sample). */
+function qualifiesNumericBusinessSample(data, col) {
+  if (!data?.length || col == null || col === '') return false
+  const key = resolveFieldName(data[0], col) || col
+  const sample = data.slice(0, 20)
+  if (sample.length === 0) return false
+  const numericCount = sample.filter((row) => {
+    const val = row[key]
+    if (val === '' || val === null || val === undefined) return false
+    const num = Number(String(val).replace(/[$,]/g, ''))
+    if (Number.isNaN(num)) return false
+    return num < 1_000_000
+  }).length
+  return numericCount > sample.length * 0.7
+}
+
+const BUSINESS_METRIC_PRIORITY_PATTERNS = [
+  'subtotal',
+  'total',
+  'revenue',
+  'amount',
+  'sales',
+  'price',
+  'cost',
+  'profit',
+  'quantity',
+  'count',
+  'orders'
+]
+
+/** Ordered numeric business columns (priority metrics first) for KPI defaults + Summary sentence. */
+function getOrderedBusinessNumericColumns(data, columns) {
+  if (!data?.length || !columns?.length) return []
+  const candidates = columns.filter(
+    (col) =>
+      !isExcludedMetricColumn(col) && !looksLikeIdColumn(data, col) && qualifiesNumericBusinessSample(data, col)
+  )
+  const priority = candidates.filter((col) =>
+    BUSINESS_METRIC_PRIORITY_PATTERNS.some((p) => String(col).toLowerCase().includes(p))
+  )
+  const rest = candidates.filter((c) => !priority.includes(c))
+  return [...priority, ...rest]
+}
+
 // Coerce a value to a timestamp; if it looks like a year (1900-2100), use Jan 1 of that year
 function valueToTimestamp(val) {
   if (val == null || val === '') return NaN
@@ -335,6 +729,319 @@ function aggValue(rec, aggregation) {
   if (aggregation === 'min') return rec.min === Infinity ? 0 : rec.min
   if (aggregation === 'max') return rec.max === -Infinity ? 0 : rec.max
   return rec.sum
+}
+
+/** Aggregated table for spec `type === 'table'`: dimension(s) × metric + share (% of displayed total). */
+function renderTableChart(chart, data, columns) {
+  const rowsData = Array.isArray(data) ? data : []
+  const firstRow = rowsData[0]
+  const colList =
+    columns && columns.length ? columns : firstRow ? Object.keys(firstRow) : []
+
+  if (!firstRow || colList.length === 0) {
+    return (
+      <div className="p-4 text-center text-gray-500 text-base" style={{ color: '#64748b' }}>
+        No data
+      </div>
+    )
+  }
+
+  const specGroupFields = [
+    chart?.xField,
+    chart?.dimension,
+    chart?.category,
+    chart?.groupBy,
+    chart?.secondaryDimension,
+    chart?.stackField,
+    chart?.seriesField,
+    chart?.segmentField,
+    chart?.breakdownField,
+    chart?.groupField,
+  ].filter(Boolean)
+
+  let groupResolved = []
+  const seenLogical = new Set()
+  for (const logical of specGroupFields) {
+    const s = String(logical)
+    if (seenLogical.has(s)) continue
+    seenLogical.add(s)
+    const key = resolveFieldName(firstRow, logical) || logical
+    groupResolved.push({ logical: s, key })
+  }
+
+  const pushDim = (logical) => {
+    if (logical == null || logical === '') return
+    const k = resolveFieldName(firstRow, logical) || logical
+    if (!groupResolved.some((g) => g.key === k)) {
+      groupResolved.push({ logical: String(logical), key: k })
+    }
+  }
+
+  const productCol = colList.find((col) => {
+    const l = String(col).toLowerCase()
+    return l.includes('product') || l.includes('title')
+  })
+  const channelCol = colList.find((col) => {
+    const l = String(col).toLowerCase()
+    return l.includes('channel') || l.includes('source')
+  })
+  pushDim(productCol)
+  pushDim(channelCol)
+
+  const valueLogical =
+    chart?.yField ||
+    chart?.metric ||
+    chart?.field ||
+    colList.find((col) => {
+      const n = String(col).toLowerCase()
+      return (
+        n.includes('subtotal') ||
+        n.includes('revenue') ||
+        n.includes('total') ||
+        n.includes('amount')
+      )
+    }) ||
+    getOrderedBusinessNumericColumns(rowsData, colList)[0] ||
+    null
+
+  const valueKey = valueLogical ? resolveFieldName(firstRow, valueLogical) || valueLogical : null
+
+  const groupHeader =
+    groupResolved.length > 0
+      ? groupResolved.map((g) => g.logical).join(' × ')
+      : 'Group'
+
+  const defaultCap = 15
+  const cap =
+    typeof chart?.limit === 'number' && chart.limit > 0
+      ? Math.min(chart.limit, 500)
+      : defaultCap
+
+  if (!valueKey || groupResolved.length === 0) {
+    return (
+      <div className="p-4 text-center text-gray-500 text-base" style={{ color: '#94a3b8' }}>
+        {!valueKey ? 'Configure a numeric measure (metric / subtotal / revenue).' : 'No dimensions to group by.'}
+      </div>
+    )
+  }
+
+  const grouped = {}
+  rowsData.forEach((row) => {
+    const key = groupResolved.map((g) => (row[g.key] != null && row[g.key] !== '' ? String(row[g.key]) : '—')).join(' × ')
+    grouped[key] = (grouped[key] || 0) + parseNumericValue(row[valueKey])
+  })
+
+  const rows = Object.entries(grouped)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, cap)
+  const totalShown = rows.reduce((s, [, v]) => s + v, 0)
+
+  return (
+    <div
+      className="min-h-0 flex flex-col flex-1"
+      style={{ overflowY: 'auto', maxHeight: '100%' }}
+    >
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+        <thead
+          style={{
+            position: 'sticky',
+            top: 0,
+            zIndex: 1,
+          }}
+        >
+          <tr style={{ background: '#162032' }}>
+            <th
+              style={{
+                padding: '10px 14px',
+                textAlign: 'left',
+                color: '#94a3b8',
+                fontWeight: 500,
+                borderBottom: '0.5px solid #334155',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {groupHeader}
+            </th>
+            <th
+              style={{
+                padding: '10px 14px',
+                textAlign: 'right',
+                color: '#94a3b8',
+                fontWeight: 500,
+                borderBottom: '0.5px solid #334155',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {valueLogical || 'Value'}
+            </th>
+            <th
+              style={{
+                padding: '10px 14px',
+                textAlign: 'right',
+                color: '#94a3b8',
+                fontWeight: 500,
+                borderBottom: '0.5px solid #334155',
+                width: '80px',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              Share
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(([key, val], i) => {
+            const pctNum = totalShown > 0 ? (val / totalShown) * 100 : 0
+            const pct = totalShown > 0 ? pctNum.toFixed(1) : '0.0'
+            const barW = Math.min(100, Math.max(0, pctNum))
+            const rowBg = i % 2 === 0 ? '#1e293b' : '#182437'
+            return (
+              <tr
+                key={`${key}-${i}`}
+                style={{
+                  borderBottom: '0.5px solid #1e2d40',
+                  background: rowBg,
+                  transition: 'background 0.1s',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = '#1d4ed820'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = rowBg
+                }}
+              >
+                <td
+                  style={{
+                    padding: '10px 14px',
+                    color: '#e2e8f0',
+                    fontWeight: i < 3 ? 500 : 400,
+                  }}
+                >
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    {i === 0 && (
+                      <span
+                        style={{
+                          display: 'inline-block',
+                          width: '16px',
+                          height: '16px',
+                          background: '#1d4ed8',
+                          borderRadius: '50%',
+                          fontSize: '10px',
+                          color: 'white',
+                          textAlign: 'center',
+                          lineHeight: '16px',
+                          flexShrink: 0,
+                        }}
+                      >
+                        1
+                      </span>
+                    )}
+                    {i === 1 && (
+                      <span
+                        style={{
+                          display: 'inline-block',
+                          width: '16px',
+                          height: '16px',
+                          background: '#475569',
+                          borderRadius: '50%',
+                          fontSize: '10px',
+                          color: 'white',
+                          textAlign: 'center',
+                          lineHeight: '16px',
+                          marginRight: '0',
+                          flexShrink: 0,
+                        }}
+                      >
+                        2
+                      </span>
+                    )}
+                    {i === 2 && (
+                      <span
+                        style={{
+                          display: 'inline-block',
+                          width: '16px',
+                          height: '16px',
+                          background: '#92400e',
+                          borderRadius: '50%',
+                          fontSize: '10px',
+                          color: 'white',
+                          textAlign: 'center',
+                          lineHeight: '16px',
+                          flexShrink: 0,
+                        }}
+                      >
+                        3
+                      </span>
+                    )}
+                    <span>{key}</span>
+                  </span>
+                </td>
+                <td
+                  style={{
+                    padding: '10px 14px',
+                    color: '#10b981',
+                    textAlign: 'right',
+                    fontWeight: 500,
+                  }}
+                >
+                  {formatCompact(val)}
+                </td>
+                <td style={{ padding: '10px 14px', textAlign: 'right' }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      justifyContent: 'flex-end',
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: '40px',
+                        height: '4px',
+                        background: '#334155',
+                        borderRadius: '2px',
+                        overflow: 'hidden',
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: `${barW}%`,
+                          height: '100%',
+                          background: '#1d4ed8',
+                          borderRadius: '2px',
+                        }}
+                      />
+                    </div>
+                    <span
+                      style={{
+                        fontSize: '11px',
+                        color: '#64748b',
+                        minWidth: '32px',
+                        textAlign: 'right',
+                      }}
+                    >
+                      {pct}%
+                    </span>
+                  </div>
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+      <p
+        style={{
+          fontSize: '11px',
+          color: '#64748b',
+          padding: '8px 16px',
+          margin: 0,
+        }}
+      >
+        Top {rows.length} combination{rows.length === 1 ? '' : 's'} · {rowsData.length} source rows
+      </p>
+    </div>
+  )
 }
 
 // Group by dimension for bar/pie
@@ -739,7 +1446,11 @@ function DashboardRenderer({
   onFilterOrderChange,
   onTabDatasetChange,
   selectedWidget,
-  onSelectWidget
+  onSelectWidget,
+  /** Ask Claude Custom tab: always derive chart grid from spec, never persisted spec/local layout. */
+  preferFreshChartLayout = false,
+  /** Shared / read-only: disable drag, resize, and layout persistence callbacks. */
+  layoutLocked = false,
 }) {
   const [localFilters, setLocalFilters] = useState({})
   const [chartFilter, setChartFilter] = useState(null)
@@ -751,9 +1462,10 @@ function DashboardRenderer({
   const [activeTabIndex, setActiveTabIndex] = useState(0)
   const chartRefs = useRef({})
   const filterDropTargetRef = useRef(null)
-  const [ownerSummary, setOwnerSummary] = useState('')
-  const [ownerSummaryLoading, setOwnerSummaryLoading] = useState(false)
-
+  const chartGridContainerRef = useRef(null)
+  const chartGridWidthTimerRef = useRef(null)
+  const [chartGridWidth, setChartGridWidth] = useState(null)
+  const prevSpecLayoutKeyRef = useRef(null)
   const tabs = useMemo(() => (spec?.tabs && spec.tabs.length >= 2 ? spec.tabs : null), [spec?.tabs])
   const safeTabIndex = tabs ? Math.min(activeTabIndex, tabs.length - 1) : 0
   const currentTab = tabs?.[safeTabIndex]
@@ -786,36 +1498,124 @@ function DashboardRenderer({
 
   const [layout, setLayout] = useState(() => {
     if (!spec) return []
-    const t = spec.tabs?.[safeTabIndex]
-    const l = t ? (t.layout ?? []) : (spec.layout ?? [])
-    const kpis = t ? (t.kpis ?? []) : (spec.kpis ?? [])
-    const charts = t ? (t.charts ?? []) : (spec.charts ?? [])
-    return isGridLayout(l) && l.length > 0 ? l : buildDefaultLayout({ kpis, charts, layout: l })
+    const { layoutFromSpec, kpis, charts } = getSpecSliceForLayout(spec, tabs, safeTabIndex)
+    if (gridLayoutCoversWidgets(layoutFromSpec, kpis, charts)) return layoutFromSpec
+    return buildDefaultLayout({ kpis, charts })
   })
 
-  // Sync layout when spec or active tab changes. Use stable deps to avoid effect loop (currentSpec is a new object every render).
+  /** Content-addressed key so unstable `spec` object identity does not re-bootstrap layout every render. */
+  const layoutBootstrapKey = useMemo(() => {
+    if (!spec) return ''
+    try {
+      const { layoutFromSpec, kpis, charts } = getSpecSliceForLayout(spec, tabs, safeTabIndex)
+      const chartSeedFp = stringifyLayoutSlots(generateLayoutFromCharts(charts))
+      return JSON.stringify({
+        id: spec?.id ?? null,
+        ix: safeTabIndex,
+        preferFresh: preferFreshChartLayout,
+        layoutFromSpec,
+        kpis: kpis.map((k) => String(k.id)),
+        chartsFp: charts.map((c) => [String(c.id), c.type ?? '', Boolean(c.fullWidth)]),
+        chartSeedFp,
+      })
+    } catch {
+      return `${String(spec?.id)}_${safeTabIndex}_${preferFreshChartLayout}`
+    }
+  }, [spec, tabs, safeTabIndex, preferFreshChartLayout])
+
+  const chartsSectionLen = (currentSpec?.charts || []).length
+
+  useEffect(() => {
+    if (!chartsSectionLen) {
+      setChartGridWidth(null)
+      if (chartGridWidthTimerRef.current != null) {
+        clearTimeout(chartGridWidthTimerRef.current)
+        chartGridWidthTimerRef.current = null
+      }
+      return
+    }
+    const el = chartGridContainerRef.current
+    if (!el) return
+
+    const applyWidth = (raw) => {
+      const fw = Math.floor(Number(raw))
+      if (!Number.isFinite(fw) || fw <= 100) return
+      setChartGridWidth((prev) =>
+        prev != null && Math.abs(prev - fw) <= 5 ? prev : Math.max(fw, 320)
+      )
+    }
+
+    applyWidth(el.getBoundingClientRect().width)
+    requestAnimationFrame(() => applyWidth(el.getBoundingClientRect().width))
+
+    const ro = new ResizeObserver((entries) => {
+      const newWidth = entries[0]?.contentRect?.width
+      if (newWidth == null) return
+      clearTimeout(chartGridWidthTimerRef.current)
+      chartGridWidthTimerRef.current = setTimeout(() => {
+        applyWidth(newWidth)
+      }, 100)
+    })
+
+    ro.observe(el)
+    return () => {
+      ro.disconnect()
+      clearTimeout(chartGridWidthTimerRef.current)
+    }
+  }, [chartsSectionLen])
+
+  // Reset grid layout when Ask Claude produces a new spec identity (chart ids or spec id).
   useEffect(() => {
     if (!spec) return
-    const t = tabs && tabs[safeTabIndex] ? tabs[safeTabIndex] : null
-    const layoutFromSpec = t ? (t.layout ?? []) : (spec.layout ?? [])
-    const kpis = t ? (t.kpis ?? []) : (spec.kpis ?? [])
-    const charts = t ? (t.charts ?? []) : (spec.charts ?? [])
-    const nextLayout = isGridLayout(layoutFromSpec) && layoutFromSpec.length > 0 ? layoutFromSpec : buildDefaultLayout({ kpis, charts, layout: layoutFromSpec })
+    const slice = getSpecSliceForLayout(spec, tabs, safeTabIndex)
+    const chartsPart = JSON.stringify((slice.charts || []).map((c) => c?.id))
+    const specLayoutKey =
+      spec.id != null && String(spec.id) !== ''
+        ? `id:${String(spec.id)}:${chartsPart}`
+        : `charts:${chartsPart}`
+    if (specLayoutKey === prevSpecLayoutKeyRef.current) return
+    prevSpecLayoutKeyRef.current = specLayoutKey
+
+    const { layoutFromSpec, kpis, charts } = slice
+    const nextLayout = gridLayoutCoversWidgets(layoutFromSpec, kpis, charts)
+      ? layoutFromSpec
+      : buildDefaultLayout({ kpis, charts })
     setLayout((prev) => {
-      if (prev === nextLayout) return prev
-      if (Array.isArray(prev) && prev.length === nextLayout.length && nextLayout.every((n, i) => prev[i] && n.i === prev[i].i && n.w === prev[i].w && n.h === prev[i].h)) return prev
+      const prevStr = stringifyLayoutSlots(prev)
+      const nextStr = stringifyLayoutSlots(nextLayout)
+      if (prevStr === nextStr) return prev
       return nextLayout
     })
   }, [spec, tabs, safeTabIndex])
+
+  // Sync layout only when dashboard spec *content* changes (not object identity churn).
+  useEffect(() => {
+    if (!spec || !layoutBootstrapKey) return
+    const { layoutFromSpec, kpis, charts } = getSpecSliceForLayout(spec, tabs, safeTabIndex)
+    const nextLayout = gridLayoutCoversWidgets(layoutFromSpec, kpis, charts)
+      ? layoutFromSpec
+      : buildDefaultLayout({ kpis, charts })
+    setLayout((prev) => {
+      const prevStr = stringifyLayoutSlots(prev)
+      const nextStr = stringifyLayoutSlots(nextLayout)
+      if (prevStr === nextStr) return prev
+      return nextLayout
+    })
+  }, [layoutBootstrapKey])
   const layoutRef = useRef(layout)
   layoutRef.current = layout
   const handleLayoutChange = useCallback(
     (newLayout) => {
       if (!Array.isArray(newLayout) || newLayout.length === 0) return
       const prev = layoutRef.current
-      const same = Array.isArray(prev) && prev.length === newLayout.length &&
-        newLayout.every((n, i) => prev[i] && n.i === prev[i].i && n.x === prev[i].x && n.y === prev[i].y && n.w === prev[i].w && n.h === prev[i].h)
-      setLayout(newLayout)
+      const newStr = stringifyLayoutSlots(newLayout)
+      const prevStr = stringifyLayoutSlots(prev)
+      const same = newStr !== '' && newStr === prevStr
+      setLayout((p) => {
+        const pStr = stringifyLayoutSlots(p)
+        if (pStr === newStr) return p
+        return newLayout
+      })
       if (!same && typeof onLayoutChange === 'function') {
         if (tabs && safeTabIndex != null) onLayoutChange(newLayout, safeTabIndex)
         else onLayoutChange(newLayout)
@@ -850,83 +1650,88 @@ function DashboardRenderer({
     return out
   }, [baseFilteredData, chartFilter])
 
-  // Owner Summary – Today (Tab 1 only): generate from KPI values and cache by date + dataset + KPI signature.
-  const ownerKpis = useMemo(() => {
-    if (!tabs || safeTabIndex !== 0) return null
-    const firstRow = filteredData?.[0]
-    if (!firstRow) return null
+  const tableColumnKeys = useMemo(() => dataColumnKeys(filteredData), [filteredData])
 
-    const kpis = currentSpec?.kpis || []
-    const resolve = (field) => resolveFieldName(firstRow, field)
-    const findKpiDef = (field) => kpis.find((k) => String(k.field || '').toLowerCase() === field.toLowerCase())
-    const compute = (field, fallbackAgg) => {
-      const def = findKpiDef(field)
-      const agg = def?.aggregation || fallbackAgg
-      const col = resolve(def?.field || field)
-      const val = aggregate(filteredData, col, agg)
-      return val == null ? null : Number(val)
+  const chartSpecsSafe = currentSpec?.charts || []
+  const chartLayoutIdSet = useMemo(
+    () => new Set(chartSpecsSafe.map((c) => String(c.id))),
+    [chartSpecsSafe]
+  )
+  const chartsLayoutOnly = useMemo(
+    () => layout.filter((li) => chartLayoutIdSet.has(String(li.i))),
+    [layout, chartLayoutIdSet]
+  )
+
+  const persistManualChartLayoutsFromGrid = useCallback((chartLayoutsFromGrid) => {
+    try {
+      if (!Array.isArray(chartLayoutsFromGrid) || chartLayoutsFromGrid.length === 0) return
+      localStorage.setItem(MANUAL_CHART_LAYOUT_STORAGE_KEY, JSON.stringify(chartLayoutsFromGrid))
+    } catch (_) {
+      /* ignore quota / privacy mode */
+    }
+  }, [])
+
+  const mergeChartsLayoutIntoState = useCallback(
+    (newChartLayout) => {
+      if (!Array.isArray(newChartLayout)) return
+      const kpiIdsNow = new Set((currentSpec?.kpis || []).map((k) => k.id))
+      const kpiPieces = layoutRef.current.filter((li) => kpiIdsNow.has(li.i))
+      const merged = [...kpiPieces, ...newChartLayout]
+      const prev = layoutRef.current
+      const newStr = stringifyLayoutSlots(merged)
+      const prevStr = stringifyLayoutSlots(prev)
+      const same = newStr !== '' && newStr === prevStr
+      setLayout((p) => {
+        if (stringifyLayoutSlots(p) === stringifyLayoutSlots(merged)) return p
+        return merged
+      })
+      if (!same && typeof onLayoutChange === 'function') {
+        if (tabs && safeTabIndex != null) onLayoutChange(merged, safeTabIndex)
+        else onLayoutChange(merged)
+      }
+    },
+    [currentSpec?.kpis, onLayoutChange, tabs, safeTabIndex]
+  )
+
+  const kpiCards = useMemo(() => {
+    const specKpis = currentSpec?.kpis || []
+    const rows = filteredData || []
+    const keys = tableColumnKeys
+
+    const cards = []
+    if (specKpis.length > 0) {
+      const fr = rows?.[0]
+      if (!fr) return []
+      for (const k of specKpis) {
+        let displayValue
+        if (specKpiLabelImpliesTopProduct(k.label || k.field)) {
+          displayValue = getTopProduct(rows, keys)
+        } else if (specKpiLabelImpliesTopChannel(k.label || k.field)) {
+          displayValue = getTopChannel(rows, keys)
+        } else {
+          const col = resolveFieldName(fr, k.field)
+          displayValue = aggregate(rows, col, k.aggregation || 'sum')
+        }
+        cards.push({ variant: 'spec', ...k, displayValue })
+      }
+      return cards
     }
 
-    const occupancy_rate = compute('occupancy_rate', 'avg')
-    const revenue_today = compute('revenue_today', 'sum')
-    const arrivals_today = compute('arrivals_today', 'sum')
-    const adr = compute('adr', 'avg')
-    const revpar = compute('revpar', 'avg')
-    if ([occupancy_rate, revenue_today, arrivals_today, adr, revpar].some((v) => v == null || Number.isNaN(v))) return null
-
-    const dateField = resolve('date') || resolve('Date') || 'date'
-    const date = firstRow?.[dateField] ? String(firstRow[dateField]).slice(0, 10) : ''
-
-    return {
-      date,
-      occupancy_rate: Math.round(occupancy_rate),
-      revenue_today: Math.round(revenue_today),
-      arrivals_today: Math.round(arrivals_today),
-      adr: Math.round(adr * 100) / 100,
-      revpar: Math.round(revpar * 100) / 100
+    if (!rows.length) {
+      return [{ variant: 'default', id: 'default-kpi-rows', label: 'Total Records', displayValue: 0 }]
     }
-  }, [tabs, safeTabIndex, filteredData, currentSpec?.kpis])
-  useEffect(() => {
-    let cancelled = false
-    if (!ownerKpis) {
-      setOwnerSummary('')
-      setOwnerSummaryLoading(false)
-      return
-    }
-    setOwnerSummaryLoading(true)
-    generateOwnerSummary(
-      {
-        occupancy_rate: ownerKpis.occupancy_rate,
-        revenue_today: ownerKpis.revenue_today,
-        arrivals_today: ownerKpis.arrivals_today,
-        adr: ownerKpis.adr,
-        revpar: ownerKpis.revpar
-      },
-      { date: ownerKpis.date, datasetId: currentTab?.dataset || defaultId || '' }
-    )
-      .then((text) => {
-        if (cancelled) return
-        setOwnerSummary((text || '').trim())
-      })
-      .catch(() => {
-        if (cancelled) return
-        setOwnerSummary('')
-      })
-      .finally(() => {
-        if (cancelled) return
-        setOwnerSummaryLoading(false)
-      })
-    return () => { cancelled = true }
-  }, [
-    ownerKpis?.date,
-    ownerKpis?.occupancy_rate,
-    ownerKpis?.revenue_today,
-    ownerKpis?.arrivals_today,
-    ownerKpis?.adr,
-    ownerKpis?.revpar,
-    currentTab?.dataset,
-    defaultId
-  ])
+
+    const colsForKpis = keys.length ? keys : Object.keys(rows[0] || {})
+
+    return getDefaultKPIs(rows, colsForKpis).map((entry, i) => ({
+      variant: 'default',
+      id: `default-kpi-${defaultKpiCardSlug(entry.label, i)}-${i}`,
+      label: entry.label,
+      displayValue: entry.raw,
+    }))
+  }, [currentSpec?.kpis, filteredData, tableColumnKeys])
+
+  const summaryTabSummaryEligible = !!(tabs && safeTabIndex === 0)
 
   const handleFilterChange = (id, value) => {
     setLocalFilters((prev) => ({ ...prev, [id]: value }))
@@ -951,8 +1756,6 @@ function DashboardRenderer({
   const cardClass = theme === 'dark' ? 'bg-gray-800 border-gray-700 text-gray-100' : theme === 'executive' ? 'bg-slate-50 border-slate-200' : 'bg-white border-gray-200'
   const chartTheme = getChartTheme(theme)
   const styleOpts = spec.style || {}
-  const globalValueFormat = (styleOpts.valueFormat && typeof styleOpts.valueFormat === 'object') ? styleOpts.valueFormat : null
-  const chartFmt = (c) => (c.format && typeof c.format === 'object' ? c.format : (globalValueFormat || {}))
 
   const paletteFor = (palette) =>
     palette === 'minimal' ? CHART_COLORS_MINIMAL : palette === 'pastel' ? CHART_COLORS_PASTEL : CHART_COLORS
@@ -986,17 +1789,18 @@ function DashboardRenderer({
   return (
     <div className="space-y-6">
       {tabs && tabs.length >= 2 && (
-        <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 pb-2">
+        <div className="flex flex-wrap items-center gap-2 border-b pb-2" style={{ borderColor: '#334155' }}>
           {tabs.map((tab, idx) => (
             <div key={tab.id || idx} className="flex items-center gap-1">
               <button
                 type="button"
                 onClick={() => setActiveTabIndex(idx)}
-                className={`px-4 py-2 rounded-t-lg text-sm font-medium transition-colors ${
+                className="px-4 py-2 rounded-t-lg text-sm font-medium transition-colors"
+                style={
                   safeTabIndex === idx
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
+                    ? { background: '#1d4ed8', color: '#ffffff' }
+                    : { background: '#1e293b', color: '#64748b', border: '0.5px solid #334155' }
+                }
               >
                 {tab.label || `Tab ${idx + 1}`}
               </button>
@@ -1024,9 +1828,17 @@ function DashboardRenderer({
         </div>
       )}
 
-      {/* Owner Summary – Today (Tab 1 only) */}
-      {ownerKpis && (
-        <OwnerSummaryCard summary={ownerSummary} loading={ownerSummaryLoading} />
+      {/* Summary tab (multi-tab): client-only narrative from dataset */}
+      {summaryTabSummaryEligible && (
+        <section
+          className="rounded-lg p-4"
+          style={{ background: '#1e293b', border: '0.5px solid #334155', borderRadius: '12px' }}
+        >
+          <h3 className="text-sm font-semibold" style={{ color: '#f8fafc' }}>Summary</h3>
+          <div className="mt-2 text-sm leading-relaxed whitespace-pre-wrap" style={{ color: '#94a3b8' }}>
+            {getSummaryText(filteredData, tableColumnKeys, spec)}
+          </div>
+        </section>
       )}
 
       {/* Chart click filter (cross-filter) — show when a chart segment is selected */}
@@ -1264,69 +2076,131 @@ function DashboardRenderer({
         </div>
       )}
 
-      {/* Dynamic grid: KPIs + Charts (draggable/resizable). Contain layout to reduce flicker from reflow. */}
-      {((currentSpec?.kpis && currentSpec.kpis.length > 0) || (currentSpec?.charts && currentSpec.charts.length > 0)) && (
-        <div style={{ contain: 'layout' }}>
-        <ResponsiveGridLayout
-          className="layout"
-          layout={layout}
-          onLayoutChange={handleLayoutChange}
-          cols={GRID_COLS}
-          rowHeight={ROW_HEIGHT}
-          isDraggable
-          isResizable
-          // Allow vertical scroll/interaction on touch and inside charts/controls.
-          // Without this, swiping in the Preview panel can be captured as a drag gesture.
-          draggableCancel="input,textarea,select,option,button,a,.recharts-wrapper,.recharts-surface,.recharts-responsive-container"
-          compactType="vertical"
-          preventCollision={false}
-        >
-          {(currentSpec?.kpis || []).map((k) => {
-            const val = aggregate(filteredData, k.field, k.aggregation || 'sum')
-            const fmt = (k.format && typeof k.format === 'object') ? k.format : (globalValueFormat || {})
-            return (
-              <div
-                key={k.id}
-                className={`p-4 rounded-lg border ${cardClass} h-full overflow-hidden relative group min-h-0 min-w-0`}
-                style={selectionStyle('kpi', k.id)}
-                onMouseDownCapture={(e) => {
-                  const tag = String(e?.target?.tagName || '').toLowerCase()
-                  if (['button', 'input', 'select', 'textarea', 'option', 'a'].includes(tag)) return
-                  onSelectWidget?.({ type: 'kpi', id: k.id })
-                }}
-              >
-                {onRemoveWidget && (
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveWidget(k.id, 'kpi')}
-                    className="absolute top-2 right-2 w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"
-                    title="Remove widget"
-                    aria-label="Remove widget"
+      {/* KPI summary CSS grid + draggable chart tiles (charts use react-grid-layout). */}
+      {(kpiCards.length > 0 || (currentSpec?.charts || []).length > 0) && (
+        <div style={CHART_GRID_OUTER_STYLE}>
+          {kpiCards.length > 0 && (
+            <div style={KPI_GRID_WRAPPER_STYLE}>
+              {kpiCards.map((k) => {
+                const fr = filteredData?.[0]
+                const val =
+                  k.displayValue !== undefined && k.displayValue !== null
+                    ? k.displayValue
+                    : fr
+                      ? aggregate(filteredData, resolveFieldName(fr, k.field), k.aggregation || 'sum')
+                      : null
+                return (
+                  <div
+                    key={k.id}
+                    className="p-4 h-full relative group min-h-0 min-w-0"
+                    style={{
+                      ...DARK_CARD_STYLE,
+                      minWidth: 0,
+                      overflow: 'hidden',
+                      ...selectionStyle('kpi', k.id)
+                    }}
+                    onMouseDownCapture={(e) => {
+                      const tag = String(e?.target?.tagName || '').toLowerCase()
+                      if (['button', 'input', 'select', 'textarea', 'option', 'a'].includes(tag)) return
+                      onSelectWidget?.({ type: 'kpi', id: k.id })
+                    }}
                   >
-                    <span className="text-lg leading-none">×</span>
-                  </button>
-                )}
-                <div className="text-base text-gray-500">{k.label}</div>
-                <div className="text-3xl font-semibold mt-1">
-                  {formatValue(val, fmt)}
+                    {onRemoveWidget && k.variant === 'spec' && (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveWidget(k.id, 'kpi')}
+                        className="absolute top-2 right-2 w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Remove widget"
+                        aria-label="Remove widget"
+                      >
+                        <span className="text-lg leading-none">×</span>
+                      </button>
+                    )}
+                    <div className="text-base" style={{ color: DARK_CHART_SUBTITLE }}>{k.label}</div>
+                    <div className="text-3xl font-semibold mt-1 break-words" style={{ color: DARK_CHART_TITLE }}>
+                      {formatKPIValue(val, k.label)}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+          {(currentSpec?.charts || []).length > 0 && (
+            <div
+              ref={chartGridContainerRef}
+              style={{ width: '100%', minWidth: 0, minHeight: chartGridWidth == null ? 400 : undefined }}
+            >
+              {chartGridWidth == null ? (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    height: 200,
+                    color: '#64748b',
+                    fontSize: 13,
+                  }}
+                >
+                  Loading dashboard…
                 </div>
-              </div>
-            )
-          })}
-          {(currentSpec?.charts || []).map((c) => (
+              ) : (
+              <GridLayout
+                className="layout min-w-0 w-full"
+                width={chartGridWidth}
+                layout={chartsLayoutOnly}
+                onLayoutChange={mergeChartsLayoutIntoState}
+                onDragStop={layoutLocked ? undefined : (nextLayout) => persistManualChartLayoutsFromGrid(nextLayout)}
+                onResizeStop={layoutLocked ? undefined : (nextLayout) => persistManualChartLayoutsFromGrid(nextLayout)}
+                cols={GRID_COLS}
+                rowHeight={CHART_GRID_ROW_HEIGHT}
+                margin={CHART_GRID_MARGIN}
+                containerPadding={[0, 0]}
+                useCSSTransforms={false}
+                isDraggable={!layoutLocked}
+                isResizable={!layoutLocked}
+                draggableCancel="input,textarea,select,option,button,a,.recharts-wrapper,.recharts-surface,.recharts-responsive-container"
+                compactType="vertical"
+                preventCollision={false}
+              >
+          {(currentSpec?.charts || []).map((c) => {
+            const layoutCell = chartsLayoutOnly.find((li) => String(li.i) === String(c.id))
+            const plotPx = chartPlotHeightFromGrid(layoutCell?.h ?? 10)
+            return (
             <div
               key={c.id}
               ref={(el) => { if (el != null) chartRefs.current[c.id] = el }}
-              className={`p-4 rounded-lg border ${cardClass} h-full overflow-hidden flex flex-col min-h-0 min-w-0`}
-              style={selectionStyle('chart', c.id)}
+              className="p-4 flex flex-col min-h-0 min-w-0"
+              style={{
+                minHeight: '300px',
+                height: '100%',
+                background: '#1e293b',
+                border: '0.5px solid #334155',
+                borderRadius: '12px',
+                overflow: 'hidden',
+                display: 'flex',
+                flexDirection: 'column',
+                ...selectionStyle('chart', c.id)
+              }}
               onMouseDownCapture={(e) => {
                 const tag = String(e?.target?.tagName || '').toLowerCase()
                 if (['button', 'input', 'select', 'textarea', 'option', 'a'].includes(tag)) return
                 onSelectWidget?.({ type: 'chart', id: c.id })
               }}
             >
-              <div className="flex justify-between items-center gap-2 mb-1">
-                <h3 className="text-xl font-medium">{c.title || c.id}</h3>
+              <div className="flex justify-between items-center gap-2 mb-1 min-w-0">
+                <div className="min-w-0 flex-1">
+                  <h3
+                    className="text-xl font-medium"
+                    style={{
+                      color: DARK_CHART_TITLE,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    {c.title || c.id}
+                  </h3>
+                </div>
                 <div className="flex items-center gap-1 flex-shrink-0">
                   {(c.type === 'bar' || c.type === 'line' || c.type === 'pie' || c.type === 'area' || c.type === 'stacked_bar' || c.type === 'stacked_area' || c.type === 'grouped_bar' || c.type === 'radial_bar' || c.type === 'scatter') && (
                     <>
@@ -1470,136 +2344,97 @@ function DashboardRenderer({
               {(() => {
                 const sr = getSingleRowValueLabel(c, filteredData)
                 return sr ? (
-                  <p className={`text-base font-medium mb-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
+                  <p className="text-base font-medium mb-2" style={{ color: DARK_CHART_SUBTITLE }}>
                     {sr.label}: {sr.value}
                   </p>
                 ) : null
               })()}
               {((c.type === 'bar' || c.type === 'line' || c.type === 'area' || c.type === 'stacked_bar' || c.type === 'stacked_area' || c.type === 'grouped_bar' || c.type === 'radial_bar' || c.type === 'scatter') && (c.yField || c.metric)) && (
-                <p className="text-base text-gray-500 mb-2">{getMeasureLabel(c)}</p>
+                <p className="text-base mb-2" style={{ color: DARK_CHART_SUBTITLE }}>{getMeasureLabel(c)}</p>
               )}
               {c.type === 'pie' && (c.metric || c.yField) && (
-                <p className="text-base text-gray-500 mb-2">{getMeasureLabel(c)}</p>
+                <p className="text-base mb-2" style={{ color: DARK_CHART_SUBTITLE }}>{getMeasureLabel(c)}</p>
               )}
               {c.type === 'kpi' && (
-                <div className="text-3xl font-semibold">
-                  {aggregate(filteredData, c.field || c.metric, c.aggregation || 'sum') ?? '—'}
+                <div className="text-3xl font-semibold" style={{ color: DARK_CHART_TITLE }}>
+                  {formatCompact(aggregate(filteredData, c.field || c.metric, c.aggregation || 'sum'))}
                 </div>
               )}
-              {c.type === 'table' && (
-                <div className="overflow-x-auto max-h-64 overflow-y-auto">
-                  <table className="min-w-full text-base">
-                    <thead className="sticky top-0 bg-gray-100">
-                      <tr>
-                        {(c.columns || Object.keys(filteredData[0] || {})).map((col) => (
-                          <th key={col} className="px-3 py-2 text-left font-medium">
-                            {col}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(filteredData || []).slice(0, c.limit ?? 200).map((row, i) => (
-                        <tr key={i} className="border-t">
-                          {(c.columns || Object.keys(row)).map((col) => (
-                            <td key={col} className="px-3 py-2">
-                              {row[col] != null ? String(row[col]) : '—'}
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {(!filteredData || filteredData.length === 0) && (
-                    <div className="p-4 text-center text-gray-500 text-base">No data</div>
-                  )}
-                </div>
-              )}
+              {c.type === 'table' &&
+                renderTableChart(c, filteredData || [], tableColumnKeys)}
               {c.type === 'line' && (
-                <div className="flex-1 min-h-0 min-w-0">
-                  {filteredData.length === 0 ? (
-                    <div className="h-full flex items-center justify-center text-gray-500 text-base">No data</div>
-                  ) : (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart
-                        data={lineChartData(filteredData, c.xField, c.yField, c.aggregation || 'sum')}
-                        margin={chartMarginStandard}
-                      >
-                        <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.gridStroke} />
-                        <XAxis dataKey="name" tick={{ fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }} />
-                        <YAxis
-                          width={96}
-                          tick={{ fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }}
-                          tickFormatter={(v) => formatValue(v, chartFmt(c))}
-                        />
-                        <Tooltip
-                          contentStyle={{ fontSize: 14, backgroundColor: chartTheme.tooltipBg, border: `1px solid ${chartTheme.tooltipBorder}`, color: chartTheme.tooltipText }}
-                          formatter={(val) => [formatValue(Array.isArray(val) ? val[0] : val, chartFmt(c)), c.yField || 'Value']}
-                          labelFormatter={(label) => String(label)}
-                        />
-                        {c.referenceLine?.value != null && (
-                          <ReferenceLine y={c.referenceLine.value} stroke="#ef4444" strokeDasharray="3 3" label={c.referenceLine.label || 'Target'} />
-                        )}
-                        <Line
-                          type="monotone"
-                          dataKey="value"
-                          stroke={chartColorsFor(c)[0]}
-                          strokeWidth={2}
-                          dot={{ r: 4, cursor: 'pointer' }}
-                          activeDot={{ r: 6, cursor: 'pointer' }}
-                          onClick={(point) => point?.name != null && handleChartClick(c.xField, point.name)}
-                        >
-                          {(c.showDataLabels !== false) && <LabelList position="top" formatter={(v) => formatValue(v, chartFmt(c))} style={{ fontSize: chartDataLabelFontSize, ...chartTextStyle }} />}
-                        </Line>
-                      </LineChart>
-                    </ResponsiveContainer>
-                  )}
-                </div>
+                <ChartPlotFrame plotHeight={plotPx} hasData={filteredData.length > 0}>
+                  <LineChart
+                    data={lineChartData(filteredData, c.xField, c.yField, c.aggregation || 'sum')}
+                    margin={chartMarginStandard}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.gridStroke} />
+                    <XAxis dataKey="name" tick={{ fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }} />
+                    <YAxis
+                      width={96}
+                      tick={{ fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }}
+                      tickFormatter={(v) => formatCompact(v)}
+                    />
+                    <Tooltip
+                      contentStyle={{ fontSize: 14, backgroundColor: chartTheme.tooltipBg, border: `1px solid ${chartTheme.tooltipBorder}`, color: chartTheme.tooltipText }}
+                      formatter={(val) => [formatCompact(Array.isArray(val) ? val[0] : val), c.yField || 'Value']}
+                      labelFormatter={(label) => String(label)}
+                    />
+                    {c.referenceLine?.value != null && (
+                      <ReferenceLine y={c.referenceLine.value} stroke="#ef4444" strokeDasharray="3 3" label={c.referenceLine.label || 'Target'} />
+                    )}
+                    <Line
+                      type="monotone"
+                      dataKey="value"
+                      stroke={chartColorsFor(c)[0]}
+                      strokeWidth={2}
+                      dot={{ r: 4, cursor: 'pointer' }}
+                      activeDot={{ r: 6, cursor: 'pointer' }}
+                      onClick={(point) => point?.name != null && handleChartClick(c.xField, point.name)}
+                    >
+                      {(c.showDataLabels !== false) && <LabelList position="top" formatter={(v) => formatCompact(v)} style={{ fontSize: chartDataLabelFontSize, fill: DARK_DATA_LABEL_FILL, ...chartTextStyle }} />}
+                    </Line>
+                  </LineChart>
+                </ChartPlotFrame>
               )}
               {c.type === 'area' && (
-                <div className="flex-1 min-h-0 min-w-0">
-                  {filteredData.length === 0 ? (
-                    <div className="h-full flex items-center justify-center text-gray-500 text-base">No data</div>
-                  ) : (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart
-                        data={lineChartData(filteredData, c.xField, c.yField, c.aggregation || 'sum')}
-                        margin={chartMarginStandard}
-                      >
-                        <defs>
-                          <linearGradient id={`area-fill-${c.id}`} x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor={chartColorsFor(c)[0]} stopOpacity={0.4} />
-                            <stop offset="100%" stopColor={chartColorsFor(c)[0]} stopOpacity={0.05} />
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.gridStroke} />
-                        <XAxis dataKey="name" tick={{ fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }} />
-                        <YAxis
-                          width={96}
-                          tick={{ fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }}
-                          tickFormatter={(v) => formatValue(v, chartFmt(c))}
-                        />
-                        <Tooltip
-                          contentStyle={{ fontSize: 14, backgroundColor: chartTheme.tooltipBg, border: `1px solid ${chartTheme.tooltipBorder}`, color: chartTheme.tooltipText }}
-                          formatter={(val) => [formatValue(Array.isArray(val) ? val[0] : val, chartFmt(c)), c.yField || 'Value']}
-                        />
-                        {c.referenceLine?.value != null && (
-                          <ReferenceLine y={c.referenceLine.value} stroke="#ef4444" strokeDasharray="3 3" label={c.referenceLine.label || 'Target'} />
-                        )}
-                        <Area
-                          type="monotone"
-                          dataKey="value"
-                          stroke={chartColorsFor(c)[0]}
-                          strokeWidth={2}
-                          fill={`url(#area-fill-${c.id})`}
-                          onClick={(data) => data?.name != null && handleChartClick(c.xField, data.name)}
-                        >
-                          {(c.showDataLabels !== false) && <LabelList position="top" formatter={(v) => formatValue(v, chartFmt(c))} style={{ fontSize: chartDataLabelFontSize, ...chartTextStyle }} />}
-                        </Area>
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  )}
-                </div>
+                <ChartPlotFrame plotHeight={plotPx} hasData={filteredData.length > 0}>
+                  <AreaChart
+                    data={lineChartData(filteredData, c.xField, c.yField, c.aggregation || 'sum')}
+                    margin={chartMarginStandard}
+                  >
+                    <defs>
+                      <linearGradient id={`area-fill-${c.id}`} x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor={chartColorsFor(c)[0]} stopOpacity={0.4} />
+                        <stop offset="100%" stopColor={chartColorsFor(c)[0]} stopOpacity={0.05} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.gridStroke} />
+                    <XAxis dataKey="name" tick={{ fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }} />
+                    <YAxis
+                      width={96}
+                      tick={{ fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }}
+                      tickFormatter={(v) => formatCompact(v)}
+                    />
+                    <Tooltip
+                      contentStyle={{ fontSize: 14, backgroundColor: chartTheme.tooltipBg, border: `1px solid ${chartTheme.tooltipBorder}`, color: chartTheme.tooltipText }}
+                      formatter={(val) => [formatCompact(Array.isArray(val) ? val[0] : val), c.yField || 'Value']}
+                    />
+                    {c.referenceLine?.value != null && (
+                      <ReferenceLine y={c.referenceLine.value} stroke="#ef4444" strokeDasharray="3 3" label={c.referenceLine.label || 'Target'} />
+                    )}
+                    <Area
+                      type="monotone"
+                      dataKey="value"
+                      stroke={chartColorsFor(c)[0]}
+                      strokeWidth={2}
+                      fill={`url(#area-fill-${c.id})`}
+                      onClick={(data) => data?.name != null && handleChartClick(c.xField, data.name)}
+                    >
+                      {(c.showDataLabels !== false) && <LabelList position="top" formatter={(v) => formatCompact(v)} style={{ fontSize: chartDataLabelFontSize, fill: DARK_DATA_LABEL_FILL, ...chartTextStyle }} />}
+                    </Area>
+                  </AreaChart>
+                </ChartPlotFrame>
               )}
               {c.type === 'bar' && (() => {
                 const barLimit = c.limit ?? (c.aggregation === 'count' ? 30 : 10)
@@ -1637,11 +2472,7 @@ function DashboardRenderer({
                 const barStroke = effectiveBarStyle === 'outline' ? chartColorsFor(c)[0] : undefined
                 const barStrokeWidth = effectiveBarStyle === 'outline' ? 2 : undefined
                 return (
-                  <div className="flex-1 min-h-0 min-w-0 overflow-visible">
-                    {filteredData.length === 0 ? (
-                      <div className="h-full flex items-center justify-center text-gray-500 text-base">No data</div>
-                    ) : (
-                      <ResponsiveContainer width="100%" height="100%">
+                  <ChartPlotFrame plotHeight={plotPx} hasData={filteredData.length > 0}>
                         <BarChart
                           data={barData}
                           layout={isVertical ? undefined : 'vertical'}
@@ -1657,14 +2488,14 @@ function DashboardRenderer({
                             type={isVertical ? 'category' : 'number'}
                             dataKey={isVertical ? 'name' : undefined}
                             tick={isVertical ? categoryTick('x') : { fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }}
-                            tickFormatter={isVertical ? undefined : (v) => formatValue(v, chartFmt(c))}
+                            tickFormatter={isVertical ? undefined : (v) => formatCompact(v)}
                           />
                           <YAxis
                             type={isVertical ? 'number' : 'category'}
                             dataKey={isVertical ? undefined : 'name'}
                             width={isVertical ? 0 : 120}
                             tick={!isVertical ? categoryTick('y') : { fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }}
-                            tickFormatter={isVertical ? (v) => formatValue(v, chartFmt(c)) : undefined}
+                            tickFormatter={isVertical ? (v) => formatCompact(v) : undefined}
                             label={isVertical ? { value: getMeasureLabel(c), angle: -90, position: 'insideLeft', style: { fill: chartTheme.tickFill, fontSize: chartAxisLabelFontSize, ...chartTextStyle } } : undefined}
                           />
                           <Tooltip
@@ -1674,9 +2505,9 @@ function DashboardRenderer({
                               const detailLabel = c.detailField || 'Details'
                               if (hasDetails && row?.details?.length) {
                                 const detailStr = row.details.length > 8 ? `${row.details.slice(0, 8).join(', ')}…` : row.details.join(', ')
-                                return [formatValue(Array.isArray(val) ? val[0] : val, chartFmt(c)), `${c.yField || c.metric || 'Value'} · ${detailLabel}: ${detailStr}`]
+                                return [formatCompact(Array.isArray(val) ? val[0] : val), `${c.yField || c.metric || 'Value'} · ${detailLabel}: ${detailStr}`]
                               }
-                              return [formatValue(Array.isArray(val) ? val[0] : val, chartFmt(c)), c.yField || c.metric || 'Value']
+                              return [formatCompact(Array.isArray(val) ? val[0] : val), c.yField || c.metric || 'Value']
                             }}
                             labelFormatter={(label) => String(label)}
                           />
@@ -1703,21 +2534,19 @@ function DashboardRenderer({
                             {(c.showDataLabels !== false) && (
                               <LabelList
                                 position={c.orientation === 'vertical' ? 'top' : 'right'}
-                                style={{ fontSize: chartDataLabelFontSize, ...chartTextStyle }}
+                                style={{ fontSize: chartDataLabelFontSize, fill: DARK_DATA_LABEL_FILL, ...chartTextStyle }}
                                 formatter={(v, props) => {
                                   const payload = props?.payload
                                   if (hasDetails && payload?.details?.length && payload.details.length <= 5) {
-                                    return `${formatValue(v, chartFmt(c))} (${payload.details.join(', ')})`
+                                    return `${formatCompact(v)} (${payload.details.join(', ')})`
                                   }
-                                  return formatValue(v, chartFmt(c))
+                                  return formatCompact(v)
                                 }}
                               />
                             )}
                           </Bar>
                         </BarChart>
-                      </ResponsiveContainer>
-                    )}
-                  </div>
+                  </ChartPlotFrame>
                 )
               })()}
               {c.type === 'stacked_bar' && c.stackField && (() => {
@@ -1726,11 +2555,7 @@ function DashboardRenderer({
                 const colors = chartColorsFor(c)
                 const useSheen = useBarSheenFor(c)
                 return (
-                  <div className="flex-1 min-h-0 min-w-0">
-                    {filteredData.length === 0 || stackKeys.length === 0 ? (
-                      <div className="h-full flex items-center justify-center text-gray-500 text-base">No data</div>
-                    ) : (
-                      <ResponsiveContainer width="100%" height="100%">
+                  <ChartPlotFrame plotHeight={plotPx} hasData={filteredData.length > 0 && stackKeys.length > 0}>
                         <BarChart data={stackedData} margin={{ ...chartMarginTight, right: 90, bottom: 60 }}>
                           <defs>
                             {useSheen && stackKeys.map((key, i) => (
@@ -1743,9 +2568,9 @@ function DashboardRenderer({
                           <YAxis
                             width={96}
                             tick={{ fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }}
-                            tickFormatter={(v) => formatValue(v, chartFmt(c))}
+                            tickFormatter={(v) => formatCompact(v)}
                           />
-                          <Tooltip contentStyle={{ fontSize: 14, backgroundColor: chartTheme.tooltipBg, border: `1px solid ${chartTheme.tooltipBorder}`, color: chartTheme.tooltipText }} formatter={(val) => formatValue(val, chartFmt(c))} />
+                          <Tooltip contentStyle={{ fontSize: 14, backgroundColor: chartTheme.tooltipBg, border: `1px solid ${chartTheme.tooltipBorder}`, color: chartTheme.tooltipText }} formatter={(val) => formatCompact(val)} />
                           <Legend />
                           {stackKeys.map((key, i) => (
                             <Bar
@@ -1757,13 +2582,11 @@ function DashboardRenderer({
                               radius={[0, 0, 0, 0]}
                               shape={useSheen ? (p) => <SheenBarShape {...p} baseColor={colors[i % colors.length]} /> : undefined}
                             >
-                              {(c.showDataLabels !== false) && <LabelList position="center" formatter={(v) => formatValue(v, chartFmt(c))} style={{ fontSize: chartDataLabelFontSize, ...chartTextStyle }} />}
+                              {(c.showDataLabels !== false) && <LabelList position="center" formatter={(v) => formatCompact(v)} style={{ fontSize: chartDataLabelFontSize, fill: DARK_DATA_LABEL_FILL, ...chartTextStyle }} />}
                             </Bar>
                           ))}
                         </BarChart>
-                      </ResponsiveContainer>
-                    )}
-                  </div>
+                  </ChartPlotFrame>
                 )
               })()}
               {c.type === 'grouped_bar' && c.stackField && (() => {
@@ -1772,11 +2595,7 @@ function DashboardRenderer({
                 const colors = chartColorsFor(c)
                 const useSheen = useBarSheenFor(c)
                 return (
-                  <div className="flex-1 min-h-0 min-w-0 overflow-visible">
-                    {filteredData.length === 0 || groupKeys.length === 0 ? (
-                      <div className="h-full flex items-center justify-center text-gray-500 text-base">No data</div>
-                    ) : (
-                      <ResponsiveContainer width="100%" height="100%">
+                  <ChartPlotFrame plotHeight={plotPx} hasData={filteredData.length > 0 && groupKeys.length > 0}>
                         <BarChart data={groupedData} margin={{ ...chartMarginTight, right: 90, bottom: 60 }}>
                           <defs>
                             {useSheen && groupKeys.map((key, i) => (
@@ -1789,9 +2608,9 @@ function DashboardRenderer({
                           <YAxis
                             width={96}
                             tick={{ fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }}
-                            tickFormatter={(v) => formatValue(v, chartFmt(c))}
+                            tickFormatter={(v) => formatCompact(v)}
                           />
-                          <Tooltip contentStyle={{ fontSize: 14, backgroundColor: chartTheme.tooltipBg, border: `1px solid ${chartTheme.tooltipBorder}`, color: chartTheme.tooltipText }} formatter={(val) => formatValue(val, chartFmt(c))} />
+                          <Tooltip contentStyle={{ fontSize: 14, backgroundColor: chartTheme.tooltipBg, border: `1px solid ${chartTheme.tooltipBorder}`, color: chartTheme.tooltipText }} formatter={(val) => formatCompact(val)} />
                           <Legend />
                           {groupKeys.map((key, i) => (
                             <Bar
@@ -1803,13 +2622,11 @@ function DashboardRenderer({
                               isAnimationActive
                               shape={useSheen ? (p) => <SheenBarShape {...p} baseColor={colors[i % colors.length]} /> : undefined}
                             >
-                              {(c.showDataLabels !== false) && <LabelList position="top" formatter={(v) => formatValue(v, chartFmt(c))} style={{ fontSize: chartDataLabelFontSize, ...chartTextStyle }} />}
+                              {(c.showDataLabels !== false) && <LabelList position="top" formatter={(v) => formatCompact(v)} style={{ fontSize: chartDataLabelFontSize, fill: DARK_DATA_LABEL_FILL, ...chartTextStyle }} />}
                             </Bar>
                           ))}
                         </BarChart>
-                      </ResponsiveContainer>
-                    )}
-                  </div>
+                  </ChartPlotFrame>
                 )
               })()}
               {c.type === 'radial_bar' && (() => {
@@ -1823,11 +2640,7 @@ function DashboardRenderer({
                   color: chartColorsFor(c)[i % chartColorsFor(c).length]
                 }))
                 return (
-                  <div className="flex-1 min-h-0 min-w-0">
-                    {filteredData.length === 0 || radialData.length === 0 ? (
-                      <div className="h-full flex items-center justify-center text-gray-500 text-base">No data</div>
-                    ) : (
-                      <ResponsiveContainer width="100%" height="100%">
+                  <ChartPlotFrame plotHeight={plotPx} hasData={filteredData.length > 0 && radialData.length > 0}>
                         <RadialBarChart cx="50%" cy="50%" innerRadius="20%" outerRadius="90%" data={radialData} startAngle={180} endAngle={0}>
                           <RadialBar
                             background
@@ -1840,70 +2653,56 @@ function DashboardRenderer({
                             {radialData.map((entry, i) => (
                               <Cell key={i} fill={entry.color} fillOpacity={0.85} />
                             ))}
-                            <LabelList position="center" formatter={(v, props) => formatValue((props.payload?.value) ?? v, chartFmt(c))} style={{ fontSize: chartDataLabelFontSize, ...chartTextStyle }} />
+                            <LabelList position="center" formatter={(v, props) => formatCompact((props.payload?.value) ?? v)} style={{ fontSize: chartDataLabelFontSize, fill: DARK_DATA_LABEL_FILL, ...chartTextStyle }} />
                           </RadialBar>
                           <Tooltip
                             contentStyle={{ fontSize: 14, backgroundColor: chartTheme.tooltipBg, border: `1px solid ${chartTheme.tooltipBorder}`, color: chartTheme.tooltipText }}
-                            formatter={(val, name, props) => [formatValue((props.payload?.value) ?? val, chartFmt(c)), (props.payload?.name) ?? (c.xField || c.dimension || 'Category')]}
+                            formatter={(val, name, props) => [formatCompact((props.payload?.value) ?? val), (props.payload?.name) ?? (c.xField || c.dimension || 'Category')]}
                           />
                           <Legend />
                         </RadialBarChart>
-                      </ResponsiveContainer>
-                    )}
-                  </div>
+                  </ChartPlotFrame>
                 )
               })()}
               {c.type === 'stacked_area' && c.stackField && (() => {
                 const stackedData = groupByStacked(filteredData, c.xField, c.stackField, c.yField || c.metric, c.limit ?? 15)
                 const stackKeys = stackedData.length ? Object.keys(stackedData[0]).filter((k) => k !== 'name') : []
                 return (
-                  <div className="flex-1 min-h-0 min-w-0">
-                    {filteredData.length === 0 || stackKeys.length === 0 ? (
-                      <div className="h-full flex items-center justify-center text-gray-500 text-base">No data</div>
-                    ) : (
-                      <ResponsiveContainer width="100%" height="100%">
+                  <ChartPlotFrame plotHeight={plotPx} hasData={filteredData.length > 0 && stackKeys.length > 0}>
                         <AreaChart data={stackedData} margin={{ ...chartMarginTight, right: 20, bottom: 60 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.gridStroke} />
                           <XAxis dataKey="name" tick={{ fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }} />
                           <YAxis
                             width={96}
                             tick={{ fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }}
-                            tickFormatter={(v) => formatValue(v, chartFmt(c))}
+                            tickFormatter={(v) => formatCompact(v)}
                           />
-                          <Tooltip contentStyle={{ fontSize: 14, backgroundColor: chartTheme.tooltipBg, border: `1px solid ${chartTheme.tooltipBorder}`, color: chartTheme.tooltipText }} formatter={(val) => formatValue(val, chartFmt(c))} />
+                          <Tooltip contentStyle={{ fontSize: 14, backgroundColor: chartTheme.tooltipBg, border: `1px solid ${chartTheme.tooltipBorder}`, color: chartTheme.tooltipText }} formatter={(val) => formatCompact(val)} />
                           <Legend />
                           {stackKeys.map((key, i) => (
                             <Area key={key} type="monotone" dataKey={key} stackId="stack" stroke={chartColorsFor(c)[i % chartColorsFor(c).length]} fill={chartColorsFor(c)[i % chartColorsFor(c).length]} fillOpacity={0.6} name={key} />
                           ))}
                         </AreaChart>
-                      </ResponsiveContainer>
-                    )}
-                  </div>
+                  </ChartPlotFrame>
                 )
               })()}
               {c.type === 'scatter' && (
-                <div className="flex-1 min-h-0 min-w-0">
-                  {filteredData.length === 0 ? (
-                    <div className="h-full flex items-center justify-center text-gray-500 text-base">No data</div>
-                  ) : (
-                    <ResponsiveContainer width="100%" height="100%">
+                <ChartPlotFrame plotHeight={plotPx} hasData={filteredData.length > 0}>
                       <ScatterChart margin={{ left: 20, right: 20, bottom: 60 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.gridStroke} />
-                        <XAxis type="number" dataKey="x" name={c.xField} tick={{ fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }} tickFormatter={(v) => formatValue(v, chartFmt(c))} />
-                        <YAxis type="number" dataKey="y" name={c.yField} tick={{ fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }} tickFormatter={(v) => formatValue(v, chartFmt(c))} label={{ value: c.yField || 'Y', angle: -90, position: 'insideLeft', style: { fill: chartTheme.tickFill, fontSize: chartAxisLabelFontSize, ...chartTextStyle } }} />
+                        <XAxis type="number" dataKey="x" name={c.xField} tick={{ fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }} tickFormatter={(v) => formatCompact(v)} />
+                        <YAxis type="number" dataKey="y" name={c.yField} tick={{ fontSize: chartTickFontSize, fill: chartTheme.tickFill, ...chartTextStyle }} tickFormatter={(v) => formatCompact(v)} label={{ value: c.yField || 'Y', angle: -90, position: 'insideLeft', style: { fill: chartTheme.tickFill, fontSize: chartAxisLabelFontSize, ...chartTextStyle } }} />
                         <Tooltip
                           contentStyle={{ fontSize: 14, backgroundColor: chartTheme.tooltipBg, border: `1px solid ${chartTheme.tooltipBorder}`, color: chartTheme.tooltipText }}
                           formatter={(val, name, props) => {
                             const p = props?.payload
                             if (!p) return [val, name]
-                            return [`${c.xField || 'X'}: ${formatValue(p.x, chartFmt(c))} · ${c.yField || 'Y'}: ${formatValue(p.y, chartFmt(c))}`, '']
+                            return [`${c.xField || 'X'}: ${formatCompact(p.x)} · ${c.yField || 'Y'}: ${formatCompact(p.y)}`, '']
                           }}
                         />
                         <Scatter data={scatterData(filteredData, c.xField, c.yField)} fill={chartColorsFor(c)[0]} fillOpacity={0.7} />
                       </ScatterChart>
-                    </ResponsiveContainer>
-                  )}
-                </div>
+                </ChartPlotFrame>
               )}
               {c.type === 'pie' && (() => {
                 const fullPieData = groupBy(filteredData, c.dimension || c.xField, c.metric || c.yField, BAR_LIMIT_ALL, c.aggregation)
@@ -1912,11 +2711,7 @@ function DashboardRenderer({
                   : fullPieData.slice(0, c.limit ?? 8)
                 const isDonut = c.pieStyle === 'donut'
                 return (
-                  <div className="flex-1 min-h-0 min-w-0">
-                    {filteredData.length === 0 ? (
-                      <div className="h-full flex items-center justify-center text-gray-500 text-base">No data</div>
-                    ) : (
-                      <ResponsiveContainer width="100%" height="100%" minHeight={260}>
+                  <ChartPlotFrame plotHeight={plotPx} hasData={filteredData.length > 0}>
                         <PieChart>
                           <Pie
                             data={pieData}
@@ -1936,18 +2731,20 @@ function DashboardRenderer({
                           </Pie>
                           <Tooltip
                             contentStyle={{ fontSize: 14, backgroundColor: chartTheme.tooltipBg, border: `1px solid ${chartTheme.tooltipBorder}`, color: chartTheme.tooltipText }}
-                            formatter={(val) => [formatValue(Array.isArray(val) ? val[0] : val, chartFmt(c)), c.metric || c.yField || 'Value']}
+                            formatter={(val) => [formatCompact(Array.isArray(val) ? val[0] : val), c.metric || c.yField || 'Value']}
                           />
                           {c.showLegend !== false && <Legend />}
                         </PieChart>
-                      </ResponsiveContainer>
-                    )}
-                  </div>
+                  </ChartPlotFrame>
                 )
               })()}
             </div>
-          ))}
-        </ResponsiveGridLayout>
+            )
+          })}
+              </GridLayout>
+              )}
+            </div>
+          )}
         </div>
       )}
 

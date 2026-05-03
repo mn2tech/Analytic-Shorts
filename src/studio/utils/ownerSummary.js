@@ -1,9 +1,8 @@
 import apiClient from '../../config/api'
 
-const STORAGE_PREFIX = 'ownerSummary:'
+const STORAGE_PREFIX = 'ownerSummaryBiz:'
 
 function stableHash(str) {
-  // Simple non-crypto hash for cache keys.
   let h = 2166136261
   for (let i = 0; i < str.length; i++) {
     h ^= str.charCodeAt(i)
@@ -12,22 +11,24 @@ function stableHash(str) {
   return (h >>> 0).toString(16)
 }
 
-function buildCacheKey(kpis, meta = {}) {
-  const date = meta.date || kpis?.date || ''
+function buildCacheKey(businessMetrics, meta = {}) {
   const dataset = meta.datasetId || ''
-  const signature = stableHash(JSON.stringify(kpis || {}))
-  return `${date || 'no-date'}|${dataset || 'no-ds'}|${signature}`
+  const signature = stableHash(JSON.stringify(businessMetrics || []))
+  return `${dataset || 'no-ds'}|${signature}`
 }
 
 /**
- * Generate (or fetch cached) Owner Summary.
+ * Generate (or fetch cached) business owner summary from metric rows.
  *
- * @param {object} kpis - { occupancy_rate, revenue_today, arrivals_today, adr, revpar }
- * @param {object} [meta] - { date?: string, datasetId?: string }
- * @returns {Promise<string>} summary text body
+ * @param {Array<{ label: string, value: number|string }>} businessMetrics
+ * @param {object} [meta] - { datasetId?: string }
+ * @returns {Promise<string>}
  */
-export async function generateOwnerSummary(kpis, meta = {}) {
-  const cacheKey = buildCacheKey(kpis, meta)
+export async function generateOwnerSummary(businessMetrics, meta = {}) {
+  const metrics = Array.isArray(businessMetrics) ? businessMetrics.filter((m) => m && String(m.label || '').trim()) : []
+  if (metrics.length === 0) return ''
+
+  const cacheKey = buildCacheKey(metrics, meta)
   const storageKey = STORAGE_PREFIX + cacheKey
 
   try {
@@ -35,7 +36,7 @@ export async function generateOwnerSummary(kpis, meta = {}) {
     if (cached && cached.trim()) return cached.trim()
   } catch (_) {}
 
-  const res = await apiClient.post('/api/owner-summary', { kpis, cacheKey })
+  const res = await apiClient.post('/api/owner-summary', { businessMetrics: metrics, cacheKey })
   const summary = (res.data?.summary || '').toString().trim()
 
   if (summary) {
@@ -45,4 +46,3 @@ export async function generateOwnerSummary(kpis, meta = {}) {
   }
   return summary
 }
-

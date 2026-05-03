@@ -1,12 +1,22 @@
-import { useEffect, useMemo, useRef, useState, memo } from 'react'
+import { useEffect, useMemo, useState, memo } from 'react'
 import { LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts'
 import ChartInsights from './ChartInsights'
 import DateRangeSlider from './DateRangeSlider'
 import { parseNumericValue } from '../utils/numberUtils'
+import { formatCompact } from '../utils/formatNumber'
 import VesselMapWidget from './widgets/VesselMapWidget'
 import ContractMapWidget from './widgets/ContractMapWidget'
+import GridDashboard from './GridDashboard'
 
 const COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444', '#6366f1', '#14b8a6']
+
+const DEFAULT_GRID_LAYOUT = [
+  { i: 'map', x: 0, y: 0, w: 12, h: 10, minW: 4, minH: 7 },
+  { i: 'line', x: 0, y: 10, w: 6, h: 9, minW: 3, minH: 5 },
+  { i: 'bar', x: 6, y: 10, w: 6, h: 9, minW: 3, minH: 5 },
+  { i: 'pie', x: 0, y: 19, w: 6, h: 10, minW: 3, minH: 6 },
+  { i: 'table', x: 0, y: 29, w: 12, h: 8, minW: 4, minH: 4 },
+]
 
 // Sample data efficiently for charts (max 5000 rows to prevent performance issues)
 const sampleDataForCharts = (data, maxRows = 5000) => {
@@ -24,18 +34,7 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
   const [hoveredSegment, setHoveredSegment] = useState(null)
   const [chartInsights, setChartInsights] = useState(null)
   const [maximized, setMaximized] = useState(null) // { type: 'line' | 'pie', title: string } | null
-  const [draggedChartId, setDraggedChartId] = useState(null)
   const [selectedTableRowIndex, setSelectedTableRowIndex] = useState(null)
-  const [cardHeights, setCardHeights] = useState(chartLayout?.cardHeights || {})
-  const [resizingCardId, setResizingCardId] = useState(null)
-  const resizeStartRef = useRef({ id: null, startY: 0, startHeight: 0 })
-  const cardHeightsRef = useRef(cardHeights)
-  useEffect(() => {
-    cardHeightsRef.current = cardHeights
-  }, [cardHeights])
-  useEffect(() => {
-    setCardHeights(chartLayout?.cardHeights || {})
-  }, [chartLayout?.cardHeights])
   // Heuristic: pick "avg-like" vs "sum-like" aggregation for a metric when grouping.
   // This avoids misleading totals like summing snapshot/rate metrics (e.g. ADR, occupancy_rate, rooms_available).
   const preferredAggregationForMetric = (field) => {
@@ -282,53 +281,33 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
     ((showBarChart && chartFlags.showBarChart) ? 1 : 0) +
     ((showPieChart && chartFlags.showPieChart) ? 1 : 0) +
     (chartFlags.showTable ? 1 : 0)
-  const defaultOrder = ['map', 'line', 'bar', 'pie', 'table']
-  const chartOrderFromProps = Array.isArray(chartLayout?.chartOrder) && chartLayout.chartOrder.length > 0
-    ? chartLayout.chartOrder
-    : defaultOrder
-  const [localChartOrder, setLocalChartOrder] = useState(chartOrderFromProps)
-  useEffect(() => {
-    setLocalChartOrder(chartOrderFromProps)
-  }, [chartOrderFromProps])
-  const getOrder = (id) => {
-    const idx = localChartOrder.indexOf(id)
-    return idx === -1 ? 999 : idx
-  }
-  const onCardDragStart = (id, e) => {
-    setDraggedChartId(id)
-    e.dataTransfer.effectAllowed = 'move'
-    e.dataTransfer.setData('text/plain', id)
-  }
-  const onCardDrop = (targetId, e) => {
-    const sourceId = e.dataTransfer.getData('text/plain') || draggedChartId
-    if (!sourceId || !targetId || sourceId === targetId) return
-    const next = [...localChartOrder]
-    const from = next.indexOf(sourceId)
-    const to = next.indexOf(targetId)
-    if (from === -1 || to === -1) return
-    next.splice(from, 1)
-    next.splice(to, 0, sourceId)
-    setLocalChartOrder(next)
-    onChartLayoutUpdate?.({ chartOrder: next })
-    setDraggedChartId(null)
-  }
-  const defaultCardHeight = (id) => {
-    if (id === 'table') return 360
-    if (id === 'map') return 440
-    return 420
-  }
-  const getCardHeight = (id) => Math.max(280, Number(cardHeights?.[id] || defaultCardHeight(id)))
-  const getChartHeight = (id) => Math.max(220, getCardHeight(id) - 120)
-  const startResizeCard = (id, e) => {
-    e.preventDefault()
-    e.stopPropagation()
-    resizeStartRef.current = {
-      id,
-      startY: e.clientY,
-      startHeight: getCardHeight(id),
-    }
-    setResizingCardId(id)
-  }
+
+  const lineTotal = useMemo(
+    () => lineData.reduce((sum, item) => sum + (item.value || 0), 0),
+    [lineData]
+  )
+
+  const visibleItemIds = useMemo(() => {
+    const ids = []
+    if ((showGeoMap || showVesselMap) && chartFlags.showMap) ids.push('map')
+    if (showLineChart && chartFlags.showLineChart) ids.push('line')
+    if (showBarChart && chartFlags.showBarChart) ids.push('bar')
+    if (showPieChart && chartFlags.showPieChart) ids.push('pie')
+    if (chartFlags.showTable) ids.push('table')
+    return ids
+  }, [
+    showGeoMap,
+    showVesselMap,
+    showLineChart,
+    showBarChart,
+    showPieChart,
+    chartFlags.showMap,
+    chartFlags.showLineChart,
+    chartFlags.showBarChart,
+    chartFlags.showPieChart,
+    chartFlags.showTable,
+  ])
+
   const hideChartById = (id) => {
     const patch = {}
     if (id === 'map') patch.showMap = false
@@ -390,31 +369,6 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
       </svg>
     )
   }
-
-  useEffect(() => {
-    if (!resizingCardId) return undefined
-    const onMove = (e) => {
-      const { id, startY, startHeight } = resizeStartRef.current
-      if (!id) return
-      const delta = e.clientY - startY
-      const nextHeight = Math.max(280, startHeight + delta)
-      setCardHeights((prev) => ({ ...prev, [id]: nextHeight }))
-    }
-    const onUp = () => {
-      const id = resizeStartRef.current.id
-      if (id) {
-        onChartLayoutUpdate?.({ cardHeights: { [id]: cardHeightsRef.current?.[id] || getCardHeight(id) } })
-      }
-      resizeStartRef.current = { id: null, startY: 0, startHeight: 0 }
-      setResizingCardId(null)
-    }
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-    return () => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-    }
-  }, [resizingCardId, onChartLayoutUpdate])
 
   const handleChartClick = (chartType, chartData, chartTitle) => {
     // Convert chart data back to original row format for insights
@@ -488,7 +442,6 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
   }, [maximized])
 
   const baseChartHeight = 300
-  const chartCardPadding = 'p-6'
   const chartTitleClass = 'text-lg'
   const axisFontSize = '12px'
   const pieInnerRadius = 60
@@ -526,260 +479,309 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
         </div>
       )
     })()}
-    <div
-      className={`grid gap-6 mb-6 ${
-        chartCount <= 1 ? 'grid-cols-1 max-w-4xl mx-auto' : 'grid-cols-1 lg:grid-cols-2'
-      }`}
-    >
+    {visibleItemIds.length > 0 ? (
+    <div className="mb-6">
+      <GridDashboard
+        dashboardId="main-charts"
+        defaultLayout={DEFAULT_GRID_LAYOUT}
+        visibleItemIds={visibleItemIds}
+        onLayoutChange={() => console.log('layout changed')}
+      >
       {/* Geo map card (state-based contract map) */}
       {showGeoMap && chartFlags.showMap && (
-      <div
-        className={`bg-white rounded-lg shadow-sm ${chartCardPadding} border border-gray-200 hover:shadow-md transition-shadow relative group cursor-move`}
-        style={{ order: getOrder('map'), minHeight: getCardHeight('map') }}
-        draggable
-        onDragStart={(e) => onCardDragStart('map', e)}
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={(e) => onCardDrop('map', e)}
-        onDragEnd={() => setDraggedChartId(null)}
-      >
-        <div className="flex justify-between items-center mb-4">
-          <h3 className={`${chartTitleClass} font-semibold text-gray-900 pr-2 break-words`}>
-            Opportunity count by state
-          </h3>
-          <button type="button" onClick={() => hideChartById('map')} className="text-gray-400 hover:text-red-600">×</button>
+      <div key="map" style={{ height: '100%' }}>
+        <div style={{
+          background: '#1e293b',
+          border: '0.5px solid #334155',
+          borderRadius: '12px',
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+          height: '100%',
+          color: '#f8fafc',
+        }}>
+          <div className="chart-drag-handle" style={{
+            padding: '10px 14px',
+            borderBottom: '0.5px solid #334155',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: '#162032',
+            flexShrink: 0,
+            userSelect: 'none',
+          }}>
+            <span style={{ fontSize: '12px', fontWeight: 500, color: '#e2e8f0' }}>
+              Opportunity count by state
+            </span>
+            <button type="button" onClick={() => hideChartById('map')} style={{ background: 'none', border: 'none', color: '#475569', cursor: 'pointer', fontSize: '18px', lineHeight: 1 }} onMouseEnter={(e) => { e.target.style.color = '#ef4444' }} onMouseLeave={(e) => { e.target.style.color = '#475569' }}>×</button>
+          </div>
+          <div style={{ flex: 1, padding: '12px', minHeight: 0, overflow: 'hidden' }}>
+            <ContractMapWidget
+              data={geoMapData || filteredData || data}
+              selectedCategorical={geoSelectedCategorical || 'state'}
+              selectedNumeric={geoSelectedNumeric || selectedNumeric}
+              chartFilter={chartFilter}
+              onChartFilter={onChartFilter}
+            />
+          </div>
         </div>
-        <ContractMapWidget
-          data={geoMapData || filteredData || data}
-          selectedCategorical={geoSelectedCategorical || 'state'}
-          selectedNumeric={geoSelectedNumeric || selectedNumeric}
-          chartFilter={chartFilter}
-          onChartFilter={onChartFilter}
-        />
-        <div
-          className="absolute right-2 bottom-2 h-4 w-4 cursor-nwse-resize rounded-sm border border-gray-300 bg-white/90"
-          onMouseDown={(e) => startResizeCard('map', e)}
-          title="Resize chart"
-        />
       </div>
       )}
 
       {/* Vessel Map (Maritime lat/lon) - replaces line chart when data has vessel positions */}
       {!showGeoMap && showVesselMap && chartFlags.showMap && (
-      <div
-        className={`bg-white rounded-lg shadow-sm ${chartCardPadding} border border-gray-200 hover:shadow-md transition-shadow relative group cursor-move`}
-        style={{ order: getOrder('map'), minHeight: getCardHeight('map') }}
-        draggable
-        onDragStart={(e) => onCardDragStart('map', e)}
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={(e) => onCardDrop('map', e)}
-        onDragEnd={() => setDraggedChartId(null)}
-      >
-        <div className="flex justify-between items-center mb-4">
-          <h3 className={`${chartTitleClass} font-semibold text-gray-900 pr-2 break-words`}>
-            Vessel positions
-          </h3>
-          <button type="button" onClick={() => hideChartById('map')} className="text-gray-400 hover:text-red-600">×</button>
+      <div key="map" style={{ height: '100%' }}>
+        <div style={{
+          background: '#1e293b',
+          border: '0.5px solid #334155',
+          borderRadius: '12px',
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+          height: '100%',
+          color: '#f8fafc',
+        }}>
+          <div className="chart-drag-handle" style={{
+            padding: '10px 14px',
+            borderBottom: '0.5px solid #334155',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: '#162032',
+            flexShrink: 0,
+            userSelect: 'none',
+          }}>
+            <span style={{ fontSize: '12px', fontWeight: 500, color: '#e2e8f0' }}>
+              Vessel positions
+            </span>
+            <button type="button" onClick={() => hideChartById('map')} style={{ background: 'none', border: 'none', color: '#475569', cursor: 'pointer', fontSize: '18px', lineHeight: 1 }} onMouseEnter={(e) => { e.target.style.color = '#ef4444' }} onMouseLeave={(e) => { e.target.style.color = '#475569' }}>×</button>
+          </div>
+          <div style={{ flex: 1, padding: '12px', minHeight: 0, overflow: 'hidden' }}>
+            <VesselMapWidget
+              data={vesselMapData || filteredData || data}
+              latCol={vesselLatCol || 'lat'}
+              lonCol={vesselLonCol || 'lon'}
+              tooltipFields={['mmsi', 'vessel_type', 'sog', 'cog']}
+            />
+          </div>
         </div>
-        <VesselMapWidget
-          data={vesselMapData || filteredData || data}
-          latCol={vesselLatCol || 'lat'}
-          lonCol={vesselLonCol || 'lon'}
-          tooltipFields={['mmsi', 'vessel_type', 'sog', 'cog']}
-        />
-        <div
-          className="absolute right-2 bottom-2 h-4 w-4 cursor-nwse-resize rounded-sm border border-gray-300 bg-white/90"
-          onMouseDown={(e) => startResizeCard('map', e)}
-          title="Resize chart"
-        />
       </div>
       )}
 
       {/* Line Chart */}
       {showLineChart && chartFlags.showLineChart && (
-      <div
-        className={`bg-white rounded-lg shadow-sm ${chartCardPadding} border border-gray-200 hover:shadow-md transition-shadow relative group cursor-move`}
-        style={{ order: getOrder('line'), minHeight: getCardHeight('line') }}
-        draggable
-        onDragStart={(e) => onCardDragStart('line', e)}
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={(e) => onCardDrop('line', e)}
-        onDragEnd={() => setDraggedChartId(null)}
-      >
-        <div className="flex justify-between items-center mb-4">
-          <h3 className={`${chartTitleClass} font-semibold text-gray-900 pr-2 break-words`}>
-            {selectedNumeric || 'Value'} {selectedDate ? 'Over Time' : ''}
-          </h3>
-          <div className="flex items-center gap-2">
-            {lineData.length > 0 && (
-              <div className="text-right">
-                <p className="text-2xl font-bold text-gray-900">
-                  {lineData.reduce((sum, item) => sum + (item.value || 0), 0).toLocaleString()}
-                </p>
+      <div key="line" style={{ height: '100%' }}>
+        <div className="group" style={{
+          background: '#1e293b',
+          border: '0.5px solid #334155',
+          borderRadius: '12px',
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+          height: '100%',
+          color: '#f8fafc',
+        }}>
+          <div className="chart-drag-handle" style={{
+            padding: '10px 14px',
+            borderBottom: '0.5px solid #334155',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: '#162032',
+            flexShrink: 0,
+            userSelect: 'none',
+          }}>
+            <span style={{ fontSize: '12px', fontWeight: 500, color: '#e2e8f0' }}>
+              {(selectedNumeric || 'Value')}{selectedDate ? ' Over Time' : ''}
+            </span>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              {lineData.length > 0 && (
+                <span style={{ fontSize: '13px', fontWeight: 500, color: '#f8fafc' }}>
+                  {formatCompact(lineTotal)}
+                </span>
+              )}
+              {lineData.length > 0 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setMaximized({
+                        type: 'line',
+                        title: `${selectedNumeric || 'Value'} ${selectedDate ? 'Over Time' : ''}`,
+                      })
+                    }
+                    className="opacity-0 group-hover:opacity-100 transition-opacity p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-50 rounded-lg"
+                    title="Maximize chart"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleChartClick('line', lineData, `${selectedNumeric || 'Value'} ${selectedDate ? 'Over Time' : ''}`)}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg"
+                    title="Get AI insights for this chart"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                    </svg>
+                  </button>
+                </>
+              )}
+              <button type="button" onClick={() => hideChartById('line')} style={{ background: 'none', border: 'none', color: '#475569', cursor: 'pointer', fontSize: '18px', lineHeight: 1 }} onMouseEnter={(e) => { e.target.style.color = '#ef4444' }} onMouseLeave={(e) => { e.target.style.color = '#475569' }}>×</button>
+            </div>
+          </div>
+          <div style={{ flex: 1, padding: '12px', minHeight: 0, overflow: 'hidden' }}>
+            {hasValidLineData ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={lineData} key={`line-${lineData.length}-${selectedNumeric}`}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis 
+                    dataKey={selectedDate ? "date" : "name"}
+                    tickFormatter={selectedDate ? formatDate : undefined}
+                    stroke="#6b7280"
+                    style={{ fontSize: axisFontSize }}
+                  />
+                  <YAxis stroke="#6b7280" style={{ fontSize: axisFontSize }} tickFormatter={(v) => formatCompact(v)} />
+                  <Tooltip 
+                    contentStyle={{ 
+                      backgroundColor: '#fff', 
+                      border: '1px solid #e5e7eb', 
+                      borderRadius: '6px',
+                      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                    }}
+                    labelFormatter={selectedDate ? formatDate : undefined}
+                    animationDuration={200}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="value" 
+                    stroke="#3b82f6" 
+                    strokeWidth={2}
+                    dot={(props) => {
+                      const { dataKey, payload, value, ...svgProps } = props || {}
+                      const isSelected = chartFilter?.type === 'date' && 
+                        props.payload?.date === chartFilter?.value
+                      return (
+                        <circle
+                          {...svgProps}
+                          fill={isSelected ? '#ef4444' : '#3b82f6'}
+                          r={isSelected ? 5 : 3}
+                          cursor="pointer"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleLineClick(props.payload, props.index)
+                          }}
+                        />
+                      )
+                    }}
+                    activeDot={(props) => {
+                      const { dataKey, payload, value, ...svgProps } = props || {}
+                      const isSelected = chartFilter?.type === 'date' && 
+                        props.payload?.date === chartFilter?.value
+                      return (
+                        <circle
+                          {...svgProps}
+                          r={isSelected ? 7 : 6}
+                          fill={isSelected ? '#ef4444' : '#2563eb'}
+                          stroke="#fff"
+                          strokeWidth={2}
+                          cursor="pointer"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleLineClick(props.payload, props.index)
+                          }}
+                        />
+                      )
+                    }}
+                    animationDuration={800}
+                    animationBegin={0}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-[220px] flex items-center justify-center text-gray-400">
+                Select columns to view chart
               </div>
             )}
-            {lineData.length > 0 && (
-              <>
-                <button
-                  onClick={() =>
-                    setMaximized({
-                      type: 'line',
-                      title: `${selectedNumeric || 'Value'} ${selectedDate ? 'Over Time' : ''}`,
-                    })
-                  }
-                  className="opacity-0 group-hover:opacity-100 transition-opacity p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-50 rounded-lg"
-                  title="Maximize chart"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3" />
-                  </svg>
-                </button>
-                <button
-                  onClick={() => handleChartClick('line', lineData, `${selectedNumeric || 'Value'} ${selectedDate ? 'Over Time' : ''}`)}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg"
-                  title="Get AI insights for this chart"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                  </svg>
-                </button>
-              </>
-            )}
-            <button type="button" onClick={() => hideChartById('line')} className="text-gray-400 hover:text-red-600">×</button>
           </div>
         </div>
-        {hasValidLineData ? (
-          <ResponsiveContainer width="100%" height={getChartHeight('line')}>
-            <LineChart data={lineData} key={`line-${lineData.length}-${selectedNumeric}`}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis 
-                dataKey={selectedDate ? "date" : "name"}
-                tickFormatter={selectedDate ? formatDate : undefined}
-                stroke="#6b7280"
-                style={{ fontSize: axisFontSize }}
-              />
-              <YAxis stroke="#6b7280" style={{ fontSize: axisFontSize }} />
-              <Tooltip 
-                contentStyle={{ 
-                  backgroundColor: '#fff', 
-                  border: '1px solid #e5e7eb', 
-                  borderRadius: '6px',
-                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
-                }}
-                labelFormatter={selectedDate ? formatDate : undefined}
-                animationDuration={200}
-              />
-              <Line 
-                type="monotone" 
-                dataKey="value" 
-                stroke="#3b82f6" 
-                strokeWidth={2}
-                dot={(props) => {
-                  const { dataKey, payload, value, ...svgProps } = props || {}
-                  const isSelected = chartFilter?.type === 'date' && 
-                    props.payload?.date === chartFilter?.value
-                  return (
-                    <circle
-                      {...svgProps}
-                      fill={isSelected ? '#ef4444' : '#3b82f6'}
-                      r={isSelected ? 5 : 3}
-                      cursor="pointer"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleLineClick(props.payload, props.index)
-                      }}
-                    />
-                  )
-                }}
-                activeDot={(props) => {
-                  const { dataKey, payload, value, ...svgProps } = props || {}
-                  const isSelected = chartFilter?.type === 'date' && 
-                    props.payload?.date === chartFilter?.value
-                  return (
-                    <circle
-                      {...svgProps}
-                      r={isSelected ? 7 : 6}
-                      fill={isSelected ? '#ef4444' : '#2563eb'}
-                      stroke="#fff"
-                      strokeWidth={2}
-                      cursor="pointer"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleLineClick(props.payload, props.index)
-                      }}
-                    />
-                  )
-                }}
-                animationDuration={800}
-                animationBegin={0}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        ) : (
-          <div className="h-[220px] flex items-center justify-center text-gray-400">
-            Select columns to view chart
-          </div>
-        )}
-        <div
-          className="absolute right-2 bottom-2 h-4 w-4 cursor-nwse-resize rounded-sm border border-gray-300 bg-white/90"
-          onMouseDown={(e) => startResizeCard('line', e)}
-          title="Resize chart"
-        />
       </div>
       )}
 
       {showBarChart && chartFlags.showBarChart && (
-      <div
-        className={`bg-white rounded-lg shadow-sm ${chartCardPadding} border border-gray-200 hover:shadow-md transition-shadow relative group cursor-move`}
-        style={{ order: getOrder('bar'), minHeight: getCardHeight('bar') }}
-        draggable
-        onDragStart={(e) => onCardDragStart('bar', e)}
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={(e) => onCardDrop('bar', e)}
-        onDragEnd={() => setDraggedChartId(null)}
-      >
-        <div className="flex justify-between items-center mb-4">
-          <h3 className={`${chartTitleClass} font-semibold text-gray-900 pr-2 break-words`}>
-            {selectedNumeric || 'Value'} by {selectedCategorical || 'Category'}
-          </h3>
-          <button type="button" onClick={() => hideChartById('bar')} className="text-gray-400 hover:text-red-600">×</button>
+      <div key="bar" style={{ height: '100%' }}>
+        <div style={{
+          background: '#1e293b',
+          border: '0.5px solid #334155',
+          borderRadius: '12px',
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+          height: '100%',
+          color: '#f8fafc',
+        }}>
+          <div className="chart-drag-handle" style={{
+            padding: '10px 14px',
+            borderBottom: '0.5px solid #334155',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: '#162032',
+            flexShrink: 0,
+            userSelect: 'none',
+          }}>
+            <span style={{ fontSize: '12px', fontWeight: 500, color: '#e2e8f0' }}>
+              {(selectedNumeric || 'Value')} by {selectedCategorical || 'Category'}
+            </span>
+            <button type="button" onClick={() => hideChartById('bar')} style={{ background: 'none', border: 'none', color: '#475569', cursor: 'pointer', fontSize: '18px', lineHeight: 1 }} onMouseEnter={(e) => { e.target.style.color = '#ef4444' }} onMouseLeave={(e) => { e.target.style.color = '#475569' }}>×</button>
+          </div>
+          <div style={{ flex: 1, padding: '12px', minHeight: 0, overflow: 'hidden' }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={prepareBarChartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <XAxis dataKey="name" stroke="#6b7280" style={{ fontSize: axisFontSize }} />
+                <YAxis stroke="#6b7280" style={{ fontSize: axisFontSize }} tickFormatter={(v) => formatCompact(v)} />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: '#fff',
+                    border: '1px solid #e5e7eb',
+                    borderRadius: '6px',
+                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                  }}
+                />
+                <Bar dataKey="value" fill="#3b82f6" radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
-        <ResponsiveContainer width="100%" height={getChartHeight('bar')}>
-          <BarChart data={prepareBarChartData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-            <XAxis dataKey="name" stroke="#6b7280" style={{ fontSize: axisFontSize }} />
-            <YAxis stroke="#6b7280" style={{ fontSize: axisFontSize }} />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: '#fff',
-                border: '1px solid #e5e7eb',
-                borderRadius: '6px',
-                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
-              }}
-            />
-            <Bar dataKey="value" fill="#3b82f6" radius={[6, 6, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
-        <div
-          className="absolute right-2 bottom-2 h-4 w-4 cursor-nwse-resize rounded-sm border border-gray-300 bg-white/90"
-          onMouseDown={(e) => startResizeCard('bar', e)}
-          title="Resize chart"
-        />
       </div>
       )}
 
       {/* Pie/Donut Chart */}
       {showPieChart && chartFlags.showPieChart && (
-      <div
-        className={`bg-white rounded-lg shadow-sm ${chartCardPadding} border border-gray-200 hover:shadow-md transition-shadow relative group cursor-move`}
-        style={{ order: getOrder('pie'), minHeight: getCardHeight('pie') }}
-        draggable
-        onDragStart={(e) => onCardDragStart('pie', e)}
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={(e) => onCardDrop('pie', e)}
-        onDragEnd={() => setDraggedChartId(null)}
-      >
-        <div className="flex justify-between items-center mb-4">
-          <h3 className={`${chartTitleClass} font-semibold text-gray-900 pr-2 break-words`}>
+      <div key="pie" style={{ height: '100%' }}>
+        <div style={{
+          background: '#1e293b',
+          border: '0.5px solid #334155',
+          borderRadius: '12px',
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+          height: '100%',
+          color: '#f8fafc',
+        }}
+        className="group"
+        >
+        <div className="chart-drag-handle flex justify-between items-center gap-2" style={{
+          padding: '10px 14px',
+          borderBottom: '0.5px solid #334155',
+          background: '#162032',
+          flexShrink: 0,
+          userSelect: 'none',
+        }}>
+          <h3 className={`${chartTitleClass} font-semibold pr-2 break-words`} style={{ color: '#e2e8f0', margin: 0 }}>
             {pieTitle}
           </h3>
           {hasValidPieData && (
@@ -788,6 +790,7 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
                 typeof onSubawardDrilldown === 'function' &&
                 (selectedCategorical === 'Recipient Name' || selectedCategorical === 'Prime contractor') && (
                   <button
+                    type="button"
                     onClick={() => onSubawardDrilldown(chartFilter.value)}
                     className="opacity-0 group-hover:opacity-100 transition-opacity px-3 py-1.5 text-xs font-medium text-gray-700 hover:text-gray-900 bg-white border border-gray-200 hover:border-gray-300 rounded-lg"
                     title="Drill down to subcontractors / subawards"
@@ -796,6 +799,7 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
                   </button>
                 )}
               <button
+                type="button"
                 onClick={() =>
                   setMaximized({
                     type: 'pie',
@@ -810,6 +814,7 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
                 </svg>
               </button>
               <button
+                type="button"
                 onClick={() => handleChartClick('pie', pieData, pieTitle)}
                 className="opacity-0 group-hover:opacity-100 transition-opacity p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg"
                 title="Get AI insights for this chart"
@@ -818,20 +823,28 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
                 </svg>
               </button>
-              <button type="button" onClick={() => hideChartById('pie')} className="text-gray-400 hover:text-red-600">×</button>
+              <button type="button" onClick={() => hideChartById('pie')} style={{ background: 'none', border: 'none', color: '#475569', cursor: 'pointer', fontSize: '18px', lineHeight: 1 }} onMouseEnter={(e) => { e.target.style.color = '#ef4444' }} onMouseLeave={(e) => { e.target.style.color = '#475569' }}>×</button>
             </div>
           )}
         </div>
+        <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', padding: '12px' }}>
         {hasValidPieData ? (
-          <div className="flex items-center gap-6">
-            {/* Chart on left - fixed width so center label cannot overlap the legend */}
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'row',
+              gap: '12px',
+              alignItems: 'center',
+              minHeight: 0,
+              minWidth: 0,
+            }}
+          >
+            {/* Donut — fixed size */}
             <div
-              className={`relative overflow-hidden ${
-                'w-[280px] shrink-0'
-              }`}
-              style={{ minHeight: baseChartHeight }}
+              className="relative shrink-0 overflow-hidden"
+              style={{ flex: '0 0 auto', height: baseChartHeight, minHeight: 220, width: 280, maxWidth: '100%' }}
             >
-              <ResponsiveContainer width="100%" height={getChartHeight('pie')}>
+              <ResponsiveContainer width="100%" height="100%">
                 <PieChart key={`pie-${pieData.length}-${selectedCategorical}`}>
                   <Pie
                     data={pieData}
@@ -880,49 +893,80 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
                 </PieChart>
               </ResponsiveContainer>
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none select-none" aria-hidden="true">
-                <p className="text-2xl font-bold text-gray-900 leading-tight">
-                  {(pieAgg === 'avg' ? overallAvgValue : totalValue).toLocaleString()}
+                <p className="text-2xl font-bold leading-tight">
+                  {formatCompact(pieAgg === 'avg' ? overallAvgValue : totalValue)}
                 </p>
-                <p className="text-xs text-gray-600 leading-tight mt-0.5">
+                <p className="text-xs text-[#94a3b8] leading-tight mt-0.5">
                   {pieAgg === 'avg' ? `Avg ${formatFieldLabel(selectedNumeric)}` : `Total ${formatFieldLabel(selectedNumeric)}`}
                 </p>
               </div>
             </div>
 
-            {/* Legend on right - takes remaining space so it never overlaps the chart */}
-            <div className="flex-1 min-w-0 space-y-2">
+            {/* Legend — narrow column, labels truncated; full text in title */}
+            <div
+              style={{
+                flex: 1,
+                minWidth: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '6px',
+                overflow: 'hidden',
+                maxWidth: '120px',
+              }}
+            >
               {pieData.slice(0, 8).map((item, index) => {
                 const percentage = pieAgg === 'sum' && totalValue > 0
                   ? ((item.value / totalValue) * 100).toFixed(1)
                   : null
                 const isHovered = hoveredSegment === index
                 return (
-                  <div 
-                    key={index} 
-                    className={`flex items-center justify-between text-sm p-2 rounded transition-all cursor-pointer group ${
-                      isHovered ? 'bg-blue-50 border border-blue-200' : 
+                  <div
+                    key={index}
+                    className={`cursor-pointer rounded px-0.5 py-0.5 transition-colors group ${
+                      isHovered ? 'bg-blue-50/80' :
                       chartFilter?.type === 'category' && chartFilter?.value === item.name
-                        ? 'bg-red-50 border border-red-200' : 'hover:bg-gray-50'
+                        ? 'bg-red-50/80' : 'hover:bg-white/5'
                     }`}
-                    title={`${item.name}: ${item.value.toLocaleString()}${percentage ? ` (${percentage}%)` : ''} - Click to filter`}
+                    style={{ minWidth: 0, width: '100%' }}
+                    title={`${item.name}: ${formatCompact(item.value)}${percentage ? ` (${percentage}%)` : ''} - Click to filter`}
                     onMouseEnter={() => setHoveredSegment(index)}
                     onMouseLeave={() => setHoveredSegment(null)}
                     onClick={() => handlePieClick({ name: item.name }, index)}
                   >
-                    <div className="flex items-center space-x-2 flex-1 min-w-0">
-                      <div 
-                        className={`w-4 h-4 shrink-0 rounded-full transition-all ${
-                          isHovered ? 'scale-125 shadow-md' : 'group-hover:scale-110'
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <div
+                        className={`h-2.5 w-2.5 shrink-0 rounded-full transition-transform ${
+                          isHovered ? 'scale-125' : ''
                         }`}
                         style={{ backgroundColor: COLORS[index % COLORS.length] }}
-                      ></div>
-                      <span className={`font-medium transition-colors truncate min-w-0 ${
-                        isHovered ? 'text-blue-700 font-semibold' : 'text-gray-700'
-                      }`} title={item.name}>{item.name}</span>
+                      />
+                      <span
+                        style={{
+                          fontSize: '11px',
+                          color: '#94a3b8',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          maxWidth: '80px',
+                        }}
+                      >
+                        {item.name}
+                      </span>
                     </div>
-                    <span className={`font-semibold ml-2 transition-colors ${
-                      isHovered ? 'text-blue-700' : 'text-gray-900'
-                    }`}>{item.value.toLocaleString()}</span>
+                    <div
+                      className="tabular-nums"
+                      style={{
+                        fontSize: '10px',
+                        color: isHovered ? '#93c5fd' : '#cbd5e1',
+                        paddingLeft: '16px',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {formatCompact(item.value)}
+                      {percentage ? ` (${percentage}%)` : ''}
+                    </div>
                   </div>
                 )
               })}
@@ -933,34 +977,37 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
             Select category column to view distribution
           </div>
         )}
-        <div
-          className="absolute right-2 bottom-2 h-4 w-4 cursor-nwse-resize rounded-sm border border-gray-300 bg-white/90"
-          onMouseDown={(e) => startResizeCard('pie', e)}
-          title="Resize chart"
-        />
+        </div>
+        </div>
       </div>
       )}
 
       {chartFlags.showTable && (
-      <div
-        className={`bg-white rounded-lg shadow-sm ${chartCardPadding} border border-gray-200 hover:shadow-md transition-shadow relative group cursor-move`}
-        style={{ order: getOrder('table'), minHeight: getCardHeight('table') }}
-        draggable
-        onDragStart={(e) => {
-          if (e.target instanceof Element && e.target.closest('[data-no-drag="true"]')) {
-            e.preventDefault()
-            return
-          }
-          onCardDragStart('table', e)
-        }}
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={(e) => onCardDrop('table', e)}
-        onDragEnd={() => setDraggedChartId(null)}
-      >
-        <h3 className="text-lg font-semibold text-gray-900 mb-3">Data Table</h3>
-        <button type="button" onClick={() => hideChartById('table')} className="absolute top-3 right-3 text-gray-400 hover:text-red-600">×</button>
+      <div key="table" style={{ height: '100%' }}>
+        <div style={{
+          background: '#1e293b',
+          border: '0.5px solid #334155',
+          borderRadius: '12px',
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+          height: '100%',
+          color: '#f8fafc',
+          position: 'relative',
+        }}>
+          <div className="chart-drag-handle flex items-center justify-between" style={{
+            padding: '10px 14px',
+            borderBottom: '0.5px solid #334155',
+            background: '#162032',
+            flexShrink: 0,
+            userSelect: 'none',
+          }}>
+            <h3 className="text-lg font-semibold" style={{ margin: 0 }}>Data Table</h3>
+            <button type="button" onClick={() => hideChartById('table')} style={{ background: 'none', border: 'none', color: '#475569', cursor: 'pointer', fontSize: '18px', lineHeight: 1 }} onMouseEnter={(e) => { e.target.style.color = '#ef4444' }} onMouseLeave={(e) => { e.target.style.color = '#475569' }}>×</button>
+          </div>
         <div
-          className="overflow-auto max-h-72 cursor-default"
+          className="overflow-auto flex-1 min-h-0 cursor-default"
+          style={{ padding: '12px' }}
           data-no-drag="true"
           onMouseDown={(e) => e.stopPropagation()}
         >
@@ -987,14 +1034,12 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
             </tbody>
           </table>
         </div>
-        <div
-          className="absolute right-2 bottom-2 h-4 w-4 cursor-nwse-resize rounded-sm border border-gray-300 bg-white/90"
-          onMouseDown={(e) => startResizeCard('table', e)}
-          title="Resize chart"
-        />
+        </div>
       </div>
       )}
+      </GridDashboard>
     </div>
+    ) : null}
 
     {chartCount === 0 && (
       <div className="mb-6 bg-white rounded-lg border border-gray-200 p-6 text-sm text-gray-600">
@@ -1051,7 +1096,7 @@ function DashboardCharts({ data, filteredData, selectedNumeric, selectedCategori
                         stroke="#6b7280"
                         style={{ fontSize: '12px' }}
                       />
-                      <YAxis stroke="#6b7280" style={{ fontSize: '12px' }} />
+                      <YAxis stroke="#6b7280" style={{ fontSize: '12px' }} tickFormatter={(v) => formatCompact(v)} />
                       <Tooltip
                         contentStyle={{
                           backgroundColor: '#fff',

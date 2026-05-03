@@ -147,7 +147,9 @@ router.post('/', getUserFromToken, checkDashboardLimit, async (req, res) => {
       dashboardView,
       schema,
       opportunityKeyword,
-      selectedOpportunityNoticeType
+      selectedOpportunityNoticeType,
+      grid_layout: gridLayoutBody,
+      customDashboardSpec
     } = req.body
     
     // For Studio dashboards, data can be empty (data comes from data_source)
@@ -178,7 +180,24 @@ router.post('/', getUserFromToken, checkDashboardLimit, async (req, res) => {
         console.error('Error parsing/using schema:', err)
       }
     }
-    
+    if (gridLayoutBody !== undefined) {
+      insertData.grid_layout = gridLayoutBody
+    }
+    if (customDashboardSpec !== undefined) {
+      insertData.custom_dashboard_spec =
+        customDashboardSpec === null || customDashboardSpec === ''
+          ? null
+          : typeof customDashboardSpec === 'string'
+            ? (() => {
+                try {
+                  return JSON.parse(customDashboardSpec)
+                } catch {
+                  return null
+                }
+              })()
+            : customDashboardSpec
+    }
+
     const { data: dashboard, error } = await supabase
       .from('shorts_dashboards')
       .insert(insertData)
@@ -193,7 +212,7 @@ router.post('/', getUserFromToken, checkDashboardLimit, async (req, res) => {
       if (code === '42703' || /column.*"schema".*does not exist/i.test(msg)) {
         return res.status(400).json({
           error: 'Database schema missing',
-          message: 'Run the migration that adds the "schema" column to shorts_dashboards (see supabase/migrations/20250222100000_dashboards_schema_column.sql).'
+          message: 'Run Supabase migrations for shorts_dashboards (e.g. schema, grid_layout, custom_dashboard_spec columns). See supabase/migrations/.'
         })
       }
       throw error
@@ -240,7 +259,9 @@ router.put('/:id', getUserFromToken, async (req, res) => {
       dashboardView,
       schema,
       opportunityKeyword,
-      selectedOpportunityNoticeType
+      selectedOpportunityNoticeType,
+      grid_layout: gridLayoutBody,
+      customDashboardSpec
     } = req.body
     
     // First verify the dashboard belongs to the user
@@ -276,7 +297,24 @@ router.put('/:id', getUserFromToken, async (req, res) => {
         console.error('Error parsing/using schema:', err)
       }
     }
-    
+    if (gridLayoutBody !== undefined) {
+      updateData.grid_layout = gridLayoutBody
+    }
+    if (customDashboardSpec !== undefined) {
+      updateData.custom_dashboard_spec =
+        customDashboardSpec === null || customDashboardSpec === ''
+          ? null
+          : typeof customDashboardSpec === 'string'
+            ? (() => {
+                try {
+                  return JSON.parse(customDashboardSpec)
+                } catch {
+                  return null
+                }
+              })()
+            : customDashboardSpec
+    }
+
     const { data: dashboard, error } = await supabase
       .from('shorts_dashboards')
       .update(updateData)

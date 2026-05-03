@@ -38,7 +38,10 @@ export const saveDashboard = async (dashboardData) => {
       selectedDate: dashboardData.selectedDate,
       dashboardView: dashboardData.dashboardView,
       opportunityKeyword: dashboardData.opportunityKeyword,
-      selectedOpportunityNoticeType: dashboardData.selectedOpportunityNoticeType
+      selectedOpportunityNoticeType: dashboardData.selectedOpportunityNoticeType,
+      ...(dashboardData.customDashboardSpec !== undefined
+        ? { customDashboardSpec: dashboardData.customDashboardSpec }
+        : {})
     })
     return response.data
   } catch (error) {
@@ -62,7 +65,10 @@ export const updateDashboard = async (id, dashboardData) => {
       selectedDate: dashboardData.selectedDate,
       dashboardView: dashboardData.dashboardView,
       opportunityKeyword: dashboardData.opportunityKeyword,
-      selectedOpportunityNoticeType: dashboardData.selectedOpportunityNoticeType
+      selectedOpportunityNoticeType: dashboardData.selectedOpportunityNoticeType,
+      ...(dashboardData.customDashboardSpec !== undefined
+        ? { customDashboardSpec: dashboardData.customDashboardSpec }
+        : {})
     })
     return response.data
   } catch (error) {

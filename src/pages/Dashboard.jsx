@@ -2,12 +2,12 @@ import { useState, useEffect, useRef, useMemo, useCallback, useDeferredValue } f
 import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { parseNumericValue } from '../utils/numberUtils'
 import Loader from '../components/Loader'
+import FileUploader from '../components/FileUploader'
+import ExampleDatasetButton from '../components/ExampleDatasetButton'
 import DashboardCharts from '../components/DashboardCharts'
 import AdvancedDashboard from '../components/AdvancedDashboard'
-import AdvancedDashboardGrid from '../components/AdvancedDashboardGrid'
 import MetricCards from '../components/MetricCards'
 import Filters from '../components/Filters'
-import AiInsightsTab from '../components/ai-insights/AiInsightsTab'
 import ForecastChart from '../components/ForecastChart'
 import DataMetadataEditor from '../components/DataMetadataEditor'
 import TimeSeriesReport from '../components/TimeSeriesReport'
@@ -17,6 +17,8 @@ import DateRangeSlider from '../components/DateRangeSlider'
 import SubawardDrilldownModal from '../components/SubawardDrilldownModal'
 import UpgradePrompt from '../components/UpgradePrompt'
 import AskClaudePanel from '../components/AskClaude/AskClaudePanel'
+import ThemeToggle from '../components/ThemeToggle'
+import { TD } from '../constants/terminalDashboardPalette'
 import DashboardRenderer from '../components/aiVisualBuilder/DashboardRenderer'
 import { useAuth } from '../contexts/AuthContext'
 import { getSubscription } from '../services/subscriptionService'
@@ -54,7 +56,7 @@ function Dashboard() {
   const [chartFilter, setChartFilter] = useState(null) // { type: 'category' | 'date', value: string }
   const [shareId, setShareId] = useState(null)
   const [shareLinkCopied, setShareLinkCopied] = useState(false)
-  const [dashboardView, setDashboardView] = useState('simple') // 'simple', 'advanced', 'custom', 'timeseries', 'data', 'ai-insights'
+  const [dashboardView, setDashboardView] = useState('simple') // 'simple' (Charts), 'advanced', 'custom', 'timeseries', 'data'
   const [claudeDashboardSpec, setClaudeDashboardSpec] = useState(null)
   const [dashboardKey, setDashboardKey] = useState(0)
   const [isClaudePanelVisible, setIsClaudePanelVisible] = useState(true)
@@ -162,6 +164,7 @@ function Dashboard() {
   const [apiKeywordLoading, setApiKeywordLoading] = useState(false)
   const [apiKeywordError, setApiKeywordError] = useState('')
   const [noDataReason, setNoDataReason] = useState(null) // 'no-storage' | 'invalid-data' when dashboard has nothing to show
+  const [emptyStateUploadError, setEmptyStateUploadError] = useState(null)
   const [upgradePrompt, setUpgradePrompt] = useState(null)
   const [currentPlan, setCurrentPlan] = useState('free')
   const [showAnomalyPanel, setShowAnomalyPanel] = useState(false)
@@ -180,6 +183,42 @@ function Dashboard() {
   const filterSnapshotRef = useRef(null) // Current sidebar filter state for sharing
   const MAX_CATEGORY_TABS = 12
   const MAX_METRIC_TABS = 10
+
+  // DevTools: window.__dashboardData (dev builds only) — row counts, chart flags, grid-layout-main-charts snapshot
+  useEffect(() => {
+    if (!import.meta.env.DEV) return undefined
+    let gridLayoutMainCharts = null
+    try {
+      gridLayoutMainCharts = localStorage.getItem('grid-layout-main-charts')
+    } catch {
+      gridLayoutMainCharts = '(localStorage access failed)'
+    }
+    window.__dashboardData = {
+      loading,
+      noDataReason,
+      rowCount: Array.isArray(data) ? data.length : data == null ? null : 0,
+      filteredRowCount: Array.isArray(filteredData) ? filteredData.length : null,
+      dashboardView,
+      chartLayout,
+      selectedNumeric,
+      selectedCategorical,
+      selectedDate,
+      gridLayoutMainCharts,
+    }
+    return () => {
+      delete window.__dashboardData
+    }
+  }, [
+    loading,
+    noDataReason,
+    data,
+    filteredData,
+    dashboardView,
+    chartLayout,
+    selectedNumeric,
+    selectedCategorical,
+    selectedDate,
+  ])
 
   useEffect(() => {
     let mounted = true
@@ -258,9 +297,15 @@ function Dashboard() {
   }, [selectedNumeric, formatFieldLabel, isTitleCustomized])
 
   const startEditingTitle = useCallback(() => {
-    setTitleDraft(dashboardTitle || '')
+    if (dashboardView === 'advanced' && selectedNumeric && !isTitleCustomized) {
+      setTitleDraft(`Advanced Analytics — ${formatFieldLabel(selectedNumeric)}`)
+    } else if (dashboardView === 'simple' && selectedNumeric && !isTitleCustomized) {
+      setTitleDraft(`Charts — ${formatFieldLabel(selectedNumeric)}`)
+    } else {
+      setTitleDraft(dashboardTitle || '')
+    }
     setIsEditingTitle(true)
-  }, [dashboardTitle])
+  }, [dashboardTitle, dashboardView, selectedNumeric, isTitleCustomized, formatFieldLabel])
 
   const cancelEditingTitle = useCallback(() => {
     setIsEditingTitle(false)
@@ -290,20 +335,43 @@ function Dashboard() {
               if (e.key === 'Escape') cancelEditingTitle()
             }}
             autoFocus
-            className="text-2xl font-bold text-gray-900 bg-white border border-gray-300 rounded px-2 py-1 min-w-[260px]"
+            style={{
+              color: TD.TEXT_1,
+              background: TD.PAGE_BG,
+              border: `0.5px solid ${TD.CARD_BORDER}`,
+              borderRadius: '6px',
+              padding: '6px 10px',
+              minWidth: '260px',
+              fontSize: '22px',
+              fontWeight: 700,
+            }}
             aria-label="Dashboard name"
           />
           <button
             type="button"
             onClick={saveEditedTitle}
-            className="px-2 py-1 text-xs rounded bg-blue-600 text-white hover:bg-blue-700"
+            style={{
+              padding: '6px 10px',
+              fontSize: '12px',
+              borderRadius: '6px',
+              background: TD.ACCENT_BLUE,
+              color: '#fff',
+              border: 'none',
+            }}
           >
             Save
           </button>
           <button
             type="button"
             onClick={cancelEditingTitle}
-            className="px-2 py-1 text-xs rounded border border-gray-300 text-gray-700 hover:bg-gray-50"
+            style={{
+              padding: '6px 10px',
+              fontSize: '12px',
+              borderRadius: '6px',
+              border: `0.5px solid ${TD.CARD_BORDER}`,
+              color: TD.TEXT_2,
+              background: 'transparent',
+            }}
           >
             Cancel
           </button>
@@ -312,13 +380,20 @@ function Dashboard() {
     }
     return (
       <div className="flex items-center gap-2 mb-1">
-        <h1 className="text-2xl font-bold text-gray-900">
+        <h1 style={{ color: TD.TEXT_1, fontSize: '24px', fontWeight: 700, margin: 0 }}>
           {dashboardTitle}
         </h1>
         <button
           type="button"
           onClick={startEditingTitle}
-          className="px-2 py-1 text-xs rounded border border-gray-300 text-gray-700 hover:bg-gray-50"
+          style={{
+            padding: '6px 10px',
+            fontSize: '12px',
+            borderRadius: '99px',
+            border: `0.5px solid ${TD.CARD_BORDER}`,
+            color: TD.TEXT_2,
+            background: TD.CARD_BG,
+          }}
           title="Rename dashboard"
         >
           Rename
@@ -326,6 +401,80 @@ function Dashboard() {
       </div>
     )
   }, [isEditingTitle, titleDraft, dashboardTitle, saveEditedTitle, cancelEditingTitle, startEditingTitle])
+
+  const premiumTitleButtonStyle = useMemo(
+    () => ({
+      padding: '6px 10px',
+      fontSize: '12px',
+      borderRadius: '99px',
+      border: `0.5px solid ${TD.CARD_BORDER}`,
+      color: TD.TEXT_2,
+      background: TD.CARD_BG,
+    }),
+    []
+  )
+
+  const renderMainTitleArea = useCallback(() => {
+    if (dashboardView === 'advanced' && selectedNumeric) {
+      if (isEditingTitle) {
+        return renderDashboardTitleEditor()
+      }
+      const displayTitle =
+        isTitleCustomized && String(dashboardTitle || '').trim()
+          ? dashboardTitle
+          : `Advanced Analytics — ${formatFieldLabel(selectedNumeric)}`
+      return (
+        <div className="flex items-center gap-2 mb-1">
+          <h1 style={{ color: TD.TEXT_1, fontSize: '24px', fontWeight: 700, margin: 0 }}>
+            {displayTitle}
+          </h1>
+          <button
+            type="button"
+            onClick={startEditingTitle}
+            style={premiumTitleButtonStyle}
+            title="Rename dashboard"
+          >
+            Rename
+          </button>
+        </div>
+      )
+    }
+    if (dashboardView === 'simple' && selectedNumeric) {
+      if (isEditingTitle) {
+        return renderDashboardTitleEditor()
+      }
+      const displayTitle =
+        isTitleCustomized && String(dashboardTitle || '').trim()
+          ? dashboardTitle
+          : `Charts — ${formatFieldLabel(selectedNumeric)}`
+      return (
+        <div className="flex items-center gap-2 mb-1">
+          <h1 style={{ color: TD.TEXT_1, fontSize: '24px', fontWeight: 700, margin: 0 }}>
+            {displayTitle}
+          </h1>
+          <button
+            type="button"
+            onClick={startEditingTitle}
+            style={premiumTitleButtonStyle}
+            title="Rename dashboard"
+          >
+            Rename
+          </button>
+        </div>
+      )
+    }
+    return renderDashboardTitleEditor()
+  }, [
+    dashboardView,
+    selectedNumeric,
+    isEditingTitle,
+    formatFieldLabel,
+    renderDashboardTitleEditor,
+    startEditingTitle,
+    isTitleCustomized,
+    dashboardTitle,
+    premiumTitleButtonStyle,
+  ])
 
   // Build "category tabs" from the selected categorical column values.
   const categoryTabs = useMemo(() => {
@@ -356,6 +505,20 @@ function Dashboard() {
 
   const activeCategoryTabValue = chartFilter?.type === 'category' ? String(chartFilter.value) : 'All'
 
+  const metricPillStyle = (on) =>
+    on
+      ? { background: TD.ACCENT_BLUE, color: '#fff', border: 'none', borderRadius: '99px', padding: '8px 16px', fontSize: '14px', fontWeight: 600, flexShrink: 0 }
+      : {
+          background: TD.CARD_BG,
+          color: TD.TEXT_2,
+          border: `0.5px solid ${TD.CARD_BORDER}`,
+          borderRadius: '99px',
+          padding: '8px 16px',
+          fontSize: '14px',
+          fontWeight: 500,
+          flexShrink: 0,
+        }
+
   const CategoryTabsBar = () => {
     if (!categoryTabs?.values?.length) return null
     const label = formatFieldLabel(selectedCategorical)
@@ -363,11 +526,11 @@ function Dashboard() {
     return (
       <div className="mb-4">
         <div className="flex items-center justify-between gap-3 mb-2">
-          <p className="text-sm font-medium text-gray-700">
-            View by <span className="font-semibold text-gray-900">{label || selectedCategorical}</span>
+          <p style={{ color: TD.TEXT_2, fontSize: '14px', fontWeight: 500 }}>
+            View by <span style={{ color: TD.TEXT_1, fontWeight: 600 }}>{label || selectedCategorical}</span>
           </p>
           {categoryTabs.truncated && (
-            <p className="text-xs text-gray-500">
+            <p style={{ color: TD.TEXT_3, fontSize: '12px' }}>
               Showing top {MAX_CATEGORY_TABS} of {categoryTabs.total}
             </p>
           )}
@@ -379,11 +542,7 @@ function Dashboard() {
           <button
             type="button"
             onClick={() => setChartFilter(null)}
-            className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-sm border transition-colors ${
-              activeCategoryTabValue === 'All'
-                ? 'bg-blue-600 text-white border-blue-600'
-                : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
-            }`}
+            style={metricPillStyle(activeCategoryTabValue === 'All')}
             title="Show all categories"
           >
             All
@@ -393,11 +552,7 @@ function Dashboard() {
               key={v}
               type="button"
               onClick={() => setChartFilter({ type: 'category', value: v })}
-              className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-sm border transition-colors ${
-                activeCategoryTabValue === v
-                  ? 'bg-blue-600 text-white border-blue-600'
-                  : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
-              }`}
+              style={metricPillStyle(activeCategoryTabValue === v)}
               title={`Filter to: ${isStateCol ? getStateDisplayLabel(v) : v}`}
             >
               {isStateCol ? getStateDisplayLabel(v) : v}
@@ -478,11 +633,14 @@ function Dashboard() {
     return (
       <div className="mb-4">
         <div className="flex items-center justify-between gap-3 mb-2">
-          <p className="text-sm font-medium text-gray-700">
-            View metric: <span className="font-semibold text-gray-900">{formatFieldLabel(active) || active}</span>
+          <p style={{ color: TD.TEXT_2, fontSize: '14px', fontWeight: 500 }}>
+            View metric:{' '}
+            <span style={{ color: TD.TEXT_1, fontWeight: 600 }}>{formatFieldLabel(active) || active}</span>
           </p>
           {metricTabs.truncated && (
-            <p className="text-xs text-gray-500">Top {MAX_METRIC_TABS} of {metricTabs.total}</p>
+            <p style={{ color: TD.TEXT_3, fontSize: '12px' }}>
+              Top {MAX_METRIC_TABS} of {metricTabs.total}
+            </p>
           )}
         </div>
         <div
@@ -495,11 +653,7 @@ function Dashboard() {
               type="button"
               onMouseDown={() => setSelectedNumeric(m)}
               onClick={() => setSelectedNumeric(m)}
-              className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-sm border transition-colors ${
-                active === m
-                  ? 'bg-purple-600 text-white border-purple-600'
-                  : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
-              }`}
+              style={metricPillStyle(active === m)}
               title={`Switch metric to: ${m}`}
             >
               {formatFieldLabel(m) || m}
@@ -531,7 +685,10 @@ function Dashboard() {
       hasInitialized.current = true
       const analyticsData = location.state.analyticsData
       // Clear navigation state AFTER capturing the data
-      navigate(location.pathname, { replace: true, state: {} })
+      navigate(
+        { pathname: location.pathname, search: location.search, hash: location.hash },
+        { replace: true, state: {} }
+      )
       // Initialize with captured data
       initializeData(analyticsData)
       return
@@ -556,7 +713,7 @@ function Dashboard() {
         dataLength: parsed?.data?.length,
         columns: parsed?.columns?.length
       })
-      if (!parsed || !parsed.data || !Array.isArray(parsed.data)) {
+      if (!parsed || typeof parsed !== 'object') {
         console.error('Invalid data in sessionStorage:', parsed)
         sessionStorage.removeItem('analyticsData')
         setNoDataReason('invalid-data')
@@ -572,6 +729,18 @@ function Dashboard() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []) // Only run once on mount - location.state is checked but not in deps to prevent re-runs
+
+  // From Hub (#upload): scroll upload UI into view after layout paints (sidebar + header otherwise hide it below the fold).
+  useEffect(() => {
+    if (loading) return
+    if (typeof window === 'undefined' || window.location.hash !== '#upload') return
+    const tid = window.setTimeout(() => {
+      const el = document.querySelector('.analytics-short-upload-target')
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`)
+    }, 200)
+    return () => clearTimeout(tid)
+  }, [loading, noDataReason, data])
 
   // Re-apply chart filter when it changes
   useEffect(() => {
@@ -592,10 +761,9 @@ function Dashboard() {
         dateColumns: parsedData?.dateColumns,
       })
       
-      // Validate parsedData
-      if (!parsedData || !parsedData.data || !Array.isArray(parsedData.data)) {
+      // Normalize rows: API may send null; My Dashboards must still restore custom spec + view.
+      if (!parsedData || typeof parsedData !== 'object') {
         console.error('Invalid data format:', parsedData)
-        // Set empty state so the error message displays
         setData([])
         setFilteredData([])
         setColumns(parsedData?.columns || [])
@@ -605,30 +773,73 @@ function Dashboard() {
         setLoading(false)
         return
       }
-      
-      // Check if data array is empty
-      if (parsedData.data.length === 0) {
-        console.warn('Data array is empty')
+
+      const rowData = Array.isArray(parsedData.data) ? parsedData.data : []
+
+      // Empty snapshot: still restore saved dashboard id, custom DashboardSpec, and view (fixes "open from My Dashboards is blank")
+      if (rowData.length === 0) {
+        console.warn('Data array is empty — restoring saved metadata only')
         setData([])
         setFilteredData([])
+        setSidebarFilteredData([])
         setColumns(parsedData.columns || [])
         setNumericColumns(parsedData.numericColumns || [])
         setCategoricalColumns(parsedData.categoricalColumns || [])
         setDateColumns(parsedData.dateColumns || [])
+        setDataSourceInfo({
+          filename:
+            parsedData.filename ||
+            parsedData.fileName ||
+            parsedData.name ||
+            parsedData.datasetName ||
+            parsedData.source ||
+            '',
+          source: parsedData.source || parsedData.datasetName || '',
+        })
+        const sourceDashboardId = parsedData?.dashboardId || parsedData?.id || null
+        if (sourceDashboardId) {
+          setSavedDashboardId(sourceDashboardId)
+          setLastPersistedTitle(String(parsedData?.name || '').trim())
+        } else {
+          setSavedDashboardId(null)
+          setLastPersistedTitle('')
+        }
+        if (parsedData.dashboardView) {
+          const v = parsedData.dashboardView
+          setDashboardView(v === 'ai-insights' ? 'simple' : v)
+        }
+        if (parsedData.customDashboardSpec != null && typeof parsedData.customDashboardSpec === 'object') {
+          setClaudeDashboardSpec(parsedData.customDashboardSpec)
+        }
+        const savedName = String(parsedData?.name || '').trim()
+        setIsTitleCustomized(false)
+        setIsEditingTitle(false)
+        if (savedName) {
+          setDashboardTitle(savedName)
+          setIsTitleCustomized(true)
+          if (sourceDashboardId) setLastPersistedTitle(savedName)
+        }
+        if (parsedData.opportunityKeyword != null && String(parsedData.opportunityKeyword).trim() !== '') {
+          setOpportunityKeyword(String(parsedData.opportunityKeyword).trim())
+        }
+        if (parsedData.selectedOpportunityNoticeType != null && String(parsedData.selectedOpportunityNoticeType).trim() !== '') {
+          const noticeType = String(parsedData.selectedOpportunityNoticeType).trim()
+          setSelectedOpportunityNoticeType(noticeType)
+          setChartFilter({ type: 'category', value: noticeType })
+        }
         setLoading(false)
         return
       }
-      
+
       // For large datasets, aggressively sample the data for display
       // This ensures smooth performance and responsive UI
       const MAX_ROWS_FOR_DISPLAY = 10000 // Reduced from 100k for better performance
-      let displayData = parsedData.data
-      
-      if (parsedData.data && parsedData.data.length > MAX_ROWS_FOR_DISPLAY) {
-        console.warn(`Dataset has ${parsedData.data.length} rows. Sampling ${MAX_ROWS_FOR_DISPLAY} rows for display to ensure smooth performance.`)
-        // Sample evenly across the dataset
-        const step = Math.ceil(parsedData.data.length / MAX_ROWS_FOR_DISPLAY)
-        displayData = parsedData.data.filter((_, index) => index % step === 0)
+      let displayData = rowData
+
+      if (rowData.length > MAX_ROWS_FOR_DISPLAY) {
+        console.warn(`Dataset has ${rowData.length} rows. Sampling ${MAX_ROWS_FOR_DISPLAY} rows for display to ensure smooth performance.`)
+        const step = Math.ceil(rowData.length / MAX_ROWS_FOR_DISPLAY)
+        displayData = rowData.filter((_, index) => index % step === 0)
         console.log(`Sampled to ${displayData.length} rows for optimal performance`)
       }
       
@@ -656,7 +867,12 @@ function Dashboard() {
 
       // Restore dashboard view if saved (for shared dashboards)
       if (parsedData.dashboardView) {
-        setDashboardView(parsedData.dashboardView)
+        const v = parsedData.dashboardView
+        setDashboardView(v === 'ai-insights' ? 'simple' : v)
+      }
+
+      if (parsedData.customDashboardSpec != null && typeof parsedData.customDashboardSpec === 'object') {
+        setClaudeDashboardSpec(parsedData.customDashboardSpec)
       }
 
       // Generate dashboard title based on data context
@@ -973,6 +1189,61 @@ function Dashboard() {
     }
   }
 
+  /** Same persistence rules as Home: small payloads in sessionStorage; large loads in-memory only. */
+  const handleEmptyStateUploadSuccess = (uploadPayload) => {
+    setLoading(true)
+    try {
+      const estimatedSize = JSON.stringify(uploadPayload).length
+      const sizeInMB = estimatedSize / (1024 * 1024)
+      if (sizeInMB > 3) {
+        setNoDataReason(null)
+        initializeData(uploadPayload)
+        return
+      }
+      sessionStorage.setItem('analyticsData', JSON.stringify(uploadPayload))
+      setNoDataReason(null)
+      initializeData(uploadPayload)
+    } catch {
+      console.warn('Storage quota exceeded or stringify failed; loading dashboard from memory')
+      setNoDataReason(null)
+      initializeData(uploadPayload)
+    }
+  }
+
+  const handleEmptyStateDatasetLoad = (datasetPayload) => {
+    setLoading(true)
+    try {
+      if (!datasetPayload || !datasetPayload.data || !Array.isArray(datasetPayload.data)) {
+        setLoading(false)
+        alert('Error: Invalid dataset format. Please try again.')
+        return
+      }
+      const estimatedSize = JSON.stringify(datasetPayload).length
+      const sizeInMB = estimatedSize / (1024 * 1024)
+      if (sizeInMB > 3) {
+        setNoDataReason(null)
+        initializeData(datasetPayload)
+        return
+      }
+      sessionStorage.setItem('analyticsData', JSON.stringify(datasetPayload))
+      setNoDataReason(null)
+      initializeData(datasetPayload)
+    } catch {
+      console.warn('Storage quota exceeded or dataset handling failed; loading from memory')
+      setNoDataReason(null)
+      initializeData(datasetPayload)
+    }
+  }
+
+  const handleEmptyStateUploadErrorMessage = (message) => {
+    setEmptyStateUploadError(message)
+    setTimeout(() => setEmptyStateUploadError(null), 8000)
+  }
+
+  const handleEmptyStateUpgradeRequired = (upgradeData) => {
+    setUpgradePrompt(upgradeData)
+  }
+
   // Memoize applyChartFilter to ensure stable reference for useCallback
   const applyChartFilter = useCallback((baseData) => {
     if (!baseData) return baseData
@@ -1099,6 +1370,33 @@ function Dashboard() {
     setChartFilter(null)
   }
 
+  const handleLoadExample = async () => {
+    try {
+      const response = await fetch('/api/example/sales')
+      const payload = await response.json()
+      if (!payload || !Array.isArray(payload.data)) return
+      const nextRows = payload.data
+      setData(nextRows)
+      setFilteredData(nextRows)
+      setSidebarFilteredData(nextRows)
+      setColumns(payload.columns || Object.keys(nextRows[0] || {}))
+      setNumericColumns(payload.numericColumns || [])
+      setCategoricalColumns(payload.categoricalColumns || [])
+      setDateColumns(payload.dateColumns || [])
+      if (!selectedNumeric && Array.isArray(payload.numericColumns) && payload.numericColumns.length > 0) {
+        setSelectedNumeric(payload.numericColumns[0])
+      }
+      if (!selectedCategorical && Array.isArray(payload.categoricalColumns) && payload.categoricalColumns.length > 0) {
+        setSelectedCategorical(payload.categoricalColumns[0])
+      }
+      if (!selectedDate && Array.isArray(payload.dateColumns) && payload.dateColumns.length > 0) {
+        setSelectedDate(payload.dateColumns[0])
+      }
+    } catch (err) {
+      console.error('Failed to load example sales data:', err)
+    }
+  }
+
   const isOpportunityDataset = useMemo(() => {
     const colSet = new Set((columns || []).map((c) => String(c)))
     return (
@@ -1186,6 +1484,18 @@ function Dashboard() {
       return true
     })
   }, [filteredData, isEntityDataset, entityFilters])
+
+  const dashboardHeaderSubtitle = useMemo(() => {
+    const count = dashboardFilteredData?.length ?? 0
+    const n = count.toLocaleString()
+    if (dashboardView === 'advanced') {
+      return `${n} records · Statistical analysis · Anomaly detection · Forecasting`
+    }
+    if (dashboardView === 'simple') {
+      return `${n} records · Line chart · Pie · KPIs · Maps`
+    }
+    return `${count} records • ${columns.length} columns`
+  }, [dashboardView, dashboardFilteredData?.length, columns.length])
 
   useEffect(() => {
     if (!isEntityDataset) return
@@ -1837,18 +2147,24 @@ function Dashboard() {
             )}
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex rounded-lg border border-gray-200 p-0.5 bg-gray-50">
+            <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => setOpportunityViewFilter('all')}
-                className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${opportunityViewFilter === 'all' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+                style={{ ...metricPillStyle(opportunityViewFilter === 'all'), fontSize: '12px' }}
               >
                 All
               </button>
               <button
                 type="button"
                 onClick={() => setOpportunityViewFilter('favorites')}
-                className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors flex items-center gap-1 ${opportunityViewFilter === 'favorites' ? 'bg-white text-amber-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+                style={{
+                  ...metricPillStyle(opportunityViewFilter === 'favorites'),
+                  fontSize: '12px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                }}
               >
                 <span aria-hidden>★</span> Favorites {opportunityFavorites.size > 0 ? `(${opportunityFavorites.size})` : ''}
               </button>
@@ -2510,7 +2826,10 @@ function Dashboard() {
         selectedDate: selectedDate,
         dashboardView: dashboardView,
         opportunityKeyword: opportunityKeyword || undefined,
-        selectedOpportunityNoticeType: selectedOpportunityNoticeType || undefined
+        selectedOpportunityNoticeType: selectedOpportunityNoticeType || undefined,
+        ...(dashboardView === 'custom' && claudeDashboardSpec != null
+          ? { customDashboardSpec: claudeDashboardSpec }
+          : {})
       }
 
       let result
@@ -3201,9 +3520,23 @@ function Dashboard() {
     if (nextDate) setSelectedDate(nextDate)
     setClaudeDashboardSpec(spec)
     // Keep using the main left DashboardCharts flow so Claude updates the same view users already use.
-    setDashboardView('simple')
+    setDashboardView('custom')
     setDashboardKey((prev) => prev + 1)
   }, [dateColumns, selectedDate, selectedNumeric, selectedCategorical, dashboardView])
+
+  const handleCustomDashboardLayoutChange = useCallback((mergedLayout, tabIndex) => {
+    setClaudeDashboardSpec((prev) => {
+      if (!prev || !Array.isArray(mergedLayout)) return prev
+      const multi = prev.tabs && prev.tabs.length >= 2 ? prev.tabs : null
+      if (multi != null && tabIndex != null && prev.tabs[tabIndex]) {
+        return {
+          ...prev,
+          tabs: prev.tabs.map((t, i) => (i === tabIndex ? { ...t, layout: mergedLayout } : t))
+        }
+      }
+      return { ...prev, layout: mergedLayout }
+    })
+  }, [])
 
   const handleChartLayoutUpdate = useCallback((operations) => {
     if (!operations || typeof operations !== 'object') return
@@ -3358,39 +3691,64 @@ function Dashboard() {
     )
   }
 
-  // No analytics data: show explicit empty state so /dashboard is never blank
+  // No analytics data: default empty state includes upload (same FileUploader as Home; handlers only wire into this page)
   if (noDataReason) {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-          <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-8 text-center">
+      <div className="min-h-screen bg-gray-50 pb-16">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+          {upgradePrompt && (
+            <UpgradePrompt
+              error={upgradePrompt.error}
+              message={upgradePrompt.message}
+              currentPlan={upgradePrompt.currentPlan}
+              limit={upgradePrompt.limit}
+              fileSize={upgradePrompt.fileSize}
+              limitType={upgradePrompt.limitType}
+              onClose={() => setUpgradePrompt(null)}
+            />
+          )}
+          <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-8 text-center mb-8">
             <div className="w-14 h-14 mx-auto mb-4 rounded-full bg-gray-100 flex items-center justify-center">
               <svg className="w-7 h-7 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
               </svg>
             </div>
-            <h1 className="text-xl font-semibold text-gray-900 mb-2">No dashboard data</h1>
+            <h1 className="text-xl font-semibold text-gray-900 mb-2">No dashboard data yet</h1>
             <p className="text-gray-600 mb-6">
               {noDataReason === 'no-storage'
-                ? 'Upload a file from the home page to build a dashboard, or open a saved dashboard from My Dashboards.'
+                ? 'Upload a spreadsheet below to build your dashboard, or open a saved dashboard.'
                 : 'The stored data could not be loaded. Upload a new file or open a saved dashboard.'}
             </p>
-            <div className="flex flex-col sm:flex-row gap-3 justify-center">
-              <button
-                type="button"
-                onClick={() => navigate('/')}
-                className="inline-flex items-center justify-center px-4 py-2.5 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                Go to Home
-              </button>
-              <button
-                type="button"
-                onClick={() => navigate('/dashboards')}
-                className="inline-flex items-center justify-center px-4 py-2.5 bg-white border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                My Dashboards
-              </button>
+            <button
+              type="button"
+              onClick={() => navigate('/analytics/dashboards')}
+              className="inline-flex items-center justify-center px-4 py-2.5 bg-white border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              My Dashboards
+            </button>
+          </div>
+
+          {emptyStateUploadError && (
+            <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4 text-red-700 text-sm whitespace-pre-line break-words">
+              {emptyStateUploadError}
             </div>
+          )}
+
+          <div
+            className="bg-white rounded-xl shadow-lg p-8 file-upload-section analytics-short-upload-target"
+            style={{ scrollMarginTop: '1.25rem' }}
+          >
+            <h2 className="text-2xl font-semibold text-gray-900 mb-6 text-center">Upload Your Data</h2>
+            <FileUploader
+              onUploadSuccess={handleEmptyStateUploadSuccess}
+              onError={handleEmptyStateUploadErrorMessage}
+              onUpgradeRequired={handleEmptyStateUpgradeRequired}
+            />
+          </div>
+
+          <div className="bg-white rounded-xl shadow-lg p-8 mt-6 example-data-section">
+            <h2 className="text-2xl font-semibold text-gray-900 mb-6 text-center">Or Explore Public Data APIs</h2>
+            <ExampleDatasetButton onDatasetLoad={handleEmptyStateDatasetLoad} onError={handleEmptyStateUploadErrorMessage} />
           </div>
         </div>
       </div>
@@ -3769,23 +4127,37 @@ function Dashboard() {
   // Fullscreen content
   if (isFullscreen) {
     return (
-      <div className="fixed inset-0 bg-white z-50 overflow-auto">
+      <div className="fixed inset-0 bg-white dark:bg-slate-950 z-50 overflow-auto">
         {/* Fullscreen Header */}
-        <div className="sticky top-0 bg-white border-b border-gray-200 z-10 shadow-sm">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-            <div className="flex items-center justify-between">
-              <div>
-                {renderDashboardTitleEditor()}
-                <p className="text-sm text-gray-600">
-                  {dashboardFilteredData?.length || 0} records • {columns.length} columns
+        <div className="sticky top-0 bg-white dark:bg-slate-900 border-b border-gray-100 dark:border-slate-800 z-10 shadow-sm">
+          <div className={`max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 space-y-3 ${askClaudeDockPaddingClass}`}>
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div className="min-w-0">
+                {renderMainTitleArea()}
+                <p className="text-sm text-gray-600 dark:text-slate-400">
+                  {dashboardHeaderSubtitle}
                 </p>
               </div>
-              <div className="flex items-center gap-2 relative">
-                {/* Filters Button & Dropdown */}
+              <div className="flex flex-wrap items-center gap-2 justify-end">
+                <Link
+                  to="/analytics/dashboards"
+                  title="Open your saved dashboards"
+                  className="px-4 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors font-medium flex items-center gap-2 text-gray-900 dark:text-slate-100"
+                >
+                  <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
+                    />
+                  </svg>
+                  My Dashboards
+                </Link>
                 <div className="relative">
                   <button
                     onClick={() => setShowFilters(!showFilters)}
-                    className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50 transition-colors flex items-center gap-2"
+                    className="px-3 py-1.5 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors flex items-center gap-2"
                     title="Filters"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -3798,24 +4170,21 @@ function Dashboard() {
                       </svg>
                     )}
                   </button>
-                  
-                  {/* Filters Dropdown Panel */}
+
                   {showFilters && (
                     <>
-                      {/* Backdrop to close on outside click */}
-                      <div 
-                        className="fixed inset-0 z-40" 
+                      <div
+                        className="fixed inset-0 z-40"
                         onClick={() => setShowFilters(false)}
                       ></div>
-                      
-                      {/* Dropdown Panel */}
-                      <div className="absolute right-0 top-full mt-2 w-96 bg-white rounded-lg shadow-xl border border-gray-200 z-50 max-h-[80vh] overflow-y-auto">
+
+                      <div className="absolute right-0 top-full mt-2 w-96 bg-white dark:bg-slate-900 rounded-lg shadow-xl border border-gray-200 dark:border-slate-700 z-50 max-h-[80vh] overflow-y-auto">
                         <div className="p-4">
                           <div className="flex items-center justify-between mb-4">
-                            <h3 className="text-lg font-semibold text-gray-900">Filters & Columns</h3>
+                            <h3 className="text-lg font-semibold text-gray-900 dark:text-slate-100">Filters & Columns</h3>
                             <button
                               onClick={() => setShowFilters(false)}
-                              className="text-gray-400 hover:text-gray-600 transition-colors"
+                              className="text-gray-400 hover:text-gray-600 dark:hover:text-slate-300 transition-colors"
                             >
                               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -3838,69 +4207,7 @@ function Dashboard() {
                     </>
                   )}
                 </div>
-                
-                <div className="flex gap-2 flex-wrap">
-                  <button
-                    onClick={() => setDashboardView('simple')}
-                    className={`px-3 py-1.5 text-sm border rounded-lg transition-colors ${
-                      dashboardView === 'simple'
-                        ? 'bg-blue-600 text-white border-blue-600'
-                        : 'bg-white border-gray-300 hover:bg-gray-50'
-                    }`}
-                  >
-                    Charts
-                  </button>
-                  <button
-                    onClick={() => setDashboardView('advanced')}
-                    className={`px-3 py-1.5 text-sm border rounded-lg transition-colors ${
-                      dashboardView === 'advanced'
-                        ? 'bg-blue-600 text-white border-blue-600'
-                        : 'bg-white border-gray-300 hover:bg-gray-50'
-                    }`}
-                  >
-                    Advanced
-                  </button>
-                  <button
-                    onClick={() => setDashboardView('custom')}
-                    className={`px-3 py-1.5 text-sm border rounded-lg transition-colors ${
-                      dashboardView === 'custom'
-                        ? 'bg-blue-600 text-white border-blue-600'
-                        : 'bg-white border-gray-300 hover:bg-gray-50'
-                    }`}
-                  >
-                    Custom
-                  </button>
-                  <button
-                    onClick={() => setDashboardView('timeseries')}
-                    className={`px-3 py-1.5 text-sm border rounded-lg transition-colors ${
-                      dashboardView === 'timeseries'
-                        ? 'bg-blue-600 text-white border-blue-600'
-                        : 'bg-white border-gray-300 hover:bg-gray-50'
-                    }`}
-                  >
-                    Time Series
-                  </button>
-                  <button
-                    onClick={() => setDashboardView('data')}
-                    className={`px-3 py-1.5 text-sm border rounded-lg transition-colors ${
-                      dashboardView === 'data'
-                        ? 'bg-blue-600 text-white border-blue-600'
-                        : 'bg-white border-gray-300 hover:bg-gray-50'
-                    }`}
-                  >
-                    Data & Metadata
-                  </button>
-                  <button
-                    onClick={() => setDashboardView('ai-insights')}
-                    className={`px-3 py-1.5 text-sm border rounded-lg transition-colors ${
-                      dashboardView === 'ai-insights'
-                        ? 'bg-blue-600 text-white border-blue-600'
-                        : 'bg-white border-gray-300 hover:bg-gray-50'
-                    }`}
-                  >
-                    AI Insights
-                  </button>
-                </div>
+
                 <button
                   onClick={toggleFullscreen}
                   className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors font-medium text-sm flex items-center gap-2"
@@ -3913,6 +4220,71 @@ function Dashboard() {
                 </button>
               </div>
             </div>
+
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between pt-3 border-t border-gray-100 dark:border-slate-800">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setDashboardView('simple')}
+                  className={`text-xs px-3 py-1.5 rounded-full font-medium transition-colors ${
+                    dashboardView === 'simple'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  Charts
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDashboardView('advanced')}
+                  className={`text-xs px-3 py-1.5 rounded-full font-medium transition-colors ${
+                    dashboardView === 'advanced'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  Advanced
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDashboardView('custom')}
+                  className={`text-xs px-3 py-1.5 rounded-full font-medium transition-colors ${
+                    dashboardView === 'custom'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  Custom
+                  <span
+                    style={{
+                      fontSize: '9px',
+                      fontWeight: 600,
+                      padding: '1px 5px',
+                      borderRadius: '4px',
+                      background: '#7c3aed',
+                      color: 'white',
+                      marginLeft: '6px',
+                      verticalAlign: 'middle',
+                      letterSpacing: '0.05em',
+                    }}
+                  >
+                    BETA
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDashboardView('data')}
+                  className={`text-xs px-3 py-1.5 rounded-full font-medium transition-colors ${
+                    dashboardView === 'data'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  Data & Metadata
+                </button>
+              </div>
+              <ThemeToggle className="shrink-0 self-end sm:self-center" />
+            </div>
           </div>
         </div>
 
@@ -3920,7 +4292,8 @@ function Dashboard() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           {/* Active Filter Indicator */}
           {chartFilter && (
-            <div className="mb-4 flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg p-3">
+            <div className={`${askClaudeDockPaddingClass} mb-4`}>
+            <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg p-3">
               <div className="flex items-center space-x-2">
                 <span className="text-sm font-medium text-blue-900">
                   Filtered by: <span className="font-semibold">
@@ -3936,57 +4309,98 @@ function Dashboard() {
                 Clear Filter
               </button>
             </div>
+            </div>
           )}
 
           {/* Category Tabs: quick "separate dashboards" by category */}
-          <MetricTabsBar />
-          <CategoryTabsBar />
-          {renderTopAgenciesPanel()}
-          {renderAgencyDrilldownPanel()}
-
-          {renderEntityFiltersPanel()}
+          <div className={askClaudeDockPaddingClass}>
+          {!['advanced', 'simple'].includes(dashboardView) && (
+            <>
+              {dashboardView !== 'custom' && (
+                <>
+                  <MetricTabsBar />
+                  <CategoryTabsBar />
+                </>
+              )}
+              {renderTopAgenciesPanel()}
+              {renderAgencyDrilldownPanel()}
+              {renderEntityFiltersPanel()}
+            </>
+          )}
+          </div>
 
           {/* Charts Section */}
           {dashboardView === 'data' ? (
-            <DataMetadataEditor
-              data={data}
-              columns={columns}
-              numericColumns={effectiveNumericColumns}
-              categoricalColumns={categoricalColumns}
-              dateColumns={dateColumns}
-              onMetadataUpdate={handleMetadataUpdate}
-            />
-          ) : dashboardView === 'ai-insights' ? (
-            claudeDashboardSpec ? (
-              <DashboardRenderer
-                spec={claudeDashboardSpec}
-                data={dashboardFilteredData || filteredData || data || []}
-                filterValues={{}}
-                onFilterChange={() => {}}
-              />
-            ) : (
-              <AiInsightsTab
-                data={dashboardFilteredData || data || []}
+            <div className={`min-w-0 ${askClaudeDockPaddingClass}`}>
+              <DataMetadataEditor
+                data={data}
                 columns={columns}
                 numericColumns={effectiveNumericColumns}
                 categoricalColumns={categoricalColumns}
                 dateColumns={dateColumns}
+                onMetadataUpdate={handleMetadataUpdate}
               />
-            )
+            </div>
+          ) : dashboardView === 'custom' ? (
+            <div className={`min-w-0 ${askClaudeDockPaddingClass}`}>
+              <div
+                style={{
+                  background: '#1e1b4b',
+                  border: '0.5px solid #4338ca',
+                  borderRadius: '8px',
+                  padding: '8px 14px',
+                  margin: '0 0 12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  fontSize: '12px',
+                  color: '#a5b4fc',
+                }}
+              >
+                <span>✨</span>
+                <span>
+                  AI-generated dashboards are in Beta. Use Ask Claude on the right to generate a custom dashboard from your data.
+                </span>
+              </div>
+              {claudeDashboardSpec ? (
+                <DashboardRenderer
+                  spec={claudeDashboardSpec}
+                  data={dashboardFilteredData || filteredData || data || []}
+                  filterValues={{}}
+                  onFilterChange={() => {}}
+                  preferFreshChartLayout
+                  onLayoutChange={handleCustomDashboardLayoutChange}
+                />
+              ) : (
+                <div
+                  style={{
+                    padding: '48px 24px',
+                    textAlign: 'center',
+                    color: '#94a3b8',
+                    background: '#0f172a',
+                    borderRadius: '12px',
+                    border: '0.5px solid #334155',
+                  }}
+                >
+                  <p style={{ margin: 0, fontSize: '15px' }}>
+                    No custom dashboard yet. Use Ask Claude to generate a layout, then open this tab.
+                  </p>
+                </div>
+              )}
+            </div>
           ) : dashboardView === 'timeseries' ? (
-            <TimeSeriesReport
-              data={dashboardFilteredData || data}
-              numericColumns={effectiveNumericColumns}
-              dateColumns={dateColumns}
-              selectedNumeric={selectedNumeric}
-              selectedDate={selectedDate}
-            />
-          ) : (
-            <>
-              <DashboardCharts
-                key={`dashboard-main-${dashboardKey}`}
-                chartLayout={chartLayout}
-                onChartLayoutUpdate={handleChartLayoutUpdate}
+            <div className={`min-w-0 ${askClaudeDockPaddingClass}`}>
+              <TimeSeriesReport
+                data={dashboardFilteredData || data}
+                numericColumns={effectiveNumericColumns}
+                dateColumns={dateColumns}
+                selectedNumeric={selectedNumeric}
+                selectedDate={selectedDate}
+              />
+            </div>
+          ) : dashboardView === 'advanced' ? (
+            <div className={`min-w-0 ${askClaudeDockPaddingClass}`}>
+              <AdvancedDashboard
                 data={data}
                 filteredData={dashboardFilteredData}
                 selectedNumeric={selectedNumeric}
@@ -3994,18 +4408,76 @@ function Dashboard() {
                 selectedDate={selectedDate}
                 onChartFilter={handleChartFilter}
                 chartFilter={chartFilter}
-                pieFilteredData={opportunityPieDataByOrg}
-                pieDimensionOverride={opportunityPieDataByOrg ? 'organization' : undefined}
-                pieTitleOverride={opportunityPieDataByOrg ? `By organization (${selectedOpportunityNoticeType})` : undefined}
-                showGeoMap={showMapTab && chartLayout.showMap}
-                geoMapData={dashboardFilteredData || data}
-                geoSelectedCategorical="state"
-                geoSelectedNumeric={effectiveNumericColumns?.includes('award_amount') ? 'award_amount' : effectiveNumericColumns?.includes('opportunity_count') ? 'opportunity_count' : null}
-                showVesselMap={vesselMapConfig.show && chartLayout.showMap}
-                vesselMapData={dashboardFilteredData}
-                vesselLatCol={vesselMapConfig.latCol}
-                vesselLonCol={vesselMapConfig.lonCol}
+                categoricalColumns={categoricalColumns}
+                numericColumns={effectiveNumericColumns}
+                dateColumns={dateColumns}
+                chartLayout={chartLayout}
+                onChartLayoutUpdate={handleChartLayoutUpdate}
               />
+            </div>
+          ) : (
+            <div className={`min-w-0 ${askClaudeDockPaddingClass}`}>
+              {(!data || data.length === 0) ? (
+                <div
+                  className="analytics-short-upload-target"
+                  style={{
+                    display: 'flex', flexDirection: 'column',
+                    alignItems: 'center', justifyContent: 'center',
+                    minHeight: '50vh', gap: '20px',
+                    textAlign: 'center', padding: '24px 40px',
+                    scrollMarginTop: '1rem',
+                  }}
+                >
+                  <div style={{ fontSize: '48px' }}>📊</div>
+                  <h2 style={{ fontSize: '24px', fontWeight: 500, color: '#f8fafc', margin: 0 }}>
+                    Upload your data to get started
+                  </h2>
+                  <p style={{ fontSize: '16px', color: '#94a3b8', maxWidth: '440px', margin: 0, lineHeight: 1.6 }}>
+                    Drop in a CSV or Excel file and ask Claude anything about your data. Get instant dashboards and AI-powered insights in seconds.
+                  </p>
+                  <div className="w-full max-w-xl mx-auto text-left [&_.border-gray-300]:border-slate-600 [&_.border-dashed]:bg-slate-800/30 [&_.bg-gray-50]:bg-slate-800/40 [&_p.text-gray-900]:text-slate-100 [&_p.text-gray-500]:text-slate-400 [&_p.text-gray-600]:text-slate-300">
+                    <FileUploader
+                      onUploadSuccess={handleEmptyStateUploadSuccess}
+                      onError={handleEmptyStateUploadErrorMessage}
+                      onUpgradeRequired={handleEmptyStateUpgradeRequired}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleLoadExample('sales')}
+                    style={{ background: '#1e293b', color: '#94a3b8', border: '0.5px solid #334155', padding: '12px 28px', borderRadius: '8px', fontSize: '15px', cursor: 'pointer' }}
+                  >
+                    Try example data
+                  </button>
+                  <p style={{ fontSize: '12px', color: '#64748b', margin: 0 }}>
+                    Supports CSV, Excel, JSON · Up to 50MB
+                  </p>
+                </div>
+              ) : (
+                <DashboardCharts
+                  key={`dashboard-main-${dashboardKey}`}
+                  chartLayout={chartLayout}
+                  onChartLayoutUpdate={handleChartLayoutUpdate}
+                  data={data}
+                  filteredData={dashboardFilteredData}
+                  selectedNumeric={selectedNumeric}
+                  selectedCategorical={selectedCategorical}
+                  selectedDate={selectedDate}
+                  onChartFilter={handleChartFilter}
+                  chartFilter={chartFilter}
+                  pieFilteredData={opportunityPieDataByOrg}
+                  pieDimensionOverride={opportunityPieDataByOrg ? 'organization' : undefined}
+                  pieTitleOverride={opportunityPieDataByOrg ? `By organization (${selectedOpportunityNoticeType})` : undefined}
+                  showGeoMap={showMapTab && chartLayout.showMap}
+                  geoMapData={dashboardFilteredData || data}
+                  geoSelectedCategorical="state"
+                  geoSelectedNumeric={effectiveNumericColumns?.includes('award_amount') ? 'award_amount' : effectiveNumericColumns?.includes('opportunity_count') ? 'opportunity_count' : null}
+                  showVesselMap={vesselMapConfig.show && chartLayout.showMap}
+                  vesselMapData={dashboardFilteredData}
+                  vesselLatCol={vesselMapConfig.latCol}
+                  vesselLonCol={vesselMapConfig.lonCol}
+                />
+              )}
               {/* Metric Cards - Only in simple view */}
               {dashboardView === 'simple' && chartLayout.showKPIs && (
                 <MetricCards
@@ -4015,10 +4487,10 @@ function Dashboard() {
                   stats={stats}
                 />
               )}
-            </>
+            </div>
           )}
 
-          {renderOpportunityListPanel()}
+          <div className={askClaudeDockPaddingClass}>{renderOpportunityListPanel()}</div>
         </div>
       </div>
     )
@@ -4099,11 +4571,13 @@ function Dashboard() {
     )
   }
 
+  const viewTabStyle = (active) =>
+    active
+      ? { background: TD.ACCENT_BLUE, color: '#fff', border: 'none', borderRadius: '99px', padding: '8px 14px', fontSize: '12px', fontWeight: 600 }
+      : { background: 'transparent', color: '#94a3b8', border: 'none', borderRadius: '99px', padding: '8px 14px', fontSize: '12px', fontWeight: 500 }
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-gray-50 to-purple-50 watermark-bg relative">
-      {/* Analytics Watermark Pattern */}
-      <div className="analytics-watermark"></div>
-      <div className="analytics-watermark-icons"></div>
+    <div className="relative" style={{ background: '#0f172a', minHeight: '100vh' }}>
 
       {recordingCountdown > 0 && (
         <div className="fixed inset-0 z-[120] pointer-events-none flex items-center justify-center">
@@ -4125,7 +4599,13 @@ function Dashboard() {
       )}
       
       {/* Date Range Slider and Network View Button - Top of Dashboard */}
-      <div className="bg-white border-b border-gray-200 shadow-sm">
+      <div
+        style={{
+          background: '#1e293b',
+          borderBottom: '0.5px solid #334155',
+          color: '#94a3b8',
+        }}
+      >
         <div className={`max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 ${askClaudeDockPaddingClass}`}>
           <div className="flex flex-col gap-2 py-3 md:flex-row md:items-center md:justify-between">
             <div className="flex-1">
@@ -4139,17 +4619,24 @@ function Dashboard() {
             </div>
             {samgovDateQuickOptions.length > 0 && (
               <div className="flex items-center gap-2 md:ml-4">
-                <span className="text-xs font-medium text-gray-600">Date field:</span>
+                <span style={{ fontSize: '12px', fontWeight: 500, color: '#94a3b8' }}>Date field:</span>
                 {samgovDateQuickOptions.map((opt) => (
                   <button
                     key={opt.key}
                     type="button"
                     onClick={() => setSelectedDate(opt.key)}
-                    className={`px-2.5 py-1.5 rounded-md text-xs font-medium border transition-colors ${
+                    style={
                       selectedDate === opt.key
-                        ? 'bg-blue-600 text-white border-blue-600'
-                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                    }`}
+                        ? { background: TD.ACCENT_BLUE, color: '#fff', border: 'none', borderRadius: '6px', padding: '8px 12px', fontSize: '12px', fontWeight: 600 }
+                        : {
+                            background: '#1e293b',
+                            color: '#94a3b8',
+                            border: '0.5px solid #334155',
+                            borderRadius: '6px',
+                            padding: '8px 12px',
+                            fontSize: '12px',
+                          }
+                    }
                   >
                     {opt.label}
                   </button>
@@ -4160,306 +4647,439 @@ function Dashboard() {
         </div>
       </div>
 
-      <div ref={shortRootRef} className={`max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 relative ${askClaudeDockPaddingClass}`}>
-        {/* Header */}
-        <div className="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center animate-fade-in">
-          <div>
-            {renderDashboardTitleEditor()}
-            <p className="text-sm text-gray-600">
-              {dashboardFilteredData?.length || 0} records • {columns.length} columns
-            </p>
-          </div>
-          <div className="flex items-center gap-2 mt-2 sm:mt-0 relative">
-            {/* Filters Button & Dropdown */}
-            <div className="relative">
+      <div ref={shortRootRef} className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 relative">
+        {/* Header: row 1 title + primary actions; row 2 view tabs + theme */}
+        <div
+          className={`mb-6 space-y-0 animate-fade-in overflow-hidden ${askClaudeDockPaddingClass}`}
+          style={{
+            background: '#1e293b',
+            border: '0.5px solid #334155',
+            borderRadius: '8px',
+          }}
+        >
+          <div
+            className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between px-4 py-4"
+            style={{ borderBottom: '0.5px solid #334155' }}
+          >
+            <div className="min-w-0">
+              {renderMainTitleArea()}
+              <p style={{ fontSize: '14px', color: '#94a3b8', marginTop: '4px' }}>{dashboardHeaderSubtitle}</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 justify-end">
               <button
-                onClick={() => setShowFilters(!showFilters)}
-                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50 transition-colors flex items-center gap-2"
-                title="Filters"
+                onClick={handleSaveDashboard}
+                disabled={saving || !data}
+                style={{
+                  padding: '10px 16px',
+                  background: TD.SUCCESS,
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  opacity: saving || !data ? 0.5 : 1,
+                  cursor: saving || !data ? 'not-allowed' : 'pointer',
+                }}
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-                </svg>
-                Filters
-                {showFilters && (
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                  </svg>
+                {saving ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Saving...
+                  </>
+                ) : saveSuccess ? (
+                  <>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    Saved!
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                    </svg>
+                    {savedDashboardId ? 'Update Dashboard' : 'Save Dashboard'}
+                  </>
                 )}
               </button>
-              
-              {/* Filters Dropdown Panel */}
-              {showFilters && (
-                <>
-                  {/* Backdrop to close on outside click */}
-                  <div 
-                    className="fixed inset-0 z-40" 
-                    onClick={() => setShowFilters(false)}
-                  ></div>
-                  
-                  {/* Dropdown Panel */}
-                  <div className="absolute right-0 top-full mt-2 w-96 bg-white rounded-lg shadow-xl border border-gray-200 z-50 max-h-[80vh] overflow-y-auto">
-                    <div className="p-4">
-                      <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-lg font-semibold text-gray-900">Filters & Columns</h3>
-                        <button
-                          onClick={() => setShowFilters(false)}
-                          className="text-gray-400 hover:text-gray-600 transition-colors"
-                        >
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                          </svg>
-                        </button>
-                      </div>
-                      <Filters
-                        data={data}
-                        numericColumns={effectiveNumericColumns}
-                        categoricalColumns={categoricalColumns}
-                        dateColumns={dateColumns}
-                        onFilterChange={handleFilterChange}
-                        selectedNumeric={selectedNumeric}
-                        selectedCategorical={selectedCategorical}
-                        selectedDate={selectedDate}
-                        onColumnChange={handleColumnChange}
-                      />
-                    </div>
-                  </div>
-                </>
+              <button
+                onClick={async () => {
+                  const effectiveShareId = shareId || generateShareId()
+                  const dashboardData = {
+                    name: dashboardTitle,
+                    dashboardTitle: dashboardTitle,
+                    data: data,
+                    columns: columns,
+                    numericColumns: numericColumns,
+                    categoricalColumns: categoricalColumns,
+                    dateColumns: dateColumns,
+                    selectedNumeric: selectedNumeric,
+                    selectedCategorical: selectedCategorical,
+                    selectedDate: selectedDate,
+                    opportunityKeyword: opportunityKeyword,
+                    selectedOpportunityNoticeType: selectedOpportunityNoticeType || undefined, // Base type filter for pie/by-org
+                    dashboardView: dashboardView, // Save the current view (advanced/simple)
+                    layouts: dashboardLayouts, // Include widget layouts
+                    widgetVisibility: dashboardWidgetVisibility, // Include widget visibility
+                    filterSnapshot: filterSnapshotRef.current || undefined, // Sidebar filters so shared view matches
+                    opportunityFavorites: opportunityFavorites.size > 0 ? [...opportunityFavorites] : undefined,
+                    opportunityFavoriteRows: opportunityFavoriteRows.length > 0 ? opportunityFavoriteRows : undefined,
+                    ...(dashboardView === 'custom' && claudeDashboardSpec != null
+                      ? { customDashboardSpec: claudeDashboardSpec }
+                      : {}),
+                  }
+
+                  // Always re-save latest state/title so existing links stay current.
+                  const result = await saveSharedDashboard(effectiveShareId, dashboardData)
+                  if (!result?.ok) {
+                    alert('Failed to update shared dashboard. Please try again.')
+                    return
+                  }
+                  trackEvent('share_dashboard', {
+                    event_category: 'engagement',
+                    event_label: 'share_clicked',
+                  })
+
+                  if (!shareId) {
+                    setShareId(effectiveShareId)
+                  }
+
+                  const shareUrl = getShareableUrl(effectiveShareId)
+                  const copied = await copyToClipboard(shareUrl)
+                  if (copied) {
+                    setShareLinkCopied(true)
+                    setTimeout(() => setShareLinkCopied(false), 3000)
+                  }
+                  if (!result.backendSaved) {
+                    // Not fatal: link will only work in this browser.
+                    console.warn('Share link saved locally only (backend not configured).')
+                  }
+                }}
+                style={{
+                  padding: '10px 16px',
+                  background: TD.ACCENT_BLUE,
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                </svg>
+                {shareLinkCopied ? 'Link Copied!' : shareId ? 'Copy Share Link' : 'Share Dashboard'}
+              </button>
+              {shareId && (
+                <span style={{ fontSize: '12px', color: '#94a3b8' }}>
+                  Share ID: {shareId.split('_')[1]}
+                </span>
               )}
-            </div>
-            
-            <button
-              onClick={toggleFullscreen}
-              className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50 transition-colors flex items-center gap-2"
-              title="Enter Fullscreen"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-              </svg>
-              Fullscreen
-            </button>
-            <div className="flex gap-2 flex-wrap">
-              <button
-                onClick={() => setDashboardView('simple')}
-                className={`px-3 py-1.5 text-sm border rounded-lg transition-colors ${
-                  dashboardView === 'simple'
-                    ? 'bg-blue-600 text-white border-blue-600'
-                    : 'bg-white border-gray-300 hover:bg-gray-50'
-                }`}
+              <Link
+                to="/analytics/dashboards"
+                title="Open your saved dashboards"
+                style={{
+                  padding: '10px 16px',
+                  background: 'transparent',
+                  color: TD.TEXT_1,
+                  border: `1px solid ${TD.CARD_BORDER}`,
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  textDecoration: 'none',
+                }}
               >
-                Charts
-              </button>
-              <button
-                onClick={() => setDashboardView('advanced')}
-                className={`px-3 py-1.5 text-sm border rounded-lg transition-colors ${
-                  dashboardView === 'advanced'
-                    ? 'bg-blue-600 text-white border-blue-600'
-                    : 'bg-white border-gray-300 hover:bg-gray-50'
-                }`}
-              >
-                Advanced
-              </button>
-              <button
-                onClick={() => setDashboardView('custom')}
-                className={`px-3 py-1.5 text-sm border rounded-lg transition-colors ${
-                  dashboardView === 'custom'
-                    ? 'bg-blue-600 text-white border-blue-600'
-                    : 'bg-white border-gray-300 hover:bg-gray-50'
-                }`}
-              >
-                Custom
-              </button>
-              <button
-                onClick={() => setDashboardView('data')}
-                className={`px-3 py-1.5 text-sm border rounded-lg transition-colors ${
-                  dashboardView === 'data'
-                    ? 'bg-blue-600 text-white border-blue-600'
-                    : 'bg-white border-gray-300 hover:bg-gray-50'
-                }`}
-              >
-                Data & Metadata
-              </button>
-              <button
-                onClick={() => setDashboardView('ai-insights')}
-                className={`px-3 py-1.5 text-sm border rounded-lg transition-colors ${
-                  dashboardView === 'ai-insights'
-                    ? 'bg-blue-600 text-white border-blue-600'
-                    : 'bg-white border-gray-300 hover:bg-gray-50'
-                }`}
-              >
-                AI Insights
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Category Tabs: quick "separate dashboards" by category */}
-        <MetricTabsBar />
-        <CategoryTabsBar />
-        {renderTopAgenciesPanel()}
-        {renderAgencyDrilldownPanel()}
-        {renderEntityFiltersPanel()}
-
-        {/* Save & Share Buttons */}
-        <div className="mb-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={handleSaveDashboard}
-              disabled={saving || !data}
-              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium text-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {saving ? (
-                <>
-                  <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Saving...
-                </>
-              ) : saveSuccess ? (
-                <>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  Saved!
-                </>
-              ) : (
-                <>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-                  </svg>
-                  {savedDashboardId ? 'Update Dashboard' : 'Save Dashboard'}
-                </>
+                <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
+                  />
+                </svg>
+                My Dashboards
+              </Link>
+              {saveFeedbackMessage && (
+                <span
+                  style={{
+                    fontSize: '12px',
+                    color: TD.SUCCESS_ALT,
+                    fontWeight: 600,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <span>{saveFeedbackMessage}</span>
+                  <Link
+                    to="/analytics/dashboards"
+                    style={{ color: TD.ACCENT_MID, fontWeight: 600, textDecoration: 'underline', textUnderlineOffset: '2px' }}
+                  >
+                    View saved list
+                  </Link>
+                </span>
               )}
-            </button>
-            <button
-              onClick={async () => {
-                const effectiveShareId = shareId || generateShareId()
-                const dashboardData = {
-                  name: dashboardTitle,
-                  dashboardTitle: dashboardTitle,
-                  data: data,
-                  columns: columns,
-                  numericColumns: numericColumns,
-                  categoricalColumns: categoricalColumns,
-                  dateColumns: dateColumns,
-                  selectedNumeric: selectedNumeric,
-                  selectedCategorical: selectedCategorical,
-                  selectedDate: selectedDate,
-                  opportunityKeyword: opportunityKeyword,
-                  selectedOpportunityNoticeType: selectedOpportunityNoticeType || undefined, // Base type filter for pie/by-org
-                  dashboardView: dashboardView, // Save the current view (advanced/simple)
-                  layouts: dashboardLayouts, // Include widget layouts
-                  widgetVisibility: dashboardWidgetVisibility, // Include widget visibility
-                  filterSnapshot: filterSnapshotRef.current || undefined, // Sidebar filters so shared view matches
-                  opportunityFavorites: opportunityFavorites.size > 0 ? [...opportunityFavorites] : undefined,
-                  opportunityFavoriteRows: opportunityFavoriteRows.length > 0 ? opportunityFavoriteRows : undefined,
-                }
-
-                // Always re-save latest state/title so existing links stay current.
-                const result = await saveSharedDashboard(effectiveShareId, dashboardData)
-                if (!result?.ok) {
-                  alert('Failed to update shared dashboard. Please try again.')
-                  return
-                }
-                trackEvent('share_dashboard', {
-                  event_category: 'engagement',
-                  event_label: 'share_clicked',
-                })
-
-                if (!shareId) {
-                  setShareId(effectiveShareId)
-                }
-
-                const shareUrl = getShareableUrl(effectiveShareId)
-                const copied = await copyToClipboard(shareUrl)
-                if (copied) {
-                  setShareLinkCopied(true)
-                  setTimeout(() => setShareLinkCopied(false), 3000)
-                }
-                if (!result.backendSaved) {
-                  // Not fatal: link will only work in this browser.
-                  console.warn('Share link saved locally only (backend not configured).')
-                }
-              }}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm flex items-center gap-2"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-              </svg>
-              {shareLinkCopied ? 'Link Copied!' : shareId ? 'Copy Share Link' : 'Share Dashboard'}
-            </button>
-            {shareId && (
-              <span className="text-xs text-gray-500">
-                Share ID: {shareId.split('_')[1]}
-              </span>
-            )}
-            {saveFeedbackMessage && (
-              <span className="text-xs text-green-700 font-medium">
-                {saveFeedbackMessage}
-              </span>
-            )}
-            <div className="hidden sm:block h-6 border-l border-gray-300 mx-1" />
-            {isScreenRecordingSupported() && (
-              <>
-                {!isRecordingScreen ? (
-                  <>
+              <div className="hidden sm:block h-6 w-px mx-0.5" style={{ background: '#334155' }} />
+              {isScreenRecordingSupported() && (
+                <>
+                  {!isRecordingScreen ? (
                     <button
                       type="button"
                       onClick={handleStartScreenRecord}
                       disabled={!data}
-                      className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors font-medium text-sm disabled:opacity-50"
-                      title="Record your tab or screen in real time"
+                      style={{
+                        padding: '10px 16px',
+                        background: TD.LIVE_RED,
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontSize: '14px',
+                        fontWeight: 600,
+                        opacity: !data ? 0.5 : 1,
+                        cursor: !data ? 'not-allowed' : 'pointer',
+                      }}
+                      title="Starts a screen recording. In the share dialog, pick “Entire screen” (or a display) to capture the full monitor — not just this tab."
                     >
                       Live capture
                     </button>
-                  </>
-                ) : (
+                  ) : (
+                    <>
+                      <span
+                        style={{
+                          padding: '10px 14px',
+                          borderRadius: '8px',
+                          background: `${TD.DANGER}33`,
+                          color: TD.TEXT_1,
+                          fontSize: '14px',
+                          fontWeight: 600,
+                        }}
+                      >
+                        Recording {Math.floor(screenRecordingElapsed / 60)}:{String(screenRecordingElapsed % 60).padStart(2, '0')}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleStopScreenRecord}
+                        style={{
+                          padding: '10px 16px',
+                          background: TD.DANGER,
+                          color: '#fff',
+                          border: 'none',
+                          borderRadius: '8px',
+                          fontSize: '14px',
+                          fontWeight: 600,
+                        }}
+                      >
+                        Stop recording
+                      </button>
+                    </>
+                  )}
+                </>
+              )}
+              <div className="relative">
+                <button
+                  onClick={() => setShowFilters(!showFilters)}
+                  style={{
+                    padding: '8px 14px',
+                    fontSize: '14px',
+                    border: '0.5px solid #334155',
+                    borderRadius: '8px',
+                    background: '#1e293b',
+                    color: '#94a3b8',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                  }}
+                  title="Filters"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                  </svg>
+                  Filters
+                  {showFilters && (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                    </svg>
+                  )}
+                </button>
+
+                {showFilters && (
                   <>
-                    <span className="px-3 py-2 rounded-lg bg-red-100 text-red-800 text-sm font-medium">
-                      Recording {Math.floor(screenRecordingElapsed / 60)}:{String(screenRecordingElapsed % 60).padStart(2, '0')}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={handleStopScreenRecord}
-                      className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium text-sm"
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => setShowFilters(false)}
+                    ></div>
+
+                    <div
+                      className="absolute right-0 top-full mt-2 w-96 rounded-lg shadow-xl z-50 max-h-[80vh] overflow-y-auto"
+                      style={{
+                        background: '#1e293b',
+                        border: '0.5px solid #334155',
+                      }}
                     >
-                      Stop recording
-                    </button>
+                      <div className="p-4">
+                        <div className="flex items-center justify-between mb-4">
+                          <h3 style={{ fontSize: '18px', fontWeight: 600, color: '#f8fafc' }}>Filters & Columns</h3>
+                          <button
+                            type="button"
+                            onClick={() => setShowFilters(false)}
+                            style={{ color: '#94a3b8', background: 'none', border: 'none', cursor: 'pointer' }}
+                          >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                        <Filters
+                          data={data}
+                          numericColumns={effectiveNumericColumns}
+                          categoricalColumns={categoricalColumns}
+                          dateColumns={dateColumns}
+                          onFilterChange={handleFilterChange}
+                          selectedNumeric={selectedNumeric}
+                          selectedCategorical={selectedCategorical}
+                          selectedDate={selectedDate}
+                          onColumnChange={handleColumnChange}
+                        />
+                      </div>
+                    </div>
                   </>
                 )}
-                {lastShortVideo?.blob && !isRecordingScreen && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => handleUploadToYouTube()}
-                      disabled={!!uploadingToYouTubeId}
-                      className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium text-sm disabled:opacity-50"
-                      title={isYouTubeUploadConfigured() ? 'Upload to YouTube' : 'Add VITE_GOOGLE_CLIENT_ID to enable'}
-                    >
-                      {uploadingToYouTubeId === 'current' ? 'Uploading…' : 'Upload to YouTube'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleShareToLinkedIn}
-                      className="px-4 py-2 bg-[#0A66C2] text-white rounded-lg hover:bg-[#004182] font-medium text-sm"
-                      title="Download video and open LinkedIn to post"
-                    >
-                      Share to LinkedIn
-                    </button>
-                  </>
-                )}
-              </>
-            )}
+              </div>
+
+              <button
+                type="button"
+                onClick={toggleFullscreen}
+                style={{
+                  padding: '8px 14px',
+                  fontSize: '14px',
+                  border: '0.5px solid #334155',
+                  borderRadius: '8px',
+                  background: '#1e293b',
+                  color: '#94a3b8',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}
+                title="Enter Fullscreen"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                </svg>
+                Fullscreen
+              </button>
             </div>
           </div>
+
+          <div
+            className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between px-4 py-3"
+            style={{ borderTop: '0.5px solid #334155', background: '#1e293b' }}
+          >
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setDashboardView('simple')}
+                style={viewTabStyle(dashboardView === 'simple')}
+              >
+                Charts
+              </button>
+              <button
+                type="button"
+                onClick={() => setDashboardView('advanced')}
+                style={viewTabStyle(dashboardView === 'advanced')}
+              >
+                Advanced
+              </button>
+              <button
+                type="button"
+                onClick={() => setDashboardView('custom')}
+                style={viewTabStyle(dashboardView === 'custom')}
+              >
+                Custom
+                <span
+                  style={{
+                    fontSize: '9px',
+                    fontWeight: 600,
+                    padding: '1px 5px',
+                    borderRadius: '4px',
+                    background: '#7c3aed',
+                    color: 'white',
+                    marginLeft: '6px',
+                    verticalAlign: 'middle',
+                    letterSpacing: '0.05em',
+                  }}
+                >
+                  BETA
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setDashboardView('data')}
+                style={viewTabStyle(dashboardView === 'data')}
+              >
+                Data & Metadata
+              </button>
+            </div>
+            <ThemeToggle className="shrink-0 self-end sm:self-center" />
+          </div>
         </div>
+
+        {/* Category Tabs: quick "separate dashboards" by category */}
+        <div className={askClaudeDockPaddingClass}>
+        {!['advanced', 'simple'].includes(dashboardView) && (
+          <>
+            {dashboardView !== 'custom' && (
+              <>
+                <MetricTabsBar />
+                <CategoryTabsBar />
+              </>
+            )}
+            {renderTopAgenciesPanel()}
+            {renderAgencyDrilldownPanel()}
+            {renderEntityFiltersPanel()}
+          </>
+        )}
+        </div>
+
+        {isScreenRecordingSupported() && lastShortVideo?.blob && !isRecordingScreen && (
+          <div className={`mb-4 flex flex-wrap items-center gap-2 ${askClaudeDockPaddingClass}`}>
+            <button
+              type="button"
+              onClick={() => handleUploadToYouTube()}
+              disabled={!!uploadingToYouTubeId}
+              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium text-sm disabled:opacity-50"
+              title={isYouTubeUploadConfigured() ? 'Upload to YouTube' : 'Add VITE_GOOGLE_CLIENT_ID to enable'}
+            >
+              {uploadingToYouTubeId === 'current' ? 'Uploading…' : 'Upload to YouTube'}
+            </button>
+            <button
+              type="button"
+              onClick={handleShareToLinkedIn}
+              className="px-4 py-2 bg-[#0A66C2] text-white rounded-lg hover:bg-[#004182] font-medium text-sm"
+              title="Download video and open LinkedIn to post"
+            >
+              Share to LinkedIn
+            </button>
+          </div>
+        )}
 
         <div ref={shortCaptureRef}>
           {/* Active Filter Indicator */}
           {chartFilter && (
-            <div className="mb-4 flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg p-3 animate-slide-up">
+            <div className={`${askClaudeDockPaddingClass} mb-4`}>
+            <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg p-3 animate-slide-up">
               <div className="flex items-center space-x-2">
                 <span className="text-sm font-medium text-blue-900">
                   Filtered by: <span className="font-semibold">
@@ -4475,39 +5095,80 @@ function Dashboard() {
                 Clear Filter
               </button>
             </div>
+            </div>
           )}
 
           {/* Charts Section */}
           {dashboardView === 'data' ? (
-            <DataMetadataEditor
-              data={data}
-              columns={columns}
-              numericColumns={effectiveNumericColumns}
-              categoricalColumns={categoricalColumns}
-              dateColumns={dateColumns}
-              onMetadataUpdate={handleMetadataUpdate}
-            />
-          ) : dashboardView === 'timeseries' ? (
-            <TimeSeriesReport
-              data={dashboardFilteredData || data}
-              numericColumns={effectiveNumericColumns}
-              dateColumns={dateColumns}
-              selectedNumeric={selectedNumeric}
-              selectedDate={selectedDate}
-            />
-          ) : dashboardView === 'advanced' ? (
-            <>
-              <details className="mb-6 bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                <summary className="px-4 py-3 cursor-pointer list-none flex items-center gap-2 font-medium text-gray-700 hover:bg-gray-50 select-none">
-                  <span className="text-blue-600" aria-hidden>📖</span>
-                  Dashboard guide – what each view and term means
-                </summary>
-                <div className="px-4 pb-4 pt-1 border-t border-gray-100 text-sm text-gray-600 space-y-3">
-                  <p><strong>Views:</strong> <em>Charts</em> = line + pie + metrics. <em>Advanced</em> = more charts at once (line, donut, bar, sunburst). <em>Custom</em> = your own layout. <em>Time Series</em> = trends over time. <em>Data &amp; Metadata</em> = raw table and column types.</p>
-                  <p><strong>Datasets:</strong> <em>Sales</em> = revenue by product/region. <em>Maritime AIS</em> = vessel positions and speed (SOG, COG). <em>SAM.gov</em> = federal contract opportunities. <em>USA Spending</em> = federal awards.</p>
-                  <p><strong>Hover over field names</strong> (e.g. COG, SOG, base type, organization) in the chart titles above to see what they mean. COG = course over ground (direction in degrees). SOG = speed over ground (knots). MMSI = vessel ID. Base type = Solicitation / Presolicitation / Sources Sought.</p>
+            <div className={`min-w-0 ${askClaudeDockPaddingClass}`}>
+              <DataMetadataEditor
+                data={data}
+                columns={columns}
+                numericColumns={effectiveNumericColumns}
+                categoricalColumns={categoricalColumns}
+                dateColumns={dateColumns}
+                onMetadataUpdate={handleMetadataUpdate}
+              />
+            </div>
+          ) : dashboardView === 'custom' ? (
+            <div className={`min-w-0 ${askClaudeDockPaddingClass}`}>
+              <div
+                style={{
+                  background: '#1e1b4b',
+                  border: '0.5px solid #4338ca',
+                  borderRadius: '8px',
+                  padding: '8px 14px',
+                  margin: '0 0 12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  fontSize: '12px',
+                  color: '#a5b4fc',
+                }}
+              >
+                <span>✨</span>
+                <span>
+                  AI-generated dashboards are in Beta. Use Ask Claude on the right to generate a custom dashboard from your data.
+                </span>
+              </div>
+              {claudeDashboardSpec ? (
+                <DashboardRenderer
+                  spec={claudeDashboardSpec}
+                  data={dashboardFilteredData || filteredData || data || []}
+                  filterValues={{}}
+                  onFilterChange={() => {}}
+                  preferFreshChartLayout
+                  onLayoutChange={handleCustomDashboardLayoutChange}
+                />
+              ) : (
+                <div
+                  style={{
+                    padding: '48px 24px',
+                    textAlign: 'center',
+                    color: '#94a3b8',
+                    background: '#0f172a',
+                    borderRadius: '12px',
+                    border: '0.5px solid #334155',
+                  }}
+                >
+                  <p style={{ margin: 0, fontSize: '15px' }}>
+                    No custom dashboard yet. Use Ask Claude to generate a layout, then open this tab.
+                  </p>
                 </div>
-              </details>
+              )}
+            </div>
+          ) : dashboardView === 'timeseries' ? (
+            <div className={`min-w-0 ${askClaudeDockPaddingClass}`}>
+              <TimeSeriesReport
+                data={dashboardFilteredData || data}
+                numericColumns={effectiveNumericColumns}
+                dateColumns={dateColumns}
+                selectedNumeric={selectedNumeric}
+                selectedDate={selectedDate}
+              />
+            </div>
+          ) : dashboardView === 'advanced' ? (
+            <div className={`min-w-0 ${askClaudeDockPaddingClass}`}>
               <AdvancedDashboard
                 data={data}
                 filteredData={dashboardFilteredData}
@@ -4522,67 +5183,105 @@ function Dashboard() {
                 chartLayout={chartLayout}
                 onChartLayoutUpdate={handleChartLayoutUpdate}
               />
-            </>
-          ) : dashboardView === 'custom' ? (
-            <AdvancedDashboardGrid
-              data={data}
-              filteredData={dashboardFilteredData}
-              selectedNumeric={selectedNumeric}
-              selectedCategorical={selectedCategorical}
-              selectedDate={selectedDate}
-              onChartFilter={handleChartFilter}
-              chartFilter={chartFilter}
-              categoricalColumns={categoricalColumns}
-              numericColumns={effectiveNumericColumns}
-              dateColumns={dateColumns}
-            />
+            </div>
           ) : (
-            <>
-              <DashboardCharts
-                key={`dashboard-main-alt-${dashboardKey}`}
-                chartLayout={chartLayout}
-                onChartLayoutUpdate={handleChartLayoutUpdate}
-                data={data}
-                filteredData={dashboardFilteredData}
-                selectedNumeric={selectedNumeric}
-                selectedCategorical={selectedCategorical}
-                selectedDate={selectedDate}
-                onChartFilter={handleChartFilter}
-                chartFilter={chartFilter}
-                onDateRangeFilter={handleDateRangeFilter}
-                onSubawardDrilldown={openSubawardsForRecipient}
-                pieFilteredData={opportunityPieDataByOrg}
-                pieDimensionOverride={opportunityPieDataByOrg ? 'organization' : undefined}
-                pieTitleOverride={opportunityPieDataByOrg ? `By organization (${selectedOpportunityNoticeType})` : undefined}
-                showGeoMap={showMapTab && chartLayout.showMap}
-                geoMapData={dashboardFilteredData || data}
-                geoSelectedCategorical="state"
-                geoSelectedNumeric={effectiveNumericColumns?.includes('award_amount') ? 'award_amount' : effectiveNumericColumns?.includes('opportunity_count') ? 'opportunity_count' : null}
-                showVesselMap={vesselMapConfig.show && chartLayout.showMap}
-                vesselMapData={dashboardFilteredData}
-                vesselLatCol={vesselMapConfig.latCol}
-                vesselLonCol={vesselMapConfig.lonCol}
-              />
-            </>
+            <div className={`min-w-0 ${askClaudeDockPaddingClass}`}>
+              {(!data || data.length === 0) ? (
+                <div
+                  className="analytics-short-upload-target"
+                  style={{
+                    display: 'flex', flexDirection: 'column',
+                    alignItems: 'center', justifyContent: 'center',
+                    minHeight: '50vh', gap: '20px',
+                    textAlign: 'center', padding: '24px 40px',
+                    scrollMarginTop: '1rem',
+                  }}
+                >
+                  <div style={{ fontSize: '48px' }}>📊</div>
+                  <h2 style={{ fontSize: '24px', fontWeight: 500, color: '#f8fafc', margin: 0 }}>
+                    Upload your data to get started
+                  </h2>
+                  <p style={{ fontSize: '16px', color: '#94a3b8', maxWidth: '440px', margin: 0, lineHeight: 1.6 }}>
+                    Drop in a CSV or Excel file and ask Claude anything about your data. Get instant dashboards and AI-powered insights in seconds.
+                  </p>
+                  <div className="w-full max-w-xl mx-auto text-left [&_.border-gray-300]:border-slate-600 [&_.border-dashed]:bg-slate-800/30 [&_.bg-gray-50]:bg-slate-800/40 [&_p.text-gray-900]:text-slate-100 [&_p.text-gray-500]:text-slate-400 [&_p.text-gray-600]:text-slate-300">
+                    <FileUploader
+                      onUploadSuccess={handleEmptyStateUploadSuccess}
+                      onError={handleEmptyStateUploadErrorMessage}
+                      onUpgradeRequired={handleEmptyStateUpgradeRequired}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleLoadExample('sales')}
+                    style={{ background: '#1e293b', color: '#94a3b8', border: '0.5px solid #334155', padding: '12px 28px', borderRadius: '8px', fontSize: '15px', cursor: 'pointer' }}
+                  >
+                    Try example data
+                  </button>
+                  <p style={{ fontSize: '12px', color: '#64748b', margin: 0 }}>
+                    Supports CSV, Excel, JSON · Up to 50MB
+                  </p>
+                </div>
+              ) : (
+                <DashboardCharts
+                  key={`dashboard-main-alt-${dashboardKey}`}
+                  chartLayout={chartLayout}
+                  onChartLayoutUpdate={handleChartLayoutUpdate}
+                  data={data}
+                  filteredData={dashboardFilteredData}
+                  selectedNumeric={selectedNumeric}
+                  selectedCategorical={selectedCategorical}
+                  selectedDate={selectedDate}
+                  onChartFilter={handleChartFilter}
+                  chartFilter={chartFilter}
+                  onDateRangeFilter={handleDateRangeFilter}
+                  onSubawardDrilldown={openSubawardsForRecipient}
+                  pieFilteredData={opportunityPieDataByOrg}
+                  pieDimensionOverride={opportunityPieDataByOrg ? 'organization' : undefined}
+                  pieTitleOverride={opportunityPieDataByOrg ? `By organization (${selectedOpportunityNoticeType})` : undefined}
+                  showGeoMap={showMapTab && chartLayout.showMap}
+                  geoMapData={dashboardFilteredData || data}
+                  geoSelectedCategorical="state"
+                  geoSelectedNumeric={effectiveNumericColumns?.includes('award_amount') ? 'award_amount' : effectiveNumericColumns?.includes('opportunity_count') ? 'opportunity_count' : null}
+                  showVesselMap={vesselMapConfig.show && chartLayout.showMap}
+                  vesselMapData={dashboardFilteredData}
+                  vesselLatCol={vesselMapConfig.latCol}
+                  vesselLonCol={vesselMapConfig.lonCol}
+                />
+              )}
+            </div>
           )}
         </div>
 
-        {renderOpportunityListPanel()}
+        <div className={askClaudeDockPaddingClass}>{renderOpportunityListPanel()}</div>
 
         {/* Metric Cards - Only in simple view */}
         {dashboardView === 'simple' && chartLayout.showKPIs && (
-          <MetricCards
-            data={dashboardFilteredData}
-            numericColumns={effectiveNumericColumns}
-            selectedNumeric={selectedNumeric}
-            stats={stats}
-          />
+          <div className={askClaudeDockPaddingClass}>
+            <MetricCards
+              data={dashboardFilteredData}
+              numericColumns={effectiveNumericColumns}
+              selectedNumeric={selectedNumeric}
+              stats={stats}
+            />
+          </div>
         )}
 
         {/* Export Section */}
-        <div className="mt-6 space-y-4">
-          <details className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-            <summary className="cursor-pointer font-semibold text-gray-900 mb-4">
+        <div className={`mt-6 space-y-4 ${askClaudeDockPaddingClass}`}>
+          <details
+            className="p-4"
+            style={{
+              background: '#1e293b',
+              border: '0.5px solid #334155',
+              borderRadius: '12px',
+              color: '#94a3b8',
+            }}
+          >
+            <summary
+              className="cursor-pointer font-semibold mb-4"
+              style={{ color: '#94a3b8' }}
+            >
               Export & Actions
             </summary>
             <div className="mt-4">
@@ -4606,22 +5305,17 @@ function Dashboard() {
                   Export PDF
                 </button>
                 <button
+                  type="button"
                   onClick={clearAnalyticsDataAndReload}
-                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium text-sm"
+                  className="px-5 py-2.5 bg-white text-slate-900 border-2 border-white rounded-lg hover:bg-slate-100 transition-colors font-semibold text-sm shadow-[0_4px_14px_rgba(0,0,0,0.25)]"
                 >
                   New Upload
                 </button>
               </div>
               <p className="text-sm text-gray-600">
-                Use the <span className="font-medium">AI Insights</span> tab for ML-based risk scoring and anomaly explainability.
+                Use <span className="font-medium">Detect Anomalies</span> below for exploratory anomaly scoring on your current data.
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  onClick={() => setDashboardView('ai-insights')}
-                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium text-sm"
-                >
-                  Open AI Insights
-                </button>
                 <button
                   onClick={() => setShowAnomalyPanel((prev) => !prev)}
                   className="px-4 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition-colors font-medium text-sm"

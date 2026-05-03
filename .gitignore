@@ -67,6 +67,7 @@ env/
 
 # Local tooling / scratch
 .worktrees/
+.tmp/
 
 Analytic-Shorts/
 Analytic-Shorts/

@@ -4,7 +4,6 @@ import Navbar from '../components/Navbar'
 import Loader from '../components/Loader'
 import DashboardCharts from '../components/DashboardCharts'
 import AdvancedDashboard from '../components/AdvancedDashboard'
-import AdvancedDashboardGrid from '../components/AdvancedDashboardGrid'
 import ContractMapWidget, { getStateAbbr, getStateDisplayLabel } from '../components/widgets/ContractMapWidget'
 import MetricCards from '../components/MetricCards'
 import Filters from '../components/Filters'
@@ -21,6 +20,7 @@ const SHARED_DASHBOARD_CACHE = new Map()
 const CACHE_MAX = 5
 import DashboardRenderer from '../components/aiVisualBuilder/DashboardRenderer'
 import { applyQuickSwitchToSpec } from '../studio/utils/specQuickSwitch'
+import { generateLayoutFromSpec } from '../utils/generateGridLayout'
 
 function inferFieldsFromRows(rows) {
   const sample = Array.isArray(rows) ? rows.slice(0, 200) : []
@@ -98,6 +98,7 @@ function SharedDashboard() {
   const [sharedLayouts, setSharedLayouts] = useState(null)
   const [sharedWidgetVisibility, setSharedWidgetVisibility] = useState(null)
   const [sharedFilterSnapshot, setSharedFilterSnapshot] = useState(null)
+  const [sharedCustomSpec, setSharedCustomSpec] = useState(null)
   const [fullScreen, setFullScreen] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
   const [opportunityKeyword, setOpportunityKeyword] = useState('')
@@ -391,7 +392,11 @@ function SharedDashboard() {
           setShowLoader(false)
           return
         }
-        setDashboardSpecData({ spec: sharedData.spec, data: rows })
+        setDashboardSpecData({
+          spec: sharedData.spec,
+          data: rows,
+          grid_layout: sharedData.grid_layout,
+        })
         setDashboardSpecViewSpec(sharedData.spec)
         setLoading(false)
         setShowLoader(false)
@@ -450,8 +455,18 @@ function SharedDashboard() {
       }
       
       // Restore dashboard view if saved
+      if (sharedData.customDashboardSpec != null && typeof sharedData.customDashboardSpec === 'object') {
+        setSharedCustomSpec(sharedData.customDashboardSpec)
+      } else {
+        setSharedCustomSpec(null)
+      }
       if (sharedData.dashboardView) {
-        setDashboardView(sharedData.dashboardView)
+        const v = sharedData.dashboardView
+        if (v === 'custom' && !sharedData.customDashboardSpec) {
+          setDashboardView('advanced')
+        } else {
+          setDashboardView(v)
+        }
       }
       if (sharedData.layouts && typeof sharedData.layouts === 'object') {
         setSharedLayouts(sharedData.layouts)
@@ -1193,6 +1208,20 @@ function SharedDashboard() {
   const currentDate = new Date()
   const monthYear = currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
 
+  /** Prefer persisted grid_layout from share payload; else seed chart tiles from spec. */
+  const sharedDashboardSpecForRenderer = useMemo(() => {
+    const base = dashboardSpecViewSpec || dashboardSpecData?.spec
+    if (!base) return null
+    const gl = dashboardSpecData?.grid_layout
+    if (Array.isArray(gl) && gl.length > 0) {
+      return { ...base, layout: gl }
+    }
+    if ((!base.layout || base.layout.length === 0) && Array.isArray(base.charts) && base.charts.length > 0) {
+      return { ...base, layout: generateLayoutFromSpec(base) }
+    }
+    return base
+  }, [dashboardSpecViewSpec, dashboardSpecData?.spec, dashboardSpecData?.grid_layout])
+
   // Same as Dashboard: map only when 'state' column exists
   const showMapTab = useMemo(() => {
     return (columns || []).some((c) => String(c).toLowerCase() === 'state')
@@ -1296,7 +1325,7 @@ function SharedDashboard() {
             )}
             <div style={{ contain: 'layout', minHeight: fullScreen ? 'min-content' : undefined }}>
               <DashboardRenderer
-                spec={dashboardSpecViewSpec || dashboardSpecData.spec}
+                spec={sharedDashboardSpecForRenderer || dashboardSpecViewSpec || dashboardSpecData.spec}
                 data={dashboardSpecData.data}
                 filterValues={filterValues}
                 onFilterChange={setFilterValues}
@@ -1504,13 +1533,15 @@ function SharedDashboard() {
               >
                 Advanced
               </button>
-              <button
-                type="button"
-                onClick={() => setDashboardView('custom')}
-                className={`px-3 py-1.5 text-sm border rounded-lg transition-colors ${dashboardView === 'custom' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white border-gray-300 hover:bg-gray-50'}`}
-              >
-                Custom
-              </button>
+              {sharedCustomSpec && (
+                <button
+                  type="button"
+                  onClick={() => setDashboardView('custom')}
+                  className={`px-3 py-1.5 text-sm border rounded-lg transition-colors ${dashboardView === 'custom' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white border-gray-300 hover:bg-gray-50'}`}
+                >
+                  Custom
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setDashboardView('timeseries')}
@@ -1553,7 +1584,7 @@ function SharedDashboard() {
             </div>
           )}
 
-        {/* Charts Section - exact same branching as main Dashboard: data | timeseries | advanced | custom | simple */}
+        {/* Charts Section - exact same branching as main Dashboard: data | timeseries | advanced | simple | custom */}
         {dashboardView === 'data' ? (
           <DataMetadataEditor
             data={data}
@@ -1571,6 +1602,17 @@ function SharedDashboard() {
             selectedNumeric={selectedNumeric}
             selectedDate={selectedDate}
           />
+        ) : dashboardView === 'custom' && sharedCustomSpec ? (
+          <div className="min-w-0 w-full">
+            <DashboardRenderer
+              spec={sharedCustomSpec}
+              data={filteredData || data || []}
+              filterValues={{}}
+              onFilterChange={() => {}}
+              preferFreshChartLayout={false}
+              layoutLocked
+            />
+          </div>
         ) : dashboardView === 'advanced' ? (
           <>
             <details className="mb-6 bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
@@ -1579,7 +1621,7 @@ function SharedDashboard() {
                 Dashboard guide – what each view and term means
               </summary>
               <div className="px-4 pb-4 pt-1 border-t border-gray-100 text-sm text-gray-600 space-y-3">
-                <p><strong>Views:</strong> <em>Charts</em> = line + pie + metrics. <em>Advanced</em> = more charts at once (line, donut, bar, sunburst). <em>Custom</em> = your own layout. <em>Time Series</em> = trends over time. <em>Data &amp; Metadata</em> = raw table and column types.</p>
+                <p><strong>Views:</strong> <em>Charts</em> = line + pie + metrics. <em>Advanced</em> = more charts at once (line, donut, bar, sunburst). <em>Time Series</em> = trends over time. <em>Data &amp; Metadata</em> = raw table and column types.</p>
                 <p><strong>Datasets:</strong> <em>Sales</em> = revenue by product/region. <em>Maritime AIS</em> = vessel positions and speed (SOG, COG). <em>SAM.gov</em> = federal contract opportunities. <em>USA Spending</em> = federal awards.</p>
                 <p><strong>Hover over field names</strong> (e.g. COG, SOG, base type, organization) in the chart titles above to see what they mean.</p>
               </div>
@@ -1597,22 +1639,6 @@ function SharedDashboard() {
               dateColumns={dateColumns}
             />
           </>
-        ) : dashboardView === 'custom' && sharedLayouts && Object.keys(sharedLayouts).length > 0 ? (
-          <AdvancedDashboardGrid
-            data={data}
-            filteredData={filteredData || data}
-            selectedNumeric={selectedNumeric}
-            selectedCategorical={selectedCategorical}
-            selectedDate={selectedDate}
-            onChartFilter={handleChartFilter}
-            chartFilter={chartFilter}
-            categoricalColumns={categoricalColumns}
-            numericColumns={effectiveNumericColumns}
-            dateColumns={dateColumns}
-            viewMode="readonly"
-            initialLayouts={sharedLayouts}
-            initialWidgetVisibility={sharedWidgetVisibility}
-          />
         ) : (
           <>
             {showMapTab && (

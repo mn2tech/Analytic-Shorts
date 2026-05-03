@@ -139,6 +139,9 @@ export async function saveDashboard(dashboardJson, dashboardId = null, options =
       dashboardView: 'studio',
       schema: dashboardJson // Backend will handle JSON stringification
     }
+    if (options?.gridLayout != null) {
+      payload.grid_layout = options.gridLayout
+    }
     
     let response
     if (dashboardId && dashboardId !== 'new') {

@@ -1,10 +1,19 @@
-function fallbackOwnerSummary(kpis) {
-  const occupancy_rate = kpis?.occupancy_rate ?? ''
-  const revenue_today = kpis?.revenue_today ?? ''
-  const adr = kpis?.adr ?? ''
-  const revpar = kpis?.revpar ?? ''
+function formatMetricValue(val) {
+  if (val == null) return '—'
+  if (typeof val === 'number' && Number.isFinite(val)) return String(val)
+  return String(val).trim() || '—'
+}
 
-  return `Today’s performance is strong with ${occupancy_rate}% occupancy and $${revenue_today} in revenue. Pricing remains healthy with ADR $${adr} and RevPAR $${revpar}. Action needed: No — operations look stable today.`
+function fallbackBusinessSummary(metrics) {
+  const list = Array.isArray(metrics) ? metrics : []
+  const parts = list
+    .slice(0, 5)
+    .map((m) => (m?.label ? `${m.label}: ${formatMetricValue(m.value)}` : null))
+    .filter(Boolean)
+  if (!parts.length) {
+    return 'No data available yet. Explore your metrics using the filters and KPIs above.'
+  }
+  return `${parts.join('; ')}. Explore visual breakdowns using the other views in this report.`
 }
 
 function containsBannedWords(text) {
@@ -14,21 +23,15 @@ function containsBannedWords(text) {
   return banned.some((w) => lower.includes(w))
 }
 
-/**
- * Apply guardrails to model output.
- * - Trim
- * - Replace empty or banned output with fallback
- */
-function applyOwnerSummaryGuardrails(rawOutput, kpis) {
+function applyBusinessSummaryGuardrails(rawOutput, metrics) {
   const trimmed = (rawOutput ?? '').toString().trim()
-  if (!trimmed) return fallbackOwnerSummary(kpis)
-  if (containsBannedWords(trimmed)) return fallbackOwnerSummary(kpis)
+  if (!trimmed) return fallbackBusinessSummary(metrics)
+  if (containsBannedWords(trimmed)) return fallbackBusinessSummary(metrics)
   return trimmed
 }
 
 module.exports = {
-  fallbackOwnerSummary,
-  containsBannedWords,
-  applyOwnerSummaryGuardrails
+  fallbackBusinessSummary,
+  applyBusinessSummaryGuardrails,
+  containsBannedWords
 }
-

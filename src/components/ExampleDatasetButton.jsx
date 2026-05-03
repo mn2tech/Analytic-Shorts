@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useEffect } from 'react'
 import apiClient from '../config/api'
 
-function ExampleDatasetButton({ onDatasetLoad, onError }) {
+function ExampleDatasetButton({ onDatasetLoad, onError, darkMode = false }) {
   const [loadingDataset, setLoadingDataset] = useState(null)
   const [exampleDatasets, setExampleDatasets] = useState([])
 
@@ -109,35 +109,58 @@ function ExampleDatasetButton({ onDatasetLoad, onError }) {
 
   return (
     <div className="space-y-3">
-      <p className="text-sm font-medium text-gray-700 mb-2">Public Data APIs:</p>
+      <p className={`text-sm font-medium mb-2 ${darkMode ? 'text-slate-300' : 'text-gray-700'}`}>
+        Public Data APIs:
+      </p>
       {exampleDatasets.length === 0 && (
-        <p className="text-xs text-gray-500">No public API reports are currently available.</p>
+        <p className={`text-xs ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>
+          No public API reports are currently available.
+        </p>
       )}
       {exampleDatasets.map((dataset) => {
         const isLoading = loadingDataset === dataset.name
+        const rowClass = darkMode
+          ? `w-full text-left px-4 py-3 rounded-lg border transition-all duration-200 group border-slate-600 bg-slate-800/80 hover:bg-slate-700 hover:border-slate-500 ${
+              isLoading || loadingDataset !== null ? 'opacity-50 cursor-not-allowed' : ''
+            }`
+          : `w-full text-left px-4 py-3 bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200 rounded-lg transition-all duration-200 group ${
+              isLoading || loadingDataset !== null
+                ? 'opacity-50 cursor-not-allowed'
+                : 'hover:from-blue-100 hover:to-purple-100'
+            }`
         return (
           <button
             key={dataset.name}
             onClick={() => loadExample(dataset.endpoint, dataset.name)}
             disabled={isLoading || loadingDataset !== null}
-            className={`w-full text-left px-4 py-3 bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200 rounded-lg transition-all duration-200 group ${
-              isLoading || loadingDataset !== null
-                ? 'opacity-50 cursor-not-allowed'
-                : 'hover:from-blue-100 hover:to-purple-100'
-            }`}
+            className={rowClass}
           >
             <div className="flex items-center justify-between">
               <div>
-                <p className="font-semibold text-gray-900 group-hover:text-blue-700">
+                <p
+                  className={`font-semibold ${
+                    darkMode
+                      ? 'text-slate-100 group-hover:text-blue-300'
+                      : 'text-gray-900 group-hover:text-blue-700'
+                  }`}
+                >
                   {dataset.name}
                 </p>
-                <p className="text-xs text-gray-600 mt-1">{dataset.description}</p>
+                <p className={`text-xs mt-1 ${darkMode ? 'text-slate-400' : 'text-gray-600'}`}>
+                  {dataset.description}
+                </p>
               </div>
               {isLoading ? (
-                <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                <div
+                  className={`w-5 h-5 rounded-full animate-spin border-2 ${
+                    darkMode ? 'border-slate-600 border-t-blue-400' : 'border-blue-600 border-t-transparent'
+                  }`}
+                />
               ) : (
                 <svg
-                  className="w-5 h-5 text-blue-600 group-hover:translate-x-1 transition-transform"
+                  className={`w-5 h-5 transition-transform group-hover:translate-x-1 ${
+                    darkMode ? 'text-blue-400' : 'text-blue-600'
+                  }`}
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"

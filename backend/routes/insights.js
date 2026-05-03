@@ -70,6 +70,99 @@ const openai = process.env.OPENAI_API_KEY
   ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
   : null
 
+const ACTIONABLE_INSIGHTS_PROMPT = `
+You are a senior business analyst reviewing 
+data for a small business owner who needs 
+to make decisions TODAY.
+
+Analyze the dataset and return EXACTLY 5 insights 
+as a valid JSON array. No other text, just JSON.
+
+Rules:
+- title: SHORT headline 5-7 words max
+- finding: DIFFERENT from title, 1-2 sentences 
+  with SPECIFIC numbers from the data
+- action: starts with action verb, tells owner 
+  exactly what to DO, be specific
+- type: MUST be one of: Revenue/Risk/
+  Opportunity/Trend/Anomaly
+- emoji: DIFFERENT emoji for each insight
+
+Example of GOOD insight:
+{
+  "emoji": "🏆",
+  "title": "Running Shoes drives 43% revenue",
+  "type": "Revenue",
+  "finding": "Running Shoes Pro generated $3,412 
+    in subtotal — 43% of your total $7,945 revenue 
+    despite being only 22% of orders.",
+  "action": "Increase Running Shoes Pro inventory 
+    by 30% before next month and feature it 
+    prominently in your marketing."
+}
+
+Example of BAD insight (do not do this):
+{
+  "title": "Credit Card is most common payment",
+  "finding": "Credit Card is most common payment",
+  "action": "Consider monitoring payment trends"
+}
+
+Focus on:
+1. Which product/category makes the MOST money
+2. Which product/category is LOSING money or 
+   has high returns
+3. Which sales channel performs BEST vs WORST
+4. A trend over time (growing or declining)
+5. An anomaly or unexpected pattern
+
+Be direct. Use actual numbers. Tell them what to DO.
+Return ONLY the JSON array.
+`
+
+/** Parse OpenAI chat response for actionable insights; dedupe title/finding. */
+function parseActionableInsightsFromModelText(rawText) {
+  let insights = []
+  try {
+    const text = rawText
+    const clean = String(text || '')
+      .replace(/```json/gi, '')
+      .replace(/```/g, '')
+      .trim()
+    insights = JSON.parse(clean)
+    if (!Array.isArray(insights)) insights = []
+  } catch (e) {
+    console.error('Failed to parse insights:', e)
+    insights = []
+  }
+
+  insights = insights.map((ins) => {
+    if (!ins || typeof ins !== 'object') return ins
+    const title = typeof ins.title === 'string' ? ins.title.trim() : String(ins.title || '').trim()
+    let finding =
+      typeof ins.finding === 'string' ? ins.finding.trim() : String(ins.finding || '').trim()
+    const same =
+      finding === title ||
+      finding.replace(/\s+/g, ' ').toLowerCase() === title.replace(/\s+/g, ' ').toLowerCase()
+    if (same) {
+      finding =
+        (ins.description && String(ins.description).trim()) ||
+        (ins.text && String(ins.text).trim()) ||
+        finding
+    }
+    return {
+      ...ins,
+      title,
+      finding,
+      emoji: ins.emoji != null && ins.emoji !== '' ? String(ins.emoji).trim() : ins.emoji,
+      type: typeof ins.type === 'string' ? ins.type.trim() : ins.type,
+      action: ins.action != null ? String(ins.action).trim() : ins.action,
+    }
+  })
+
+  return insights
+}
+
 // Insights route with optional auth and usage limits
 router.post('/', getUserFromToken, async (req, res, next) => {
   // If user is authenticated, check usage limits
@@ -93,6 +186,47 @@ router.post('/', getUserFromToken, async (req, res, next) => {
 
     if (!data || !Array.isArray(data) || data.length === 0) {
       return res.status(400).json({ error: 'Invalid data provided' })
+    }
+
+    // Actionable dashboard insights: structured JSON array (AI Insights tab)
+    if (mode === 'actionable' && openai) {
+      try {
+        const colList =
+          Array.isArray(columns) && columns.length > 0
+            ? columns
+            : data[0] && typeof data[0] === 'object'
+              ? Object.keys(data[0])
+              : []
+
+        const userContent = `${ACTIONABLE_INSIGHTS_PROMPT}
+
+Columns: ${colList.join(', ')}
+
+Sample rows (first 25):
+${JSON.stringify(data.slice(0, 25), null, 2)}`
+
+        const completion = await openai.chat.completions.create({
+          model: 'gpt-3.5-turbo',
+          messages: [
+            {
+              role: 'system',
+              content:
+                'You output only a valid JSON array of exactly 5 objects. No markdown, no code fences, no text before or after the array. Each object must include emoji, title, type, finding, action.',
+            },
+            { role: 'user', content: userContent },
+          ],
+          max_tokens: 2200,
+          temperature: 0.35,
+        })
+        const text = completion.choices[0].message.content
+        let insights = parseActionableInsightsFromModelText(text)
+        if (Array.isArray(insights) && insights.length > 0) {
+          return res.json({ insights: insights.slice(0, 5) })
+        }
+      } catch (e) {
+        console.error('Actionable insights error:', e)
+      }
+      // Fall through to default insight path if actionable generation failed
     }
 
     // Generate insights

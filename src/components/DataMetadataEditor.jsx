@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
+import { TD } from '../constants/terminalDashboardPalette'
 
 function DataMetadataEditor({ 
   data, 
@@ -215,13 +216,15 @@ function DataMetadataEditor({
     const str = String(value)
 
     // SAM.gov + general URL fields: show as clickable link
+    const linkStyle = { color: TD.ACCENT_MID }
     if (col === 'uiLink' && isProbablyUrl(str)) {
       return (
         <a
           href={str}
           target="_blank"
           rel="noreferrer"
-          className="text-blue-700 hover:underline"
+          className="hover:underline"
+          style={linkStyle}
           title={str}
         >
           Open opportunity
@@ -235,7 +238,8 @@ function DataMetadataEditor({
           href={str}
           target="_blank"
           rel="noreferrer"
-          className="text-blue-700 hover:underline"
+          className="hover:underline"
+          style={linkStyle}
           title={str}
         >
           {str}
@@ -246,34 +250,85 @@ function DataMetadataEditor({
     return str
   }
 
+  const cardShell = {
+    background: TD.CARD_BG,
+    border: `0.5px solid ${TD.CARD_BORDER}`,
+    borderRadius: '12px',
+    padding: '24px',
+  }
+  const selectStyle = {
+    width: '100%',
+    padding: '8px 12px',
+    borderRadius: '8px',
+    border: `0.5px solid ${TD.CARD_BORDER}`,
+    background: TD.PAGE_BG,
+    color: TD.TEXT_1,
+    fontSize: '14px',
+  }
+  const btnSecondary = {
+    padding: '8px 16px',
+    fontSize: '14px',
+    fontWeight: 500,
+    borderRadius: '8px',
+    border: `0.5px solid ${TD.CARD_BORDER}`,
+    background: TD.PAGE_BG,
+    color: TD.TEXT_2,
+    cursor: 'pointer',
+  }
+  const btnPrimary = {
+    padding: '8px 16px',
+    fontSize: '14px',
+    fontWeight: 600,
+    borderRadius: '8px',
+    border: 'none',
+    background: TD.ACCENT_BLUE,
+    color: '#fff',
+    cursor: 'pointer',
+  }
+
   // Safety check: if no data or columns, show message
   if (!data || !columns || columns.length === 0) {
     return (
-      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6">
-        <p className="text-yellow-800">No data available. Please upload a file first.</p>
+      <div
+        className="rounded-lg p-6"
+        style={{
+          background: 'rgba(245, 158, 11, 0.1)',
+          border: '0.5px solid rgba(245, 158, 11, 0.35)',
+        }}
+      >
+        <p style={{ color: '#fcd34d' }}>No data available. Please upload a file first.</p>
       </div>
     )
   }
 
+  const typeBadgeStyle = (type) => {
+    const t = type || 'categorical'
+    if (t === 'numeric') return { background: 'rgba(29, 78, 216, 0.25)', color: TD.ACCENT_MID }
+    if (t === 'date') return { background: 'rgba(5, 150, 105, 0.2)', color: TD.SUCCESS_ALT }
+    return { background: 'rgba(124, 58, 237, 0.2)', color: '#c4b5fd' }
+  }
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" style={{ background: TD.PAGE_BG }}>
       {/* Metadata Editor Section */}
-      <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold text-gray-900">Column Metadata</h2>
+      <div style={cardShell}>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <h2 style={{ fontSize: '20px', fontWeight: 600, color: TD.TEXT_1, margin: 0 }}>Column Metadata</h2>
           <div className="flex gap-2">
             {hasChanges && (
-              <button
-                onClick={handleReset}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-              >
+              <button type="button" onClick={handleReset} style={btnSecondary}>
                 Reset Changes
               </button>
             )}
             <button
+              type="button"
               onClick={handleApplyChanges}
               disabled={!hasChanges}
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+              style={{
+                ...btnPrimary,
+                opacity: !hasChanges ? 0.45 : 1,
+                cursor: !hasChanges ? 'not-allowed' : 'pointer',
+              }}
             >
               Apply Changes
             </button>
@@ -281,15 +336,15 @@ function DataMetadataEditor({
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Column Selector */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block mb-2 text-sm font-medium" style={{ color: TD.TEXT_2 }}>
               Select Column
             </label>
             <select
               value={selectedColumn}
               onChange={(e) => setSelectedColumn(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              style={selectStyle}
+              className="focus:outline-none focus:ring-2 focus:ring-blue-500/40"
             >
               {columns.map(col => (
                 <option key={col} value={col}>{col}</option>
@@ -297,15 +352,15 @@ function DataMetadataEditor({
             </select>
           </div>
 
-          {/* Type Selector */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block mb-2 text-sm font-medium" style={{ color: TD.TEXT_2 }}>
               Column Type
             </label>
             <select
               value={columnMetadata[selectedColumn]?.type || 'categorical'}
               onChange={(e) => handleTypeChange(selectedColumn, e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              style={selectStyle}
+              className="focus:outline-none focus:ring-2 focus:ring-blue-500/40"
             >
               <option value="numeric">Numeric</option>
               <option value="date">Date/Time</option>
@@ -314,47 +369,50 @@ function DataMetadataEditor({
           </div>
         </div>
 
-        {/* Column Statistics */}
         {columnStats && (
-          <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-            <h3 className="text-sm font-semibold text-gray-900 mb-3">Column Statistics</h3>
+          <div className="mt-6 rounded-lg p-4" style={{ background: TD.PAGE_BG, border: `0.5px solid ${TD.CARD_BORDER}` }}>
+            <h3 className="text-sm font-semibold mb-3" style={{ color: TD.TEXT_1 }}>Column Statistics</h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div>
-                <p className="text-xs text-gray-500">Total Values</p>
-                <p className="text-lg font-semibold text-gray-900">{columnStats.total}</p>
+                <p className="text-xs" style={{ color: TD.TEXT_3 }}>Total Values</p>
+                <p className="text-lg font-semibold" style={{ color: TD.TEXT_1 }}>{columnStats.total}</p>
               </div>
               <div>
-                <p className="text-xs text-gray-500">Unique Values</p>
-                <p className="text-lg font-semibold text-gray-900">{columnStats.unique}</p>
+                <p className="text-xs" style={{ color: TD.TEXT_3 }}>Unique Values</p>
+                <p className="text-lg font-semibold" style={{ color: TD.TEXT_1 }}>{columnStats.unique}</p>
               </div>
               <div>
-                <p className="text-xs text-gray-500">Numeric Ratio</p>
-                <p className="text-lg font-semibold text-gray-900">
+                <p className="text-xs" style={{ color: TD.TEXT_3 }}>Numeric Ratio</p>
+                <p className="text-lg font-semibold" style={{ color: TD.TEXT_1 }}>
                   {(columnStats.numericRatio * 100).toFixed(1)}%
                 </p>
               </div>
               <div>
-                <p className="text-xs text-gray-500">Date Ratio</p>
-                <p className="text-lg font-semibold text-gray-900">
+                <p className="text-xs" style={{ color: TD.TEXT_3 }}>Date Ratio</p>
+                <p className="text-lg font-semibold" style={{ color: TD.TEXT_1 }}>
                   {(columnStats.dateRatio * 100).toFixed(1)}%
                 </p>
               </div>
             </div>
 
-            {/* Sample Values */}
             <div className="mt-4">
-              <p className="text-xs text-gray-500 mb-2">Sample Values:</p>
+              <p className="text-xs mb-2" style={{ color: TD.TEXT_3 }}>Sample Values:</p>
               <div className="flex flex-wrap gap-2">
                 {columnStats.sample.slice(0, 5).map((val, idx) => (
                   <span
                     key={idx}
-                    className="px-2 py-1 text-xs bg-white border border-gray-200 rounded"
+                    className="px-2 py-1 text-xs rounded"
+                    style={{
+                      background: TD.CARD_BG,
+                      border: `0.5px solid ${TD.CARD_BORDER}`,
+                      color: TD.TEXT_1,
+                    }}
                   >
                     {String(val).substring(0, 20)}
                   </span>
                 ))}
                 {columnStats.sample.length > 5 && (
-                  <span className="px-2 py-1 text-xs text-gray-500">
+                  <span className="px-2 py-1 text-xs" style={{ color: TD.TEXT_3 }}>
                     +{columnStats.sample.length - 5} more
                   </span>
                 )}
@@ -363,12 +421,17 @@ function DataMetadataEditor({
           </div>
         )}
 
-        {/* Type Recommendations */}
         {columnStats && (
-          <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-            <p className="text-sm text-blue-900">
-              <strong>Recommendation:</strong> Based on the data, this column is best classified as{' '}
-              <strong>
+          <div
+            className="mt-4 rounded-lg p-3"
+            style={{
+              background: 'rgba(59, 130, 246, 0.12)',
+              border: `0.5px solid rgba(59, 130, 246, 0.35)`,
+            }}
+          >
+            <p className="text-sm" style={{ color: TD.TEXT_2 }}>
+              <strong style={{ color: TD.TEXT_1 }}>Recommendation:</strong> Based on the data, this column is best classified as{' '}
+              <strong style={{ color: TD.ACCENT_MID }}>
                 {columnStats.numericRatio > 0.7 ? 'Numeric' :
                  columnStats.dateRatio > 0.5 ? 'Date' :
                  'Categorical'}
@@ -378,27 +441,28 @@ function DataMetadataEditor({
         )}
       </div>
 
-      {/* Data Table Section */}
-      <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold text-gray-900">Data Preview</h2>
-          <div className="flex items-center gap-4">
-            <label className="flex items-center gap-2 text-sm text-gray-700">
+      <div style={cardShell}>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <h2 style={{ fontSize: '20px', fontWeight: 600, color: TD.TEXT_1, margin: 0 }}>Data Preview</h2>
+          <div className="flex flex-wrap items-center gap-4">
+            <label className="flex items-center gap-2 text-sm cursor-pointer" style={{ color: TD.TEXT_2 }}>
               <input
                 type="checkbox"
                 checked={showPreview}
                 onChange={(e) => setShowPreview(e.target.checked)}
-                className="rounded border-gray-300"
+                className="rounded"
+                style={{ accentColor: TD.ACCENT_BLUE }}
               />
               Show Preview
             </label>
             <select
               value={rowsPerPage}
               onChange={(e) => {
-                setRowsPerPage(parseInt(e.target.value))
+                setRowsPerPage(parseInt(e.target.value, 10))
                 setCurrentPage(1)
               }}
-              className="px-3 py-1 text-sm border border-gray-300 rounded-lg"
+              style={{ ...selectStyle, width: 'auto' }}
+              className="focus:outline-none focus:ring-2 focus:ring-blue-500/40"
             >
               <option value={25}>25 rows</option>
               <option value={50}>50 rows</option>
@@ -410,25 +474,28 @@ function DataMetadataEditor({
 
         {showPreview && (
           <>
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <div className="overflow-x-auto rounded-lg" style={{ border: `0.5px solid ${TD.CARD_BORDER}` }}>
+              <table className="min-w-full">
+                <thead style={{ background: TD.STRIP_BG }}>
+                  <tr style={{ borderBottom: `0.5px solid ${TD.CARD_BORDER}` }}>
+                    <th
+                      className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider"
+                      style={{ color: TD.TEXT_3 }}
+                    >
                       Row
                     </th>
                     {columns.map(col => (
                       <th
                         key={col}
-                        className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                        className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider"
+                        style={{ color: TD.TEXT_3 }}
                       >
-                        <div className="flex items-center gap-2">
-                          {col}
-                          <span className={`px-2 py-0.5 text-xs rounded ${
-                            columnMetadata[col]?.type === 'numeric' ? 'bg-blue-100 text-blue-800' :
-                            columnMetadata[col]?.type === 'date' ? 'bg-green-100 text-green-800' :
-                            'bg-purple-100 text-purple-800'
-                          }`}>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span style={{ color: TD.TEXT_1 }}>{col}</span>
+                          <span
+                            className="px-2 py-0.5 text-xs rounded"
+                            style={typeBadgeStyle(columnMetadata[col]?.type)}
+                          >
                             {columnMetadata[col]?.type || 'categorical'}
                           </span>
                         </div>
@@ -436,20 +503,23 @@ function DataMetadataEditor({
                     ))}
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
+                <tbody>
                   {paginatedData.map((row, rowIdx) => (
-                    <tr key={rowIdx} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 text-sm text-gray-500">
+                    <tr
+                      key={rowIdx}
+                      style={{
+                        borderBottom: `0.5px solid ${TD.CARD_BORDER}`,
+                        background: rowIdx % 2 === 0 ? TD.PAGE_BG : 'rgba(15, 23, 42, 0.5)',
+                      }}
+                    >
+                      <td className="px-4 py-3 text-sm" style={{ color: TD.TEXT_3 }}>
                         {(currentPage - 1) * rowsPerPage + rowIdx + 1}
                       </td>
                       {columns.map(col => (
                         <td
                           key={col}
-                          className={`px-4 py-3 text-sm ${
-                            columnMetadata[col]?.type === 'numeric' ? 'text-right font-mono' :
-                            columnMetadata[col]?.type === 'date' ? 'text-left' :
-                            'text-left'
-                          }`}
+                          className={`px-4 py-3 text-sm ${columnMetadata[col]?.type === 'numeric' ? 'text-right font-mono' : 'text-left'}`}
+                          style={{ color: TD.TEXT_1 }}
                         >
                           {renderCell(col, row[col])}
                         </td>
@@ -460,27 +530,36 @@ function DataMetadataEditor({
               </table>
             </div>
 
-            {/* Pagination */}
-            <div className="mt-4 flex items-center justify-between">
-              <div className="text-sm text-gray-700">
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="text-sm" style={{ color: TD.TEXT_2 }}>
                 Showing {(currentPage - 1) * rowsPerPage + 1} to{' '}
                 {Math.min(currentPage * rowsPerPage, data?.length || 0)} of {data?.length || 0} rows
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
+                  type="button"
                   onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                   disabled={currentPage === 1}
-                  className="px-3 py-1 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{
+                    ...btnSecondary,
+                    opacity: currentPage === 1 ? 0.45 : 1,
+                    cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                  }}
                 >
                   Previous
                 </button>
-                <span className="px-3 py-1 text-sm text-gray-700">
+                <span className="px-3 py-1 text-sm" style={{ color: TD.TEXT_2 }}>
                   Page {currentPage} of {totalPages}
                 </span>
                 <button
+                  type="button"
                   onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                   disabled={currentPage === totalPages}
-                  className="px-3 py-1 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{
+                    ...btnSecondary,
+                    opacity: currentPage === totalPages ? 0.45 : 1,
+                    cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                  }}
                 >
                   Next
                 </button>

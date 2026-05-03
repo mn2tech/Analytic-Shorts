@@ -40,6 +40,40 @@
 .kumon-alert-critical-row {
   animation: kumonCriticalRowPulse 1.6s ease-in-out infinite;
 }
+.react-resizable-handle {
+  background: #475569;
+  border-radius: 3px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 10;
+}
+.react-grid-item:hover .react-resizable-handle {
+  opacity: 1;
+}
+.react-grid-item.react-grid-placeholder {
+  background: #1d4ed8 !important;
+  opacity: 0.08 !important;
+  border-radius: 12px !important;
+  border: 1px dashed #3b82f6 !important;
+}
+.react-grid-item {
+  transition: none !important;
+}
+.react-grid-item.cssTransforms {
+  transition-property: none !important;
+}
+.react-grid-item.react-draggable-dragging {
+  opacity: 0.9;
+  z-index: 100;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+}
+.chart-drag-handle {
+  cursor: grab;
+}
+.chart-drag-handle:active {
+  cursor: grabbing !important;
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -96,6 +130,10 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+.dark body {
+  color-scheme: dark;
 }
 
 * {
@@ -187,7 +225,7 @@ body {
   cursor: se-resize;
 }
 
-/* Background Watermark Pattern */
+/* Background Watermark Pattern — disabled in light mode for a clean white page; optional in .dark */
 .watermark-bg {
   position: relative;
   overflow: hidden;
@@ -200,6 +238,13 @@ body {
   left: 0;
   right: 0;
   bottom: 0;
+  opacity: 0;
+  background-image: none;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.dark .watermark-bg::before {
   opacity: 0.06;
   background-image: 
     repeating-linear-gradient(
@@ -216,8 +261,6 @@ body {
       rgba(147, 51, 234, 0.08) 80px,
       rgba(147, 51, 234, 0.08) 160px
     );
-  pointer-events: none;
-  z-index: 0;
 }
 
 .watermark-bg > * {
@@ -244,7 +287,6 @@ body {
   background-repeat: repeat;
 }
 
-/* Alternative: Minimal chart icons pattern */
 .analytics-watermark-icons {
   position: fixed;
   width: 100%;
@@ -253,9 +295,13 @@ body {
   left: 0;
   pointer-events: none;
   z-index: 0;
+  opacity: 0;
+  background-image: none;
+}
+
+.dark .analytics-watermark-icons {
   opacity: 0.025;
   background-image: 
-    /* Single elegant bar chart */
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%233b82f6'%3E%3Crect x='3' y='16' width='3' height='4'/%3E%3Crect x='8' y='12' width='3' height='8'/%3E%3Crect x='13' y='8' width='3' height='12'/%3E%3Crect x='18' y='4' width='3' height='16'/%3E%3C/svg%3E");
   background-size: 200px 200px;
   background-position: 0 0;
@@ -294,7 +340,33 @@ body {
   animation: transferGlow 2s ease-out forwards;
 }
 
+/* react-grid-layout (shared GridDashboard) — resize handles & drag polish */
+.react-resizable-handle {
+  background: #334155;
+  border-radius: 3px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  z-index: 10;
+}
 
+.react-grid-item:hover .react-resizable-handle {
+  opacity: 1;
+}
 
+.react-grid-item.react-grid-placeholder {
+  background: #1d4ed8 !important;
+  opacity: 0.08 !important;
+  border-radius: 12px !important;
+  border: 1px dashed #3b82f6 !important;
+}
 
+.react-grid-item.react-draggable-dragging {
+  opacity: 0.85;
+  z-index: 100;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+}
+
+.chart-drag-handle:active {
+  cursor: grabbing !important;
+}
 

@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, Area, AreaChart } from 'recharts'
+import { Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, Area, AreaChart } from 'recharts'
 import { generateForecast, combineHistoricalAndForecast, analyzeTrend } from '../utils/forecasting'
 import ChartInsights from './ChartInsights'
 import { parseNumericValue } from '../utils/numberUtils'
+import { formatCompact } from '../utils/formatNumber'
+import { TD } from '../constants/terminalDashboardPalette'
+import { ChartHorizontalScroll } from './ChartHorizontalScroll'
 
 function preferredAggregationForMetric(field) {
   const s = String(field || '').toLowerCase()
@@ -54,18 +57,10 @@ function toISODateKey(v) {
   return d.toISOString().split('T')[0]
 }
 
-function ForecastChart({ data, selectedNumeric, selectedDate, forecastPeriods = 7, aggregation }) {
+function ForecastChart({ data, selectedNumeric, selectedDate, forecastPeriods = 7, aggregation, chartScrollHeight = 350 }) {
   const [showConfidenceInterval, setShowConfidenceInterval] = useState(true)
   const [chartInsights, setChartInsights] = useState(null)
   const [periods, setPeriods] = useState(forecastPeriods || 7)
-
-  if (!data || !selectedNumeric || !selectedDate || data.length === 0) {
-    return (
-      <div className="h-full flex items-center justify-center text-gray-400 text-sm">
-        Select date and numeric columns to view forecast
-      </div>
-    )
-  }
 
   // Keep internal selector in sync with prop changes (if parent overrides).
   useEffect(() => {
@@ -104,9 +99,28 @@ function ForecastChart({ data, selectedNumeric, selectedDate, forecastPeriods = 
     return series.slice(-60)
   }, [data, selectedDate, selectedNumeric, agg])
 
+  const tooltipBoxStyle = {
+    background: TD.CARD_BG,
+    border: `0.5px solid ${TD.CARD_BORDER}`,
+    borderRadius: '8px',
+    boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
+    padding: '12px',
+  }
+  const axisTick = { fill: TD.TEXT_3, fontSize: 11 }
+  const histColor = TD.ACCENT_MID
+  const forecastColor = TD.PIE_COLORS[1] || '#7c3aed'
+
+  if (!data || !selectedNumeric || !selectedDate || data.length === 0) {
+    return (
+      <div className="h-full flex items-center justify-center text-sm" style={{ color: TD.TEXT_3 }}>
+        Select date and numeric columns to view forecast
+      </div>
+    )
+  }
+
   if (historicalData.length < 2) {
     return (
-      <div className="h-full flex items-center justify-center text-gray-400 text-sm">
+      <div className="h-full flex items-center justify-center text-sm" style={{ color: TD.TEXT_3 }}>
         Need at least 2 data points for forecasting
       </div>
     )
@@ -156,19 +170,21 @@ function ForecastChart({ data, selectedNumeric, selectedDate, forecastPeriods = 
   const CustomTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
       const dataPoint = payload[0].payload
+      const v = payload[0].value
       return (
-        <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-3">
-          <p className="font-semibold text-gray-900 mb-2">{formatDate(label)}</p>
-          <p className="text-sm text-gray-700">
-            <span className="font-medium">Value:</span> {payload[0].value?.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+        <div style={tooltipBoxStyle}>
+          <p style={{ fontWeight: 600, color: TD.TEXT_1, marginBottom: '8px', fontSize: '13px' }}>{formatDate(label)}</p>
+          <p style={{ fontSize: '12px', color: TD.TEXT_2 }}>
+            <span style={{ fontWeight: 500 }}>Value:</span>{' '}
+            {formatCompact(Number(v))}
           </p>
           {dataPoint.isForecast && (
             <>
-              <p className="text-xs text-purple-600 mt-1 font-medium">🔮 Forecasted</p>
-              {showConfidenceInterval && dataPoint.upperBound && dataPoint.lowerBound && (
-                <div className="mt-2 pt-2 border-t border-gray-200">
-                  <p className="text-xs text-gray-500">
-                    Range: {dataPoint.lowerBound.toLocaleString(undefined, { maximumFractionDigits: 2 })} - {dataPoint.upperBound.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+              <p style={{ fontSize: '11px', color: forecastColor, marginTop: '6px', fontWeight: 500 }}>Forecasted</p>
+              {showConfidenceInterval && dataPoint.upperBound != null && dataPoint.lowerBound != null && (
+                <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: `0.5px solid ${TD.CARD_BORDER}` }}>
+                  <p style={{ fontSize: '11px', color: TD.TEXT_3 }}>
+                    Range: {formatCompact(Number(dataPoint.lowerBound))} – {formatCompact(Number(dataPoint.upperBound))}
                   </p>
                 </div>
               )}
@@ -185,18 +201,18 @@ function ForecastChart({ data, selectedNumeric, selectedDate, forecastPeriods = 
 
   return (
     <>
-    <div className="h-full flex flex-col">
+    <div className="group h-full flex flex-col">
       <div className="flex justify-between items-start mb-4">
         <div>
-          <p className="text-sm text-gray-600">
+          <p className="text-sm" style={{ color: TD.TEXT_2 }}>
             {formatFieldLabel(selectedNumeric) || selectedNumeric} forecast for next {periods} days
           </p>
-          <p className="text-xs text-gray-500 mt-0.5">
+          <p className="text-xs mt-0.5" style={{ color: TD.TEXT_3 }}>
             Using {agg === 'avg' ? 'daily average' : 'daily total'} grouped by {formatFieldLabel(selectedDate) || selectedDate}
           </p>
         </div>
         <div className="flex items-center gap-4">
-          <label className="flex items-center gap-2 text-sm text-gray-600">
+          <label className="flex items-center gap-2 text-sm" style={{ color: TD.TEXT_2 }}>
             <span className="hidden sm:inline">Horizon</span>
             <select
               value={periods}
@@ -204,7 +220,12 @@ function ForecastChart({ data, selectedNumeric, selectedDate, forecastPeriods = 
                 const n = Number(e.target.value)
                 setPeriods(Number.isFinite(n) && n > 0 ? n : 7)
               }}
-              className="px-2 py-1 border border-gray-300 rounded-lg bg-white text-sm focus:ring-2 focus:ring-blue-500"
+              className="px-2 py-1 rounded-lg text-sm"
+              style={{
+                background: TD.PAGE_BG,
+                border: `0.5px solid ${TD.CARD_BORDER}`,
+                color: TD.TEXT_1,
+              }}
               title="Forecast horizon"
             >
               <option value={7}>7 days</option>
@@ -213,8 +234,10 @@ function ForecastChart({ data, selectedNumeric, selectedDate, forecastPeriods = 
             </select>
           </label>
           <button
+            type="button"
             onClick={handleChartClick}
-            className="opacity-0 group-hover:opacity-100 transition-opacity p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg"
+            style={{ color: TD.ACCENT_MID }}
+            className="opacity-0 group-hover:opacity-100 transition-opacity p-2 rounded-lg"
             title="Get AI insights for this forecast"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -223,60 +246,68 @@ function ForecastChart({ data, selectedNumeric, selectedDate, forecastPeriods = 
           </button>
           {/* Trend indicator */}
           <div className="text-right">
-            <div className={`text-xs font-medium ${
-              trend.direction === 'upward' ? 'text-green-600' : 
-              trend.direction === 'downward' ? 'text-red-600' : 
-              'text-gray-600'
-            }`}>
-              {trend.direction === 'upward' ? '📈 Upward' : 
-               trend.direction === 'downward' ? '📉 Downward' : 
-               '➡️ Neutral'} Trend
+            <div
+              className="text-xs font-medium"
+              style={{
+                color:
+                  trend.direction === 'upward'
+                    ? TD.SUCCESS_ALT
+                    : trend.direction === 'downward'
+                      ? TD.DANGER
+                      : TD.TEXT_2,
+              }}
+            >
+              {trend.direction === 'upward' ? '↑ Upward' : trend.direction === 'downward' ? '↓ Downward' : '→ Neutral'} Trend
             </div>
-            <div className="text-xs text-gray-500">
+            <div className="text-xs" style={{ color: TD.TEXT_3 }}>
               Confidence: {(trend.confidence * 100).toFixed(1)}%
             </div>
           </div>
           {/* Toggle confidence interval */}
-          <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+          <label className="flex items-center gap-2 text-sm cursor-pointer" style={{ color: TD.TEXT_2 }}>
             <input
               type="checkbox"
               checked={showConfidenceInterval}
               onChange={(e) => setShowConfidenceInterval(e.target.checked)}
-              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              className="rounded"
+              style={{ accentColor: TD.ACCENT_BLUE }}
             />
             <span>Show range</span>
           </label>
         </div>
       </div>
 
-      <ResponsiveContainer width="100%" height={350}>
+      <ChartHorizontalScroll pointCount={combinedData.length} pxPerPoint={16} height={chartScrollHeight}>
+        <ResponsiveContainer width="100%" height={chartScrollHeight}>
         <AreaChart data={combinedData}>
           <defs>
             <linearGradient id="colorHistorical" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
-              <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-            </linearGradient>
-            <linearGradient id="colorForecast" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3}/>
-              <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
+              <stop offset="5%" stopColor={histColor} stopOpacity={0.35}/>
+              <stop offset="95%" stopColor={histColor} stopOpacity={0}/>
             </linearGradient>
           </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-          <XAxis 
+          <CartesianGrid strokeDasharray="3 3" stroke={TD.GRID} vertical={false} />
+          <XAxis
             dataKey="date"
             tickFormatter={formatDate}
-            stroke="#6b7280"
-            style={{ fontSize: '12px' }}
+            tick={axisTick}
+            axisLine={{ stroke: TD.CARD_BORDER }}
+            tickLine={false}
           />
-          <YAxis stroke="#6b7280" style={{ fontSize: '12px' }} />
+          <YAxis
+            tick={axisTick}
+            tickFormatter={(v) => formatCompact(v)}
+            axisLine={false}
+            tickLine={false}
+          />
           <Tooltip content={<CustomTooltip />} />
-          <Legend />
-          
+          <Legend wrapperStyle={{ color: TD.TEXT_2, fontSize: '12px' }} />
+
           {/* Historical data area */}
           <Area
             type="monotone"
             dataKey="value"
-            stroke="#3b82f6"
+            stroke={histColor}
             strokeWidth={2}
             fill="url(#colorHistorical)"
             name="Historical"
@@ -292,8 +323,8 @@ function ForecastChart({ data, selectedNumeric, selectedDate, forecastPeriods = 
                 type="monotone"
                 dataKey="upperBound"
                 stroke="none"
-                fill="#8b5cf6"
-                fillOpacity={0.1}
+                fill={forecastColor}
+                fillOpacity={0.12}
                 name="Upper Bound"
                 connectNulls
               />
@@ -301,8 +332,8 @@ function ForecastChart({ data, selectedNumeric, selectedDate, forecastPeriods = 
                 type="monotone"
                 dataKey="lowerBound"
                 stroke="none"
-                fill="#8b5cf6"
-                fillOpacity={0.1}
+                fill={forecastColor}
+                fillOpacity={0.12}
                 name="Lower Bound"
                 connectNulls
               />
@@ -313,46 +344,50 @@ function ForecastChart({ data, selectedNumeric, selectedDate, forecastPeriods = 
           <Line
             type="monotone"
             dataKey="value"
-            stroke="#8b5cf6"
+            stroke={forecastColor}
             strokeWidth={2}
             strokeDasharray="5 5"
             name="Forecast"
-            dot={{ fill: '#8b5cf6', r: 4 }}
+            dot={{ fill: forecastColor, r: 4 }}
             connectNulls
             isAnimationActive={true}
             animationDuration={800}
           />
 
           {/* Reference line at the transition point */}
-          <ReferenceLine 
-            x={combinedData[lastHistoricalIndex]?.date} 
-            stroke="#ef4444" 
+          <ReferenceLine
+            x={combinedData[lastHistoricalIndex]?.date}
+            stroke={TD.WARNING}
             strokeDasharray="3 3"
-            label={{ value: "Now", position: "top", fill: "#ef4444", fontSize: 12 }}
+            label={{ value: 'Now', position: 'top', fill: TD.WARNING, fontSize: 11 }}
           />
         </AreaChart>
-      </ResponsiveContainer>
+        </ResponsiveContainer>
+      </ChartHorizontalScroll>
 
       {/* Forecast summary */}
-      <div className="mt-4 pt-4 border-t border-gray-200">
+      <div className="mt-4 pt-4" style={{ borderTop: `0.5px solid ${TD.CARD_BORDER}` }}>
         <div className="grid grid-cols-3 gap-4 text-sm">
           <div>
-            <p className="text-gray-600">Last Value</p>
-            <p className="text-lg font-semibold text-gray-900">
-              {historicalData[lastHistoricalIndex]?.value.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+            <p style={{ color: TD.TEXT_3 }}>Last Value</p>
+            <p className="text-lg font-semibold" style={{ color: TD.TEXT_1 }}>
+              {formatCompact(historicalData[lastHistoricalIndex]?.value)}
             </p>
           </div>
           <div>
-            <p className="text-gray-600">Forecasted (Next Period)</p>
-            <p className="text-lg font-semibold text-purple-600">
-              {forecastData[0]?.value.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+            <p style={{ color: TD.TEXT_3 }}>Forecasted (Next Period)</p>
+            <p className="text-lg font-semibold" style={{ color: forecastColor }}>
+              {forecastData[0]?.value != null ? formatCompact(forecastData[0].value) : '—'}
             </p>
           </div>
           <div>
-            <p className="text-gray-600">Expected Change</p>
-            <p className={`text-lg font-semibold ${
-              trend.slope > 0 ? 'text-green-600' : trend.slope < 0 ? 'text-red-600' : 'text-gray-600'
-            }`}>
+            <p style={{ color: TD.TEXT_3 }}>Expected Change</p>
+            <p
+              className="text-lg font-semibold"
+              style={{
+                color: trend.slope > 0 ? TD.SUCCESS_ALT : trend.slope < 0 ? TD.DANGER : TD.TEXT_2,
+              }}
+            >
               {trend.slope > 0 ? '+' : ''}
               {((forecastData[0]?.value - historicalData[lastHistoricalIndex]?.value) / historicalData[lastHistoricalIndex]?.value * 100).toFixed(1)}%
             </p>

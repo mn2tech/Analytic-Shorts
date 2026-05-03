@@ -1,12 +1,14 @@
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
 import { parseNumericValue } from '../utils/numberUtils'
+import { formatCompact } from '../utils/formatNumber'
+import { TD } from '../constants/terminalDashboardPalette'
 
-const COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444', '#6366f1', '#14b8a6']
+const COLORS = [...TD.PIE_COLORS, ...TD.PIE_COLORS]
 
 function SunburstChart({ data, selectedCategorical, selectedNumeric, secondaryCategory, onChartFilter, chartFilter }) {
   if (!data || data.length === 0 || !selectedCategorical || !selectedNumeric) {
     return (
-      <div className="h-full flex items-center justify-center text-gray-400 text-sm">
+      <div className="h-full flex items-center justify-center text-sm" style={{ color: TD.TEXT_3 }}>
         Select columns to view chart
       </div>
     )
@@ -106,10 +108,13 @@ function SunburstChart({ data, selectedCategorical, selectedNumeric, secondaryCa
           
           <Tooltip
             contentStyle={{
-              backgroundColor: '#fff',
-              border: '1px solid #e5e7eb',
-              borderRadius: '6px',
+              background: TD.CARD_BG,
+              border: `0.5px solid ${TD.CARD_BORDER}`,
+              borderRadius: '8px',
+              color: TD.TEXT_1,
+              fontSize: '12px',
             }}
+            formatter={(value) => [formatCompact(Number(value)), 'Value']}
           />
         </PieChart>
       </ResponsiveContainer>
@@ -117,8 +122,8 @@ function SunburstChart({ data, selectedCategorical, selectedNumeric, secondaryCa
       {/* Center label */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
         <div className="text-center">
-          <p className="text-2xl font-bold text-gray-900">{total.toLocaleString()}</p>
-          <p className="text-xs text-gray-600">Total</p>
+          <p style={{ color: TD.TEXT_1, fontSize: '24px', fontWeight: 500 }}>{formatCompact(total)}</p>
+          <p style={{ color: TD.TEXT_2, fontSize: '12px' }}>Total</p>
         </div>
       </div>
     </div>

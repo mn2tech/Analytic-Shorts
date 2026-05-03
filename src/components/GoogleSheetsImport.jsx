@@ -18,7 +18,7 @@ function getSheetTitle(payload) {
   return value != null && String(value).trim() ? String(value).trim() : ''
 }
 
-export default function GoogleSheetsImport({ onDataLoaded, onError }) {
+export default function GoogleSheetsImport({ onDataLoaded, onError, darkMode = false }) {
   const [url, setUrl] = useState('')
   const [isImporting, setIsImporting] = useState(false)
   const [error, setError] = useState('')
@@ -51,14 +51,31 @@ export default function GoogleSheetsImport({ onDataLoaded, onError }) {
   }
 
   return (
-    <form onSubmit={handleImport} className="rounded-xl border border-emerald-100 bg-white p-4 shadow-sm sm:p-5">
+    <form
+      onSubmit={handleImport}
+      className={
+        darkMode
+          ? 'rounded-xl border border-slate-600 bg-[#0f172a] p-4 sm:p-5'
+          : 'rounded-xl border border-emerald-100 bg-white p-4 shadow-sm sm:p-5'
+      }
+    >
       <div className="mb-3 flex items-center gap-2 text-left">
-        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
+        <span
+          className={
+            darkMode
+              ? 'flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-900/40 text-emerald-400'
+              : 'flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600'
+          }
+        >
           <GoogleSheetsIcon />
         </span>
         <div>
-          <h3 className="text-sm font-semibold text-gray-900">Import from Google Sheets</h3>
-          <p className="text-xs text-gray-500">Paste a public sheet link shared as viewer.</p>
+          <h3 className={`text-sm font-semibold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>
+            Import from Google Sheets
+          </h3>
+          <p className={`text-xs ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+            Paste a public sheet link shared as viewer.
+          </p>
         </div>
       </div>
 
@@ -72,24 +89,40 @@ export default function GoogleSheetsImport({ onDataLoaded, onError }) {
           }}
           disabled={isImporting}
           placeholder="Paste Google Sheets URL..."
-          className="min-w-0 flex-1 rounded-lg border border-gray-300 px-3 py-2.5 text-sm text-gray-900 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100 disabled:bg-gray-100"
+          className={
+            darkMode
+              ? 'min-w-0 flex-1 rounded-lg border border-slate-600 bg-slate-950 px-3 py-2.5 text-sm text-slate-100 shadow-inner placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 disabled:bg-slate-900 disabled:text-slate-500'
+              : 'min-w-0 flex-1 rounded-lg border border-gray-300 px-3 py-2.5 text-sm text-gray-900 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100 disabled:bg-gray-100'
+          }
         />
         <button
           type="submit"
           disabled={isImporting || !url.trim()}
-          className="rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {isImporting ? 'Importing sheet...' : 'Import'}
         </button>
       </div>
 
       {error && (
-        <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-left text-sm text-red-700">
+        <p
+          className={
+            darkMode
+              ? 'mt-3 rounded-lg border border-red-500/40 bg-red-950/50 px-3 py-2 text-left text-sm text-red-200'
+              : 'mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-left text-sm text-red-700'
+          }
+        >
           {error}
         </p>
       )}
       {successTitle && !error && (
-        <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-left text-sm text-emerald-700">
+        <p
+          className={
+            darkMode
+              ? 'mt-3 rounded-lg border border-emerald-500/40 bg-emerald-950/40 px-3 py-2 text-left text-sm text-emerald-200'
+              : 'mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-left text-sm text-emerald-700'
+          }
+        >
           Imported sheet starting with: <span className="font-medium">{successTitle}</span>
         </p>
       )}

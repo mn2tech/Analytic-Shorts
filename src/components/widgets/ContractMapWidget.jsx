@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect } from 'react'
+import { formatCompact } from '../../utils/formatNumber'
 import {
   ComposableMap,
   Geographies,
@@ -109,6 +110,14 @@ function ContractMapWidget({
   const [geographyData, setGeographyData] = useState(null)
   const [fetchError, setFetchError] = useState(null)
   const [tooltip, setTooltip] = useState(null)
+  const [hoveredFips, setHoveredFips] = useState(null)
+
+  const PAGE_BG = '#0f172a'
+  const CARD_BG = '#1e293b'
+  const CARD_BORDER = '#334155'
+  const HOVER_FILL = '#1d4ed8'
+  const SELECTED_FILL = '#2563eb'
+  const LABEL_TEXT = '#94a3b8'
 
   useEffect(() => {
     let cancelled = false
@@ -241,15 +250,18 @@ function ContractMapWidget({
 
   if (fetchError) {
     return (
-      <div className="min-h-[400px] flex items-center justify-center text-amber-700 bg-amber-50 rounded-lg p-4">
-        <p className="text-sm">{fetchError}</p>
+      <div
+        className="min-h-[400px] flex items-center justify-center rounded-lg p-4 text-sm"
+        style={{ color: '#f97316', background: 'rgba(249,115,22,0.12)', border: `0.5px solid ${CARD_BORDER}` }}
+      >
+        <p>{fetchError}</p>
       </div>
     )
   }
 
   if (!geographyData) {
     return (
-      <div className="min-h-[400px] flex items-center justify-center text-gray-500 text-sm">
+      <div className="min-h-[400px] flex items-center justify-center text-sm" style={{ color: LABEL_TEXT }}>
         Loading map…
       </div>
     )
@@ -257,9 +269,8 @@ function ContractMapWidget({
 
   const formatVal = (v) => {
     const n = typeof v === 'number' ? v : Number(v)
-    if (n >= 1000000) return `${(n / 1e6).toFixed(1)}M`
-    if (n >= 1000) return `${(n / 1000).toFixed(1)}K`
-    return n.toLocaleString()
+    if (!Number.isFinite(n)) return '—'
+    return formatCompact(n)
   }
 
   const metricLabel = selectedNumeric ? `Sum of ${selectedNumeric}` : 'Opportunity count'
@@ -293,15 +304,21 @@ function ContractMapWidget({
                         key={geo.rsmKey}
                         geography={geo}
                         fill={getFill(geo)}
-                        stroke={isStateSelected(fips) ? '#1d4ed8' : '#fff'}
+                        stroke={CARD_BORDER}
                         strokeWidth={isStateSelected(fips) ? 1.5 : 0.5}
                         style={{
-                          default: { outline: 'none', cursor: 'default' },
-                          hover: { outline: 'none', filter: 'brightness(1.1)', cursor: 'default' },
+                          default: { outline: 'none', cursor: 'pointer' },
+                          hover: { outline: 'none', cursor: 'pointer' },
                           pressed: { outline: 'none' }
                         }}
-                        onMouseEnter={() => setTooltip({ stateName, val, fips })}
-                        onMouseLeave={() => setTooltip(null)}
+                        onMouseEnter={() => {
+                          setHoveredFips(fips)
+                          setTooltip({ stateName, val, fips })
+                        }}
+                        onMouseLeave={() => {
+                          setHoveredFips(null)
+                          setTooltip(null)
+                        }}
                         onClick={() => handleStateClick(fips)}
                       />
                     )
@@ -313,12 +330,11 @@ function ContractMapWidget({
                     const coord = STATE_CENTROIDS[fips]
                     const abbr = FIPS_TO_ABBR[fips]
                     if (!coord) return null
-                    const hasData = !!rec
                     const textStyle = {
                       fontFamily: 'system-ui, sans-serif',
                       fontSize: '13px',
                       fontWeight: 700,
-                      fill: hasData ? '#ffffff' : '#e5e7eb',
+                      fill: LABEL_TEXT,
                       pointerEvents: 'none',
                       userSelect: 'none'
                     }
@@ -330,7 +346,7 @@ function ContractMapWidget({
                               textAnchor="middle"
                               dominantBaseline="middle"
                               dy={-10}
-                              stroke={hasData ? '#1e3a8a' : '#374151'}
+                              stroke={PAGE_BG}
                               strokeWidth={1.5}
                               strokeLinejoin="round"
                               paintOrder="stroke fill"
@@ -343,7 +359,7 @@ function ContractMapWidget({
                             textAnchor="middle"
                             dominantBaseline="middle"
                             dy={abbr ? 10 : 0}
-                            stroke={hasData ? '#1e3a8a' : '#374151'}
+                            stroke={PAGE_BG}
                             strokeWidth={1.5}
                             strokeLinejoin="round"
                             paintOrder="stroke fill"
@@ -362,12 +378,19 @@ function ContractMapWidget({
         </ComposableMap>
       </div>
       {tooltip && (
-        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-900 text-white text-xs rounded shadow-lg z-10">
-          {tooltip.stateName}: {typeof tooltip.val === 'number' && tooltip.val % 1 !== 0 ? tooltip.val.toLocaleString(undefined, { maximumFractionDigits: 0 }) : Number(tooltip.val).toLocaleString()}
+        <div
+          className="absolute bottom-8 left-1/2 -translate-x-1/2 px-2 py-1 text-xs rounded shadow-lg z-10"
+          style={{
+            background: CARD_BG,
+            border: `0.5px solid ${CARD_BORDER}`,
+            color: '#f8fafc',
+          }}
+        >
+          {tooltip.stateName}: {formatCompact(Number(tooltip.val) || 0)}
         </div>
       )}
-      <div className="flex-shrink-0 text-xs text-gray-500 mt-1">
-        {total.toLocaleString()} total · {onChartFilter ? 'Click a state to filter opportunities' : 'Counts shown on map'}
+      <div className="flex-shrink-0 text-xs mt-1" style={{ color: LABEL_TEXT }}>
+        {formatCompact(total)} total · {onChartFilter ? 'Click a state to filter opportunities' : 'Counts shown on map'}
       </div>
     </div>
   )

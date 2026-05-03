@@ -1,6 +1,8 @@
 import { useState, useMemo } from 'react'
-import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts'
+import { Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { parseNumericValue } from '../utils/numberUtils'
+import { TD } from '../constants/terminalDashboardPalette'
+import { ChartHorizontalScroll } from './ChartHorizontalScroll'
 
 function TimeSeriesReport({ 
   data, 
@@ -192,13 +194,50 @@ function TimeSeriesReport({
     return years
   }, [timeSeriesData])
 
+  const cardShell = {
+    background: TD.CARD_BG,
+    border: `0.5px solid ${TD.CARD_BORDER}`,
+    borderRadius: '12px',
+    padding: '24px',
+  }
+  const selectStyle = {
+    padding: '6px 12px',
+    borderRadius: '8px',
+    border: `0.5px solid ${TD.CARD_BORDER}`,
+    background: TD.PAGE_BG,
+    color: TD.TEXT_1,
+    fontSize: '14px',
+  }
+  const axisTickProps = { fill: TD.TEXT_3, fontSize: 11 }
+  const tooltipStyle = {
+    background: TD.CARD_BG,
+    border: `0.5px solid ${TD.CARD_BORDER}`,
+    borderRadius: '8px',
+    color: TD.TEXT_1,
+    fontSize: '12px',
+  }
+
+  const statTile = (accent, label, value, valueColor = TD.TEXT_1) => (
+    <div
+      className="p-3 rounded-lg"
+      style={{
+        background: TD.PAGE_BG,
+        border: `0.5px solid ${TD.CARD_BORDER}`,
+        borderLeft: `3px solid ${accent}`,
+      }}
+    >
+      <p className="text-xs" style={{ color: TD.TEXT_3 }}>{label}</p>
+      <p className="text-lg font-semibold tabular-nums" style={{ color: valueColor }}>{value}</p>
+    </div>
+  )
+
   if (!dateColumn || !numericColumn) {
     return (
-      <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">Time Series Report</h2>
-        <div className="text-center py-12 text-gray-500">
+      <div style={cardShell}>
+        <h2 className="text-xl font-semibold mb-4" style={{ color: TD.TEXT_1 }}>Time Series Report</h2>
+        <div className="text-center py-12" style={{ color: TD.TEXT_2 }}>
           <p className="mb-2">Select a date column and a numeric column to view time series analysis.</p>
-          <p className="text-sm">Go to the "Data & Metadata" tab to configure column types.</p>
+          <p className="text-sm" style={{ color: TD.TEXT_3 }}>Go to the &quot;Data &amp; Metadata&quot; tab to configure column types.</p>
         </div>
       </div>
     )
@@ -206,9 +245,9 @@ function TimeSeriesReport({
 
   if (timeSeriesData.length === 0) {
     return (
-      <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">Time Series Report</h2>
-        <div className="text-center py-12 text-gray-500">
+      <div style={cardShell}>
+        <h2 className="text-xl font-semibold mb-4" style={{ color: TD.TEXT_1 }}>Time Series Report</h2>
+        <div className="text-center py-12" style={{ color: TD.TEXT_2 }}>
           <p>No valid time series data found. Please check your date and numeric columns.</p>
         </div>
       </div>
@@ -216,18 +255,19 @@ function TimeSeriesReport({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" style={{ background: TD.PAGE_BG }}>
       {/* Header with Controls */}
-      <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold text-gray-900">Time Series Report</h2>
-          <div className="flex items-center gap-4">
-            <label className="flex items-center gap-2 text-sm">
-              <span className="text-gray-700">Aggregation:</span>
+      <div style={cardShell}>
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+          <h2 className="text-xl font-semibold" style={{ color: TD.TEXT_1 }}>Time Series Report</h2>
+          <div className="flex flex-wrap items-center gap-4">
+            <label className="flex items-center gap-2 text-sm" style={{ color: TD.TEXT_2 }}>
+              <span>Aggregation:</span>
               <select
                 value={aggregation}
                 onChange={(e) => setAggregation(e.target.value)}
-                className="px-3 py-1 border border-gray-300 rounded-lg text-sm"
+                style={selectStyle}
+                className="focus:outline-none focus:ring-2 focus:ring-blue-500/35"
               >
                 <option value="none">None (Raw Data)</option>
                 <option value="daily">Daily</option>
@@ -236,20 +276,22 @@ function TimeSeriesReport({
                 <option value="yearly">Yearly</option>
               </select>
             </label>
-            <label className="flex items-center gap-2 text-sm">
+            <label className="flex items-center gap-2 text-sm cursor-pointer" style={{ color: TD.TEXT_2 }}>
               <input
                 type="checkbox"
                 checked={showMovingAverage}
                 onChange={(e) => setShowMovingAverage(e.target.checked)}
-                className="rounded border-gray-300"
+                className="rounded"
+                style={{ accentColor: TD.ACCENT_BLUE }}
               />
-              <span className="text-gray-700">Moving Average</span>
+              <span>Moving Average</span>
             </label>
             {showMovingAverage && (
               <select
                 value={movingAverageWindow}
-                onChange={(e) => setMovingAverageWindow(parseInt(e.target.value))}
-                className="px-2 py-1 border border-gray-300 rounded-lg text-sm w-20"
+                onChange={(e) => setMovingAverageWindow(parseInt(e.target.value, 10))}
+                style={{ ...selectStyle, width: '5rem' }}
+                className="focus:outline-none focus:ring-2 focus:ring-blue-500/35"
               >
                 <option value="3">3</option>
                 <option value="5">5</option>
@@ -258,12 +300,13 @@ function TimeSeriesReport({
               </select>
             )}
             {availableYears.length > 1 && (
-              <label className="flex items-center gap-2 text-sm">
-                <span className="text-gray-700">Compare Year:</span>
+              <label className="flex items-center gap-2 text-sm" style={{ color: TD.TEXT_2 }}>
+                <span>Compare Year:</span>
                 <select
                   value={comparisonYear || ''}
-                  onChange={(e) => setComparisonYear(e.target.value ? parseInt(e.target.value) : null)}
-                  className="px-3 py-1 border border-gray-300 rounded-lg text-sm"
+                  onChange={(e) => setComparisonYear(e.target.value ? parseInt(e.target.value, 10) : null)}
+                  style={selectStyle}
+                  className="focus:outline-none focus:ring-2 focus:ring-blue-500/35"
                 >
                   <option value="">None</option>
                   {availableYears.map(year => (
@@ -278,83 +321,69 @@ function TimeSeriesReport({
         {/* Statistics Cards */}
         {stats && (
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mt-4">
-            <div className="bg-blue-50 p-3 rounded-lg">
-              <p className="text-xs text-blue-700">Total</p>
-              <p className="text-lg font-semibold text-blue-900">{stats.total.toLocaleString()}</p>
-            </div>
-            <div className="bg-green-50 p-3 rounded-lg">
-              <p className="text-xs text-green-700">Average</p>
-              <p className="text-lg font-semibold text-green-900">{stats.average.toFixed(2)}</p>
-            </div>
-            <div className="bg-purple-50 p-3 rounded-lg">
-              <p className="text-xs text-purple-700">Min</p>
-              <p className="text-lg font-semibold text-purple-900">{stats.min.toLocaleString()}</p>
-            </div>
-            <div className="bg-orange-50 p-3 rounded-lg">
-              <p className="text-xs text-orange-700">Max</p>
-              <p className="text-lg font-semibold text-orange-900">{stats.max.toLocaleString()}</p>
-            </div>
-            <div className="bg-indigo-50 p-3 rounded-lg">
-              <p className="text-xs text-indigo-700">Growth</p>
-              <p className={`text-lg font-semibold ${stats.growth >= 0 ? 'text-indigo-900' : 'text-red-600'}`}>
-                {stats.growth >= 0 ? '+' : ''}{stats.growth.toFixed(1)}%
-              </p>
-            </div>
-            <div className="bg-gray-50 p-3 rounded-lg">
-              <p className="text-xs text-gray-700">Data Points</p>
-              <p className="text-lg font-semibold text-gray-900">{stats.dataPoints}</p>
-            </div>
+            {statTile(TD.ACCENT_MID, 'Total', stats.total.toLocaleString())}
+            {statTile(TD.SUCCESS_ALT, 'Average', stats.average.toFixed(2))}
+            {statTile('#a855f7', 'Min', stats.min.toLocaleString())}
+            {statTile(TD.WARNING, 'Max', stats.max.toLocaleString())}
+            {statTile('#818cf8', 'Growth', `${stats.growth >= 0 ? '+' : ''}${stats.growth.toFixed(1)}%`, stats.growth >= 0 ? TD.SUCCESS_ALT : TD.DANGER)}
+            {statTile(TD.TEXT_3, 'Data Points', String(stats.dataPoints))}
           </div>
         )}
 
         {/* Date Range */}
         {stats && stats.dateRange && (
-          <div className="mt-4 text-sm text-gray-600">
-            <span className="font-medium">Period:</span> {formatDate(stats.dateRange.start)} to {formatDate(stats.dateRange.end)}
+          <div className="mt-4 text-sm" style={{ color: TD.TEXT_2 }}>
+            <span className="font-medium" style={{ color: TD.TEXT_1 }}>Period:</span>{' '}
+            {formatDate(stats.dateRange.start)} to {formatDate(stats.dateRange.end)}
           </div>
         )}
       </div>
 
       {/* Time Series Chart */}
-      <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">
+      <div style={cardShell}>
+        <h3 className="text-lg font-semibold mb-4" style={{ color: TD.TEXT_1 }}>
           {numericColumn} Over Time
         </h3>
-        <ResponsiveContainer width="100%" height={400}>
+        <ChartHorizontalScroll pointCount={timeSeriesData.length} pxPerPoint={14} height={400}>
+          <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={timeSeriesData}>
             <defs>
-              <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8}/>
-                <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+              <linearGradient id="colorValueTs" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor={TD.ACCENT_MID} stopOpacity={0.45}/>
+                <stop offset="95%" stopColor={TD.ACCENT_MID} stopOpacity={0}/>
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis 
-              dataKey="dateStr" 
+            <CartesianGrid strokeDasharray="3 3" stroke={TD.GRID} vertical={false} />
+            <XAxis
+              dataKey="dateStr"
               tickFormatter={formatDate}
               angle={-45}
               textAnchor="end"
               height={80}
+              tick={axisTickProps}
+              axisLine={{ stroke: TD.CARD_BORDER }}
+              tickLine={false}
             />
-            <YAxis />
-            <Tooltip 
-              formatter={(value) => value.toLocaleString()}
+            <YAxis tick={axisTickProps} axisLine={false} tickLine={false} />
+            <Tooltip
+              contentStyle={tooltipStyle}
+              formatter={(value) => [Number(value).toLocaleString(), numericColumn]}
               labelFormatter={(label) => formatDate(label)}
             />
-            <Legend />
-            <Area 
-              type="monotone" 
-              dataKey="value" 
-              stroke="#3b82f6" 
-              fillOpacity={1} 
-              fill="url(#colorValue)"
+            <Legend wrapperStyle={{ color: TD.TEXT_2, fontSize: '12px' }} />
+            <Area
+              type="monotone"
+              dataKey="value"
+              stroke={TD.ACCENT_MID}
+              fillOpacity={1}
+              fill="url(#colorValueTs)"
               name={numericColumn}
             />
             {showMovingAverage && (
-              <Line 
-                type="monotone" 
-                dataKey="movingAvg" 
-                stroke="#ef4444" 
+              <Line
+                type="monotone"
+                dataKey="movingAvg"
+                stroke={TD.DANGER}
                 strokeWidth={2}
                 strokeDasharray="5 5"
                 name={`Moving Avg (${movingAverageWindow})`}
@@ -362,10 +391,10 @@ function TimeSeriesReport({
               />
             )}
             {comparisonYear && (
-              <Line 
-                type="monotone" 
-                dataKey="comparisonValue" 
-                stroke="#10b981" 
+              <Line
+                type="monotone"
+                dataKey="comparisonValue"
+                stroke={TD.SUCCESS_ALT}
                 strokeWidth={2}
                 strokeDasharray="3 3"
                 name={`${comparisonYear} Comparison`}
@@ -373,31 +402,32 @@ function TimeSeriesReport({
               />
             )}
           </AreaChart>
-        </ResponsiveContainer>
+          </ResponsiveContainer>
+        </ChartHorizontalScroll>
       </div>
 
       {/* Trend Analysis */}
       {stats && stats.growth !== 0 && (
-        <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Trend Analysis</h3>
+        <div style={cardShell}>
+          <h3 className="text-lg font-semibold mb-4" style={{ color: TD.TEXT_1 }}>Trend Analysis</h3>
           <div className="space-y-2">
             <div className="flex justify-between items-center">
-              <span className="text-gray-700">Overall Growth:</span>
-              <span className={`font-semibold ${stats.growth >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              <span style={{ color: TD.TEXT_2 }}>Overall Growth:</span>
+              <span className="font-semibold tabular-nums" style={{ color: stats.growth >= 0 ? TD.SUCCESS_ALT : TD.DANGER }}>
                 {stats.growth >= 0 ? '+' : ''}{stats.growth.toFixed(2)}%
               </span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-gray-700">Starting Value:</span>
-              <span className="font-semibold text-gray-900">{stats.firstValue.toLocaleString()}</span>
+              <span style={{ color: TD.TEXT_2 }}>Starting Value:</span>
+              <span className="font-semibold tabular-nums" style={{ color: TD.TEXT_1 }}>{stats.firstValue.toLocaleString()}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-gray-700">Ending Value:</span>
-              <span className="font-semibold text-gray-900">{stats.lastValue.toLocaleString()}</span>
+              <span style={{ color: TD.TEXT_2 }}>Ending Value:</span>
+              <span className="font-semibold tabular-nums" style={{ color: TD.TEXT_1 }}>{stats.lastValue.toLocaleString()}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-gray-700">Change:</span>
-              <span className={`font-semibold ${stats.lastValue >= stats.firstValue ? 'text-green-600' : 'text-red-600'}`}>
+              <span style={{ color: TD.TEXT_2 }}>Change:</span>
+              <span className="font-semibold tabular-nums" style={{ color: stats.lastValue >= stats.firstValue ? TD.SUCCESS_ALT : TD.DANGER }}>
                 {stats.lastValue >= stats.firstValue ? '+' : ''}
                 {(stats.lastValue - stats.firstValue).toLocaleString()}
               </span>

@@ -14,6 +14,7 @@ import PreviewView from './studio/PreviewView'
 import ErrorBoundary from '../components/ErrorBoundary'
 import { getDashboard, saveDashboard, listDashboards } from '../studio/api/studioClient'
 import { generateShareId, saveSharedDashboard, getShareableUrl, copyToClipboard } from '../utils/shareUtils'
+import { generateLayoutFromSpec } from '../utils/generateGridLayout'
 import { normalizeSchema, isDashboardSpec, getSpecContent } from '../studio/utils/schemaUtils'
 import apiClient from '../config/api'
 
@@ -815,12 +816,19 @@ export default function AiVisualBuilderStudio() {
     try {
       const title = dashboardTitle.trim() || 'Untitled Dashboard'
       const activeRows = datasetId === UPLOAD_DATASET_ID ? (uploadedData || []) : (data || [])
+      const chartOnlyLayout =
+        (!spec.layout || spec.layout.length === 0) &&
+        (!spec.kpis || spec.kpis.length === 0) &&
+        Array.isArray(spec.charts) &&
+        spec.charts.length > 0
+          ? generateLayoutFromSpec({ charts: spec.charts })
+          : []
       const fullSpec = {
         title,
         filters: Array.isArray(spec.filters) ? spec.filters : [],
         kpis: Array.isArray(spec.kpis) ? spec.kpis : [],
         charts: Array.isArray(spec.charts) ? spec.charts : [],
-        layout: Array.isArray(spec.layout) ? spec.layout : [],
+        layout: Array.isArray(spec.layout) && spec.layout.length > 0 ? spec.layout : chartOnlyLayout,
         style: spec.style && typeof spec.style === 'object' ? spec.style : { theme: 'executive_clean' },
         warnings: Array.isArray(spec.warnings) ? spec.warnings : [],
         datasetId: datasetId || spec.datasetId || 'sales',

@@ -1,75 +1,66 @@
 const express = require('express')
 const OpenAI = require('openai')
-const { applyOwnerSummaryGuardrails, fallbackOwnerSummary } = require('../utils/ownerSummaryGuardrails')
+const {
+  applyBusinessSummaryGuardrails,
+  fallbackBusinessSummary
+} = require('../utils/ownerSummaryGuardrails')
 
 const router = express.Router()
 
 const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null
 
-// Simple in-memory cache for summaries (key -> summary). Keeps process-local cache under PM2.
 const summaryCache = new Map()
 
-function normalizeKpis(kpis) {
-  const n = (v) => {
-    if (v == null || v === '') return null
-    const num = Number(v)
-    return Number.isFinite(num) ? num : null
+function normalizeBusinessMetric(m) {
+  if (!m || typeof m !== 'object') return null
+  const label = m.label != null ? String(m.label).trim() : ''
+  if (!label) return null
+  let value = m.value
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    /* keep */
+  } else if (value != null && value !== '') {
+    const num = Number(String(value).replace(/,/g, ''))
+    value = Number.isFinite(num) ? num : String(value).trim().slice(0, 120)
+  } else {
+    value = ''
   }
-  return {
-    occupancy_rate: n(kpis?.occupancy_rate),
-    revenue_today: n(kpis?.revenue_today),
-    arrivals_today: n(kpis?.arrivals_today),
-    adr: n(kpis?.adr),
-    revpar: n(kpis?.revpar)
-  }
+  return { label, value }
 }
 
-function buildUserPrompt(kpis) {
-  // Use the EXACT prompt template requested.
-  return `Write a 2–4 sentence owner-friendly summary using today’s KPIs below.
-Rules:
-- Do NOT include a title.
-- Do NOT mention dashboards, charts, filters, UI, or the word "Insight".
-- Use plain English (no analytics jargon).
-- Be confident and concise.
-- End with: "Action needed: Yes/No — <short reason>"
+function buildBusinessUserPrompt(metrics) {
+  const lines = metrics.map((m) => `- ${m.label}: ${m.value}`).join('\n')
+  return `Write a 2-sentence business summary for a business owner based on this data.
+Be specific — mention actual numbers.
+Do NOT use hotel/hospitality language (no "occupancy", "arrivals", "guests", "ADR", "RevPAR").
+Use neutral business language: revenue, orders, customers, products, units, etc.
+Do NOT include a title.
+Do NOT mention dashboards, charts, filters, UI, or the word "Insight".
 
-KPIs:
-occupancy_rate=${kpis.occupancy_rate}%
-revenue_today=$${kpis.revenue_today}
-arrivals_today=${kpis.arrivals_today}
-adr=$${kpis.adr}
-revpar=$${kpis.revpar}
----`
+Metrics:
+${lines}`
 }
 
 router.post(['/', ''], async (req, res) => {
   try {
-    const { kpis, cacheKey } = req.body || {}
-    if (!kpis || typeof kpis !== 'object') {
-      return res.status(400).json({ error: 'kpis object is required' })
+    const { businessMetrics, cacheKey } = req.body || {}
+    let metrics = []
+
+    if (Array.isArray(businessMetrics)) {
+      metrics = businessMetrics.map(normalizeBusinessMetric).filter(Boolean)
     }
 
-    const normalized = normalizeKpis(kpis)
-
-    // Validate required KPI fields are present (numbers)
-    const required = ['occupancy_rate', 'revenue_today', 'arrivals_today', 'adr', 'revpar']
-    const missing = required.filter((k) => normalized[k] == null)
-    if (missing.length) {
-      return res.status(400).json({ error: `Missing KPI(s): ${missing.join(', ')}` })
+    if (metrics.length === 0) {
+      return res.status(400).json({ error: 'businessMetrics array with at least one { label, value } is required' })
     }
 
-    const key = (typeof cacheKey === 'string' && cacheKey.trim())
-      ? cacheKey.trim()
-      : JSON.stringify(normalized)
+    const key = typeof cacheKey === 'string' && cacheKey.trim() ? cacheKey.trim() : JSON.stringify(metrics)
 
     if (summaryCache.has(key)) {
       return res.json({ summary: summaryCache.get(key), cached: true })
     }
 
-    // If AI isn't configured, return fallback (still cached).
     if (!openai) {
-      const safe = fallbackOwnerSummary(normalized)
+      const safe = fallbackBusinessSummary(metrics)
       summaryCache.set(key, safe)
       return res.json({ summary: safe, cached: false, ai: false })
     }
@@ -77,25 +68,29 @@ router.post(['/', ''], async (req, res) => {
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [
-        { role: 'system', content: 'You write concise executive updates for hotel owners.' },
-        { role: 'user', content: buildUserPrompt(normalized) }
+        {
+          role: 'system',
+          content: 'You write concise, factual business summaries for retail, e-commerce, and general operations—not hospitality-specific reports.'
+        },
+        { role: 'user', content: buildBusinessUserPrompt(metrics) }
       ],
       max_tokens: 200,
       temperature: 0.4
     })
 
     const raw = completion?.choices?.[0]?.message?.content ?? ''
-    const safe = applyOwnerSummaryGuardrails(raw, normalized)
+    const safe = applyBusinessSummaryGuardrails(raw, metrics)
     summaryCache.set(key, safe)
 
     res.json({ summary: safe, cached: false, ai: true })
   } catch (error) {
     console.error('Owner summary error:', error)
-    // On error, return fallback so UI still works.
     try {
-      const { kpis } = req.body || {}
-      const normalized = normalizeKpis(kpis || {})
-      const safe = fallbackOwnerSummary(normalized)
+      const { businessMetrics } = req.body || {}
+      const metrics = (Array.isArray(businessMetrics) ? businessMetrics : [])
+        .map(normalizeBusinessMetric)
+        .filter(Boolean)
+      const safe = metrics.length ? fallbackBusinessSummary(metrics) : 'Summary unavailable.'
       return res.status(200).json({ summary: safe, cached: false, ai: false, error: 'fallback' })
     } catch {
       return res.status(500).json({ error: error.message || 'Failed to generate owner summary' })
@@ -104,4 +99,3 @@ router.post(['/', ''], async (req, res) => {
 })
 
 module.exports = router
-

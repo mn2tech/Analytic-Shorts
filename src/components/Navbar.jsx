@@ -1,7 +1,13 @@
 import { useState, useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-function Navbar({ onOpenSidebar, onOpenMessaging, messagesUnreadCount = 0 }) {
+import ThemeToggle from './ThemeToggle'
+function Navbar({
+  onOpenSidebar,
+  onOpenMessaging,
+  messagesUnreadCount = 0,
+  brandTo = '/',
+}) {
   const { user, userProfile, signOut } = useAuth()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const menuRef = useRef(null)
@@ -32,14 +38,17 @@ function Navbar({ onOpenSidebar, onOpenMessaging, messagesUnreadCount = 0 }) {
   }
 
   return (
-    <nav className="bg-white border-b border-gray-200 w-full">
+    <nav
+      className="w-full"
+      style={{ background: '#0f172a', borderBottom: '0.5px solid #1e293b' }}
+    >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center h-14 gap-2">
           {typeof onOpenSidebar === 'function' && (
             <button
               type="button"
               onClick={onOpenSidebar}
-              className="lg:hidden shrink-0 p-2 -ml-2 rounded-lg hover:bg-gray-100 text-gray-600"
+              className="lg:hidden shrink-0 p-2 -ml-2 rounded-lg hover:bg-gray-100 text-gray-600 dark:hover:bg-slate-800 dark:text-slate-300"
               aria-label="Open menu"
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -47,19 +56,20 @@ function Navbar({ onOpenSidebar, onOpenMessaging, messagesUnreadCount = 0 }) {
               </svg>
             </button>
           )}
-          <Link to="/" className="flex items-center space-x-2 shrink-0">
+          <Link to={brandTo} className="flex items-center space-x-2 shrink-0">
             <div className="w-7 h-7 bg-gradient-to-br from-blue-600 to-purple-600 rounded flex items-center justify-center">
               <span className="text-white font-bold text-sm">N</span>
             </div>
-            <span className="font-semibold text-gray-900">NM2TECH Analytics</span>
+            <span className="font-semibold text-gray-900 dark:text-slate-100">NM2TECH Analytics</span>
           </Link>
           <div className="flex-1 min-w-0" />
-          <div className="flex items-center space-x-4 shrink-0">
+          <div className="flex items-center space-x-2 sm:space-x-4 shrink-0">
+            <ThemeToggle />
             {user && typeof onOpenMessaging === 'function' && (
               <button
                 type="button"
                 onClick={onOpenMessaging}
-                className="relative p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+                className="relative p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors dark:text-slate-300 dark:hover:text-white dark:hover:bg-slate-800"
                 aria-label="Messages"
                 title="Messages"
               >
@@ -75,19 +85,19 @@ function Navbar({ onOpenSidebar, onOpenMessaging, messagesUnreadCount = 0 }) {
             )}
             <Link
               to="/training"
-              className="hidden sm:inline text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium transition-colors"
+              className="hidden sm:inline text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium transition-colors dark:text-slate-300 dark:hover:text-white"
             >
               AI Training
             </Link>
             <Link
               to="/help"
-              className="text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium transition-colors"
+              className="text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium transition-colors dark:text-slate-300 dark:hover:text-white"
             >
               Help
             </Link>
             <Link
               to="/pricing"
-              className="text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium transition-colors"
+              className="text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium transition-colors dark:text-slate-300 dark:hover:text-white"
             >
               Pricing
             </Link>
@@ -96,41 +106,41 @@ function Navbar({ onOpenSidebar, onOpenMessaging, messagesUnreadCount = 0 }) {
                 <button
                   type="button"
                   onClick={() => setUserMenuOpen((o) => !o)}
-                  className="flex items-center gap-1 text-gray-700 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium transition-colors border border-transparent hover:border-gray-300"
+                  className="flex items-center gap-1 text-gray-700 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium transition-colors border border-transparent hover:border-gray-300 dark:text-slate-200 dark:hover:text-white dark:hover:border-slate-600"
                   aria-expanded={userMenuOpen}
                   aria-haspopup="true"
                 >
                   <span className="truncate max-w-[120px]">{getUserDisplayName()}</span>
-                  <svg className="w-4 h-4 shrink-0 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4 shrink-0 text-gray-500 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                   </svg>
                 </button>
                 {userMenuOpen && (
-                  <div className="absolute right-0 top-full mt-1 py-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+                  <div className="absolute right-0 top-full mt-1 py-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50 dark:bg-slate-800 dark:border-slate-600">
                     <Link
                       to="/dashboards"
-                      className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                      className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-slate-200 dark:hover:bg-slate-700"
                       onClick={() => setUserMenuOpen(false)}
                     >
                       My Dashboards
                     </Link>
                     <Link
                       to="/studio"
-                      className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                      className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-slate-200 dark:hover:bg-slate-700"
                       onClick={() => setUserMenuOpen(false)}
                     >
                       Studio
                     </Link>
                     <Link
                       to="/profile"
-                      className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                      className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-slate-200 dark:hover:bg-slate-700"
                       onClick={() => setUserMenuOpen(false)}
                     >
                       Profile
                     </Link>
                     <Link
                       to="/messages"
-                      className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                      className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-slate-200 dark:hover:bg-slate-700"
                       onClick={() => setUserMenuOpen(false)}
                     >
                       Messages
@@ -145,7 +155,7 @@ function Navbar({ onOpenSidebar, onOpenMessaging, messagesUnreadCount = 0 }) {
                     <button
                       type="button"
                       onClick={handleSignOut}
-                      className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                      className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-slate-200 dark:hover:bg-slate-700"
                     >
                       Sign Out
                     </button>
@@ -156,7 +166,7 @@ function Navbar({ onOpenSidebar, onOpenMessaging, messagesUnreadCount = 0 }) {
               <>
                 <Link
                   to="/login"
-                  className="text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium transition-colors"
+                  className="text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium transition-colors dark:text-slate-300 dark:hover:text-white"
                 >
                   Sign In
                 </Link>

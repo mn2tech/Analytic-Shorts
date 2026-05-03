@@ -1,16 +1,20 @@
 import { useState, useEffect } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, Link, useLocation } from 'react-router-dom'
 import Loader from '../components/Loader'
-import { getDashboards, deleteDashboard } from '../services/dashboardService'
+import { getDashboards, getDashboard, deleteDashboard } from '../services/dashboardService'
 import { useAuth } from '../contexts/AuthContext'
 import { generateShareId, saveSharedDashboard, getShareableUrl, copyToClipboard } from '../utils/shareUtils'
 import apiClient from '../config/api'
+import { TD } from '../constants/terminalDashboardPalette'
 
 const STORAGE_KEY_VIEW_MODE = 'myDashboards_viewMode' // 'grid' | 'list'
 
 function MyDashboards() {
   const { user } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+  /** Analytics Shorts product shell (`/analytics/*`) vs global app (`/dashboards`). */
+  const viewerPath = location.pathname.startsWith('/analytics') ? '/analytics/dashboard' : '/dashboard'
   const [dashboards, setDashboards] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -62,6 +66,7 @@ function MyDashboards() {
           return
         }
         payload = { dashboardType: 'dashboardSpec', spec, data: rows }
+        if (dashboard.grid_layout) payload.grid_layout = dashboard.grid_layout
       } else {
         // Regular dashboards: share the same payload shape as Dashboard.jsx
         payload = {
@@ -76,7 +81,10 @@ function MyDashboards() {
           selectedCategorical: dashboard.selected_categorical,
           selectedDate: dashboard.selected_date,
           opportunityKeyword: dashboard.opportunity_keyword || '',
-          dashboardView: dashboard.dashboard_view || 'advanced'
+          dashboardView: dashboard.dashboard_view || 'advanced',
+          ...(dashboard.custom_dashboard_spec
+            ? { customDashboardSpec: dashboard.custom_dashboard_spec }
+            : {})
         }
       }
 
@@ -132,7 +140,7 @@ function MyDashboards() {
     }
   }
 
-  const handleLoadDashboard = (dashboard) => {
+  const handleLoadDashboard = async (dashboard) => {
     // Studio / AI Visual Builder dashboards: open in Studio (AI Visual Builder) for editing
     if (dashboard.dashboard_view === 'studio' || dashboard.schema) {
       // Land on Preview in full-screen
@@ -140,26 +148,43 @@ function MyDashboards() {
       return
     }
 
-    // Prepare data in the format expected by Dashboard component (same shape as shared payload)
-    const dashboardData = {
-      dashboardId: dashboard.id,
-      name: dashboard.name,
-      data: dashboard.data,
-      columns: dashboard.columns,
-      numericColumns: dashboard.numeric_columns,
-      categoricalColumns: dashboard.categorical_columns,
-      dateColumns: dashboard.date_columns,
-      selectedNumeric: dashboard.selected_numeric,
-      selectedCategorical: dashboard.selected_categorical,
-      selectedDate: dashboard.selected_date,
-      dashboardView: dashboard.dashboard_view || 'advanced',
-      opportunityKeyword: dashboard.opportunity_keyword ?? '',
-      selectedOpportunityNoticeType: dashboard.selected_opportunity_notice_type ?? ''
+    // Full row from API (list can be stale; ensures data + custom_dashboard_spec are current)
+    let row = dashboard
+    try {
+      const fresh = await getDashboard(dashboard.id)
+      if (fresh && typeof fresh === 'object') row = fresh
+    } catch (e) {
+      console.warn('My Dashboards: could not refetch dashboard, using list row', e)
     }
 
-    // Store in sessionStorage (same way as file upload)
-    sessionStorage.setItem('analyticsData', JSON.stringify(dashboardData))
-    navigate('/dashboard')
+    const rows = Array.isArray(row.data) ? row.data : []
+
+    // Prepare data in the format expected by Dashboard component (same shape as shared payload)
+    const dashboardData = {
+      dashboardId: row.id,
+      name: row.name,
+      data: rows,
+      columns: row.columns ?? [],
+      numericColumns: row.numeric_columns,
+      categoricalColumns: row.categorical_columns,
+      dateColumns: row.date_columns,
+      selectedNumeric: row.selected_numeric,
+      selectedCategorical: row.selected_categorical,
+      selectedDate: row.selected_date,
+      dashboardView: row.dashboard_view || 'advanced',
+      opportunityKeyword: row.opportunity_keyword ?? '',
+      selectedOpportunityNoticeType: row.selected_opportunity_notice_type ?? '',
+      ...(row.custom_dashboard_spec ? { customDashboardSpec: row.custom_dashboard_spec } : {}),
+    }
+
+    try {
+      sessionStorage.setItem('analyticsData', JSON.stringify(dashboardData))
+    } catch (e) {
+      console.warn('sessionStorage quota exceeded; opening dashboard without caching payload', e)
+      navigate(viewerPath, { state: { analyticsData: dashboardData } })
+      return
+    }
+    navigate(viewerPath)
   }
 
   const handleDeleteDashboard = async (id, e) => {
@@ -195,32 +220,42 @@ function MyDashboards() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen" style={{ background: TD.PAGE_BG }}>
         <Loader />
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen" style={{ background: TD.PAGE_BG }}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-6 flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">My Dashboards</h1>
-            <p className="text-gray-600">
-              {dashboards.length === 0 
-                ? 'No saved dashboards yet' 
+            <h1 className="text-3xl font-bold mb-2" style={{ color: TD.TEXT_1 }}>
+              My Dashboards
+            </h1>
+            <p style={{ color: TD.TEXT_2 }}>
+              {dashboards.length === 0
+                ? 'No saved dashboards yet'
                 : `${dashboards.length} saved dashboard${dashboards.length !== 1 ? 's' : ''}`}
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <div className="hidden sm:flex items-center rounded-lg border border-gray-200 bg-white p-1">
+            <div
+              className="hidden sm:flex items-center rounded-lg p-1"
+              style={{ border: `0.5px solid ${TD.CARD_BORDER}`, background: TD.CARD_BG }}
+            >
               <button
                 type="button"
                 onClick={() => setViewMode('grid')}
                 className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
-                  viewMode === 'grid' ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-gray-50'
+                  viewMode === 'grid' ? 'text-white' : 'hover:bg-white/10'
                 }`}
+                style={
+                  viewMode === 'grid'
+                    ? { background: TD.ACCENT_BLUE }
+                    : { color: TD.TEXT_2 }
+                }
                 aria-pressed={viewMode === 'grid'}
                 title="Grid view"
               >
@@ -230,8 +265,13 @@ function MyDashboards() {
                 type="button"
                 onClick={() => setViewMode('list')}
                 className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
-                  viewMode === 'list' ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-gray-50'
+                  viewMode === 'list' ? 'text-white' : 'hover:bg-white/10'
                 }`}
+                style={
+                  viewMode === 'list'
+                    ? { background: TD.ACCENT_BLUE }
+                    : { color: TD.TEXT_2 }
+                }
                 aria-pressed={viewMode === 'list'}
                 title="List view"
               >
@@ -241,7 +281,8 @@ function MyDashboards() {
             <button
               type="button"
               onClick={() => navigate('/')}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+              className="px-4 py-2 rounded-lg transition-colors font-medium text-white hover:opacity-90"
+              style={{ background: TD.ACCENT_BLUE }}
             >
               Create New Dashboard
             </button>
@@ -249,19 +290,29 @@ function MyDashboards() {
         </div>
 
         {error && (
-          <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex flex-wrap items-center gap-3">
+          <div
+            className="mb-4 px-4 py-3 rounded-lg flex flex-wrap items-center gap-3"
+            style={{
+              background: 'rgba(239,68,68,0.12)',
+              border: `0.5px solid rgba(239,68,68,0.35)`,
+              color: TD.DANGER,
+            }}
+          >
             <span>{error}</span>
             {errorStatus === 401 && (
               <Link
                 to="/login"
-                className="inline-flex px-3 py-1.5 text-sm font-medium rounded-md bg-red-600 text-white hover:bg-red-700"
+                className="inline-flex px-3 py-1.5 text-sm font-medium rounded-md text-white hover:opacity-90"
+                style={{ background: TD.DANGER }}
               >
                 Sign in
               </Link>
             )}
             <button
+              type="button"
               onClick={loadDashboards}
-              className="text-red-800 underline hover:text-red-900 font-medium"
+              className="underline font-medium hover:opacity-90"
+              style={{ color: TD.TEXT_1 }}
             >
               Retry
             </button>
@@ -269,9 +320,13 @@ function MyDashboards() {
         )}
 
         {dashboards.length === 0 ? (
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12 text-center">
+          <div
+            className="rounded-lg p-12 text-center"
+            style={{ background: TD.CARD_BG, border: `0.5px solid ${TD.CARD_BORDER}` }}
+          >
             <svg
-              className="mx-auto h-12 w-12 text-gray-400 mb-4"
+              className="mx-auto h-12 w-12 mb-4"
+              style={{ color: TD.TEXT_3 }}
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -283,42 +338,63 @@ function MyDashboards() {
                 d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
               />
             </svg>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No dashboards yet</h3>
-            <p className="text-gray-600 mb-6">
+            <h3 className="text-lg font-medium mb-2" style={{ color: TD.TEXT_1 }}>
+              No dashboards yet
+            </h3>
+            <p className="mb-6" style={{ color: TD.TEXT_2 }}>
               Create your first dashboard by uploading a file or using example data.
             </p>
             <button
               onClick={() => navigate('/')}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+              className="px-4 py-2 rounded-lg transition-colors font-medium text-white hover:opacity-90"
+              style={{ background: TD.ACCENT_BLUE }}
             >
               Create Dashboard
             </button>
           </div>
         ) : viewMode === 'list' ? (
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-            <div className="divide-y divide-gray-100">
+          <div
+            className="rounded-lg overflow-hidden"
+            style={{ background: TD.CARD_BG, border: `0.5px solid ${TD.CARD_BORDER}` }}
+          >
+            <div className="divide-y" style={{ borderColor: TD.CARD_BORDER }}>
               {dashboards.map((dashboard) => (
                 <div
                   key={dashboard.id}
                   onClick={() => handleLoadDashboard(dashboard)}
-                  className="p-4 sm:p-5 hover:bg-gray-50 cursor-pointer flex flex-col sm:flex-row sm:items-center gap-3"
+                  className="p-4 sm:p-5 cursor-pointer flex flex-col sm:flex-row sm:items-center gap-3 hover:bg-white/5 transition-colors"
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex items-start gap-2">
-                      <h3 className="font-semibold text-gray-900 truncate">
+                      <h3 className="font-semibold truncate" style={{ color: TD.TEXT_1 }}>
                         {dashboard.name || 'Untitled Dashboard'}
                       </h3>
                       {dashboard.dashboard_view === 'studio' || dashboard.schema ? (
-                        <span className="shrink-0 text-xs px-2 py-0.5 bg-purple-50 text-purple-700 rounded">
+                        <span
+                          className="shrink-0 text-xs px-2 py-0.5 rounded"
+                          style={{
+                            background: 'rgba(168,85,247,0.15)',
+                            color: '#c4b5fd',
+                          }}
+                        >
                           Studio
                         </span>
                       ) : (
-                        <span className="shrink-0 text-xs px-2 py-0.5 bg-blue-50 text-blue-700 rounded">
+                        <span
+                          className="shrink-0 text-xs px-2 py-0.5 rounded"
+                          style={{
+                            background: 'rgba(59,130,246,0.15)',
+                            color: TD.ACCENT_MID,
+                          }}
+                        >
                           {dashboard.dashboard_view === 'simple' ? 'Simple' : 'Advanced'}
                         </span>
                       )}
                     </div>
-                    <div className="mt-1 text-sm text-gray-600 flex flex-wrap gap-x-4 gap-y-1">
+                    <div
+                      className="mt-1 text-sm flex flex-wrap gap-x-4 gap-y-1"
+                      style={{ color: TD.TEXT_2 }}
+                    >
                       <span>{dashboard.data?.length || 0} records{dashboard.columns ? ` • ${dashboard.columns.length} columns` : ''}</span>
                       <span>Created {formatDate(dashboard.created_at)}</span>
                       {dashboard.updated_at !== dashboard.created_at && (
@@ -328,11 +404,14 @@ function MyDashboards() {
                   </div>
 
                   <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0">
-                    <span className="text-xs text-gray-500">Open →</span>
+                    <span className="text-xs" style={{ color: TD.TEXT_3 }}>
+                      Open →
+                    </span>
                     <Link
                       to={`/publish/${dashboard.id}`}
                       onClick={(e) => e.stopPropagation()}
-                      className="text-gray-500 hover:text-green-600 transition-colors px-2 py-1.5 rounded hover:bg-green-50 text-sm font-medium whitespace-nowrap"
+                      className="transition-colors px-2 py-1.5 rounded text-sm font-medium whitespace-nowrap hover:bg-white/10"
+                      style={{ color: TD.SUCCESS_ALT }}
                       title="Publish as Analytics Short"
                     >
                       Publish
@@ -341,11 +420,14 @@ function MyDashboards() {
                       type="button"
                       onClick={(e) => handleShareDashboard(dashboard, e)}
                       disabled={sharingId === dashboard.id}
-                      className="text-gray-400 hover:text-blue-600 transition-colors p-2 rounded hover:bg-blue-50 disabled:opacity-50"
+                      className="transition-colors p-2 rounded hover:bg-white/10 disabled:opacity-50"
+                      style={{ color: TD.TEXT_3 }}
                       title="Share dashboard"
                     >
                       {shareLinkCopiedId === dashboard.id ? (
-                        <span className="text-xs font-medium text-blue-700">Copied</span>
+                        <span className="text-xs font-medium" style={{ color: TD.ACCENT_MID }}>
+                          Copied
+                        </span>
                       ) : sharingId === dashboard.id ? (
                         <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -360,7 +442,8 @@ function MyDashboards() {
                     <button
                       onClick={(e) => handleDeleteDashboard(dashboard.id, e)}
                       disabled={deletingId === dashboard.id}
-                      className="text-gray-400 hover:text-red-600 transition-colors p-2 rounded hover:bg-red-50 disabled:opacity-50"
+                      className="transition-colors p-2 rounded hover:bg-white/10 disabled:opacity-50"
+                      style={{ color: TD.TEXT_3 }}
                       title="Delete dashboard"
                     >
                       {deletingId === dashboard.id ? (
@@ -385,17 +468,22 @@ function MyDashboards() {
               <div
                 key={dashboard.id}
                 onClick={() => handleLoadDashboard(dashboard)}
-                className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-all cursor-pointer group"
+                className="rounded-lg p-6 transition-all cursor-pointer group hover:bg-white/[0.03]"
+                style={{ background: TD.CARD_BG, border: `0.5px solid ${TD.CARD_BORDER}` }}
               >
                 <div className="flex items-start justify-between mb-4">
-                  <h3 className="text-lg font-semibold text-gray-900 group-hover:text-blue-600 transition-colors">
+                  <h3
+                    className="text-lg font-semibold transition-colors group-hover:opacity-90"
+                    style={{ color: TD.TEXT_1 }}
+                  >
                     {dashboard.name || 'Untitled Dashboard'}
                   </h3>
                   <div className="flex items-center gap-2">
                     <Link
                       to={`/publish/${dashboard.id}`}
                       onClick={(e) => e.stopPropagation()}
-                      className="text-gray-600 hover:text-green-600 transition-colors px-2 py-1 rounded hover:bg-green-50 text-sm font-medium"
+                      className="transition-colors px-2 py-1 rounded hover:bg-white/10 text-sm font-medium"
+                      style={{ color: TD.SUCCESS_ALT }}
                       title="Publish as Analytics Short"
                     >
                       Publish
@@ -404,11 +492,14 @@ function MyDashboards() {
                       type="button"
                       onClick={(e) => handleShareDashboard(dashboard, e)}
                       disabled={sharingId === dashboard.id}
-                      className="text-gray-400 hover:text-blue-600 transition-colors p-1 rounded hover:bg-blue-50 disabled:opacity-50"
+                      className="transition-colors p-1 rounded hover:bg-white/10 disabled:opacity-50"
+                      style={{ color: TD.TEXT_3 }}
                       title="Share dashboard"
                     >
                       {shareLinkCopiedId === dashboard.id ? (
-                        <span className="text-xs font-medium text-blue-700">Copied</span>
+                        <span className="text-xs font-medium" style={{ color: TD.ACCENT_MID }}>
+                          Copied
+                        </span>
                       ) : sharingId === dashboard.id ? (
                         <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -423,7 +514,8 @@ function MyDashboards() {
                     <button
                       onClick={(e) => handleDeleteDashboard(dashboard.id, e)}
                       disabled={deletingId === dashboard.id}
-                      className="text-gray-400 hover:text-red-600 transition-colors p-1 rounded hover:bg-red-50 disabled:opacity-50"
+                      className="transition-colors p-1 rounded hover:bg-white/10 disabled:opacity-50"
+                      style={{ color: TD.TEXT_3 }}
                       title="Delete dashboard"
                     >
                       {deletingId === dashboard.id ? (
@@ -440,9 +532,9 @@ function MyDashboards() {
                   </div>
                 </div>
                 
-                <div className="space-y-2 text-sm text-gray-600 mb-4">
+                <div className="space-y-2 text-sm mb-4" style={{ color: TD.TEXT_2 }}>
                   <div className="flex items-center gap-2">
-                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
                     <span>
@@ -466,17 +558,25 @@ function MyDashboards() {
                   )}
                 </div>
 
-                <div className="flex items-center gap-2 pt-4 border-t border-gray-100">
+                <div className="flex items-center gap-2 pt-4 border-t" style={{ borderColor: TD.CARD_BORDER }}>
                   {dashboard.dashboard_view === 'studio' || dashboard.schema ? (
-                    <span className="text-xs px-2 py-1 bg-purple-50 text-purple-700 rounded">
+                    <span
+                      className="text-xs px-2 py-1 rounded"
+                      style={{ background: 'rgba(168,85,247,0.15)', color: '#c4b5fd' }}
+                    >
                       Studio Dashboard
                     </span>
                   ) : (
-                    <span className="text-xs px-2 py-1 bg-blue-50 text-blue-700 rounded">
+                    <span
+                      className="text-xs px-2 py-1 rounded"
+                      style={{ background: 'rgba(59,130,246,0.15)', color: TD.ACCENT_MID }}
+                    >
                       {dashboard.dashboard_view === 'simple' ? 'Simple View' : 'Advanced View'}
                     </span>
                   )}
-                  <span className="text-xs text-gray-500 ml-auto">Click to open →</span>
+                  <span className="text-xs ml-auto" style={{ color: TD.TEXT_3 }}>
+                    Click to open →
+                  </span>
                 </div>
               </div>
             ))}

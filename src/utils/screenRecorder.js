@@ -37,12 +37,14 @@ export async function startScreenRecording(opts = {}) {
   }
 
   const use916 = opts.aspectRatio === '9:16'
+  // preferCurrentTab: true biases Chrome toward "this tab only" — users often want Entire Screen / a window.
+  // For non–9:16 recording, avoid width/height ideals so the chosen surface (full monitor) stays native resolution.
   const stream = await navigator.mediaDevices.getDisplayMedia({
     video: use916
       ? { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } }
-      : { width: { ideal: 1080 }, height: { ideal: 1920 }, frameRate: { ideal: 30 } },
+      : { frameRate: { ideal: 30 } },
     audio: false,
-    preferCurrentTab: true,
+    preferCurrentTab: false,
   })
 
   if (!use916) {

@@ -3,7 +3,7 @@ import apiClient from '../config/api'
 import GoogleSheetsImport from './GoogleSheetsImport'
 import { trackEvent } from '../utils/analytics'
 
-function FileUploader({ onUploadSuccess, onError, onUpgradeRequired }) {
+function FileUploader({ onUploadSuccess, onError, onUpgradeRequired, darkMode = false }) {
   const [isDragging, setIsDragging] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const fileInputRef = useRef(null)
@@ -172,14 +172,20 @@ function FileUploader({ onUploadSuccess, onError, onUpgradeRequired }) {
     }
   }
 
+  const dropZoneClass = darkMode
+    ? isDragging
+      ? 'border-blue-500 bg-blue-500/10'
+      : 'border-slate-600 bg-[#0f172a] hover:border-slate-500'
+    : isDragging
+      ? 'border-blue-500 bg-blue-50'
+      : 'border-gray-300 bg-gray-50 hover:border-gray-400'
+
   return (
     <>
     <div
-      className={`border-2 border-dashed rounded-xl p-4 sm:p-8 text-center transition-all duration-300 ${
-        isDragging
-          ? 'border-blue-500 bg-blue-50'
-          : 'border-gray-300 bg-gray-50 hover:border-gray-400'
-      } ${isUploading ? 'opacity-50 pointer-events-none' : ''}`}
+      className={`border-2 border-dashed rounded-xl p-4 sm:p-8 text-center transition-all duration-300 ${dropZoneClass} ${
+        isUploading ? 'opacity-50 pointer-events-none' : ''
+      }`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -205,9 +211,15 @@ function FileUploader({ onUploadSuccess, onError, onUpgradeRequired }) {
       
       {isUploading ? (
         <div className="space-y-4">
-          <div className="w-16 h-16 mx-auto border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
-          <p className="text-gray-600 font-medium">Uploading and processing...</p>
-          <p className="text-xs text-gray-500">Please keep this page open</p>
+          <div
+            className={`w-16 h-16 mx-auto border-4 rounded-full animate-spin ${
+              darkMode ? 'border-slate-600 border-t-blue-400' : 'border-blue-200 border-t-blue-600'
+            }`}
+          />
+          <p className={`font-medium ${darkMode ? 'text-slate-300' : 'text-gray-600'}`}>
+            Uploading and processing...
+          </p>
+          <p className={`text-xs ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>Please keep this page open</p>
         </div>
       ) : (
         <div className="space-y-4">
@@ -227,13 +239,15 @@ function FileUploader({ onUploadSuccess, onError, onUpgradeRequired }) {
             </svg>
           </div>
           <div>
-            <p className="text-base sm:text-lg font-semibold text-gray-900">
-              {typeof window !== 'undefined' && window.innerWidth <= 768 
-                ? 'Tap to upload your file' 
+            <p
+              className={`text-base sm:text-lg font-semibold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}
+            >
+              {typeof window !== 'undefined' && window.innerWidth <= 768
+                ? 'Tap to upload your file'
                 : 'Drag & drop your file here'}
             </p>
             {typeof window !== 'undefined' && window.innerWidth > 768 && (
-              <p className="text-sm text-gray-500 mt-2">or</p>
+              <p className={`text-sm mt-2 ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>or</p>
             )}
             <button
               onClick={(e) => {
@@ -248,22 +262,32 @@ function FileUploader({ onUploadSuccess, onError, onUpgradeRequired }) {
                 // Prevent double-tap zoom on mobile
                 e.preventDefault()
               }}
-              className="mt-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 active:bg-blue-800 transition-colors font-medium touch-manipulation"
+              className={
+                darkMode
+                  ? 'mt-2 px-8 py-3.5 rounded-xl border-2 border-slate-400 bg-white text-slate-900 shadow-[0_4px_18px_rgba(0,0,0,0.35)] hover:bg-slate-100 active:scale-[0.99] transition-all font-semibold text-[15px] touch-manipulation'
+                  : 'mt-2 px-8 py-3.5 bg-white text-slate-900 rounded-xl border-2 border-slate-900 shadow-[0_4px_18px_rgba(15,23,42,0.18)] hover:bg-slate-50 hover:shadow-[0_6px_24px_rgba(15,23,42,0.22)] active:scale-[0.99] transition-all font-semibold text-[15px] touch-manipulation'
+              }
               type="button"
             >
               Browse Files
             </button>
-            <p className="text-xs text-gray-400 mt-3">Supports CSV and Excel files</p>
+            <p className={`text-xs mt-3 ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>
+              Supports CSV and Excel files
+            </p>
           </div>
         </div>
       )}
     </div>
     <div className="my-5 flex items-center gap-3">
-      <div className="h-px flex-1 bg-gray-200" />
-      <span className="text-xs font-medium uppercase tracking-wide text-gray-400">or import from Google Sheets</span>
-      <div className="h-px flex-1 bg-gray-200" />
+      <div className={`h-px flex-1 ${darkMode ? 'bg-slate-600' : 'bg-gray-200'}`} />
+      <span
+        className={`text-xs font-medium uppercase tracking-wide ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}
+      >
+        or import from Google Sheets
+      </span>
+      <div className={`h-px flex-1 ${darkMode ? 'bg-slate-600' : 'bg-gray-200'}`} />
     </div>
-    <GoogleSheetsImport onDataLoaded={onUploadSuccess} onError={onError} />
+    <GoogleSheetsImport onDataLoaded={onUploadSuccess} onError={onError} darkMode={darkMode} />
     </>
   )
 }

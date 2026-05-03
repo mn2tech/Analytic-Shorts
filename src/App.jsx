@@ -1,12 +1,13 @@
 import { Routes, Route, Outlet, useLocation, Navigate, useParams } from 'react-router-dom'
 import { useEffect } from 'react'
 import { AuthProvider } from './contexts/AuthContext'
+import { useAuth } from './contexts/AuthContext'
 import { NotificationProvider } from './contexts/NotificationContext'
 import ProtectedRoute from './components/ProtectedRoute'
 import BrandWatermark from './components/BrandWatermark'
 import PortraitFrame from './components/PortraitFrame'
+import ErrorBoundary from './components/ErrorBoundary'
 import AppLayout from './layouts/AppLayout'
-import Home from './pages/Home'
 import NM2TECHLandingPage from './pages/NM2TECHLandingPage'
 import HospitalDemoRequestLandingPage from './pages/HospitalDemoRequestLandingPage'
 import Login from './pages/Login'
@@ -61,6 +62,14 @@ import MentalHealthParityMcoHelpdeskDemo from './pages/MentalHealthParityMcoHelp
 import InnSoftImporter from './pages/InnSoftImporter'
 import Downloads from './pages/Downloads'
 import MedStarMontgomeryERCommandCenter from './pages/MedStarMontgomeryERCommandCenter'
+import Hub from './pages/Hub'
+import AnalyticsShortsLanding from './pages/AnalyticsShortsLanding'
+import AnalyticsLayout from './layouts/AnalyticsLayout'
+import GovConLayout from './layouts/GovConLayout'
+import HealthcareLayout from './layouts/HealthcareLayout'
+import CommandCenterLayout from './layouts/CommandCenterLayout'
+import DataCenterCommandCenter from './pages/DataCenterCommandCenter'
+import MarketingLanding from './pages/MarketingLanding'
 
 /** Redirect /studio to /studio/chat, preserving search (e.g. ?open=:id). */
 function StudioIndexRedirect() {
@@ -72,6 +81,27 @@ function StudioIndexRedirect() {
 function NavigateToStudioWithOpen() {
   const { id } = useParams()
   return <Navigate to={{ pathname: '/studio/chat', search: id ? `?open=${id}` : '' }} replace />
+}
+
+function RootEntry() {
+  const { user, loading } = useAuth()
+  if (loading) {
+    return (
+      <div
+        style={{
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: '#0f172a',
+          color: '#94a3b8',
+        }}
+      >
+        Loading...
+      </div>
+    )
+  }
+  return user ? <Navigate to="/hub" replace /> : <MarketingLanding />
 }
 
 // Track page views for Google Analytics
@@ -113,9 +143,82 @@ function App() {
             <Route path="/ai-visual-builder" element={<Navigate to="/studio" replace />} />
             <Route path="/live/:sessionId" element={<Live />} />
 
+            {/* Product hub & prefixed shells — Hub.jsx links to /hub, /analytics/*, /govcon/*, etc. */}
+            <Route
+              path="/hub"
+              element={
+                <ProtectedRoute>
+                  <Hub />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/analytics"
+              element={
+                <ProtectedRoute>
+                  <ErrorBoundary>
+                    <AnalyticsLayout />
+                  </ErrorBoundary>
+                </ProtectedRoute>
+              }
+            >
+              <Route index element={<AnalyticsShortsLanding />} />
+              <Route path="dashboard" element={<Dashboard />} />
+              <Route path="feed" element={<Feed />} />
+              <Route path="studio" element={<Navigate to="/studio/chat" replace />} />
+              <Route path="live" element={<Navigate to="/feed" replace />} />
+              <Route path="dashboards" element={<MyDashboards />} />
+            </Route>
+            <Route
+              path="/govcon"
+              element={
+                <ProtectedRoute>
+                  <ErrorBoundary>
+                    <GovConLayout />
+                  </ErrorBoundary>
+                </ProtectedRoute>
+              }
+            >
+              <Route index element={<Navigate to="/govcon/federal-entry" replace />} />
+              <Route path="federal-entry" element={<FederalEntryReport />} />
+              <Route path="briefs" element={<FederalEntryBrief />} />
+              <Route path="govcon4pack" element={<GovCon4Pack />} />
+            </Route>
+            <Route
+              path="/healthcare"
+              element={
+                <ProtectedRoute>
+                  <ErrorBoundary>
+                    <HealthcareLayout />
+                  </ErrorBoundary>
+                </ProtectedRoute>
+              }
+            >
+              <Route index element={<Navigate to="/healthcare/floormap" replace />} />
+              <Route path="floormap" element={<FloorMapAIPage />} />
+              <Route path="er-map" element={<ERCommandMapPage />} />
+              <Route path="bed-tracking" element={<HospitalBedCommandCenter />} />
+            </Route>
+            <Route
+              path="/portals/command-centers"
+              element={
+                <ProtectedRoute>
+                  <ErrorBoundary>
+                    <CommandCenterLayout />
+                  </ErrorBoundary>
+                </ProtectedRoute>
+              }
+            >
+              <Route index element={<Navigate to="/portals/command-centers/best-western" replace />} />
+              <Route path="best-western" element={<BestWesternCommandCenter />} />
+              <Route path="data-center" element={<DataCenterCommandCenter />} />
+              <Route path="kumon" element={<KumonLearningCommandCenter />} />
+              <Route path="motel" element={<MotelCommandCenter />} />
+            </Route>
+
             {/* Routes WITH layout (sidebar + Navbar + Footer) */}
-            <Route element={<AppLayout />}>
-              <Route path="/" element={<Home />} />
+            <Route element={<ErrorBoundary><AppLayout /></ErrorBoundary>}>
+              <Route path="/" element={<RootEntry />} />
               <Route path="/landing" element={<NM2TECHLandingPage />} />
               <Route path="/hospital-demo-request" element={<HospitalDemoRequestLandingPage />} />
               <Route path="/pricing" element={<Pricing />} />
@@ -271,6 +374,14 @@ function App() {
                       <SasToPySparkStudio />
                     </ProtectedRoute>
                   }
+                />
+                <Route
+                  path="migration-validation"
+                  element={<Navigate to="/migration-validation-studio" replace />}
+                />
+                <Route
+                  path="responsible-ai"
+                  element={<Navigate to="/responsible-ai-copilot-banking" replace />}
                 />
                 <Route
                   path=":dashboardId"

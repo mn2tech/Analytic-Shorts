@@ -1,5 +1,7 @@
 import { useMemo, memo, useState } from 'react'
 import { parseNumericValue } from '../utils/numberUtils'
+import { formatCompact } from '../utils/formatNumber'
+import { TD } from '../constants/terminalDashboardPalette'
 
 function MetricCards({ data, numericColumns, selectedNumeric, stats }) {
   if (!data || data.length === 0 || !stats || !selectedNumeric) return null
@@ -72,7 +74,7 @@ function MetricCards({ data, numericColumns, selectedNumeric, stats }) {
       const seconds = Math.floor(value % 60)
       return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
     }
-    return typeof value === 'number' ? value.toLocaleString(undefined, { maximumFractionDigits: 2 }) : value
+    return typeof value === 'number' ? formatCompact(value) : value
   }
 
   // Calculate more meaningful metrics
@@ -125,48 +127,42 @@ function MetricCards({ data, numericColumns, selectedNumeric, stats }) {
 
   // Build card data - conditionally show "Total Sum" or "Range" based on data type
   const keyMetric = isPercentageData
-    ? { label: 'Range', value: formatValue(range), color: 'purple' }
-    : { label: 'Total', value: formatValue(stats.sum), color: 'purple' }
+    ? { label: 'Range', value: formatCompact(range), accent: TD.ACCENT_BLUE }
+    : { label: 'Total', value: formatCompact(stats.sum), accent: TD.ACCENT_BLUE }
 
-  // Keep Simple view focused: show a compact set by default.
   const primaryCards = [
     keyMetric,
-    { label: 'Average', value: formatValue(stats.avg), color: 'indigo' },
-    { label: 'Min', value: formatValue(stats.min), color: 'gray' },
-    { label: 'Max', value: formatValue(stats.max), color: 'blue' },
-    { label: 'Trend', value: formatValue(growthRate, 'percentage'), color: growthRate >= 0 ? 'green' : 'red' },
+    { label: 'Average', value: formatCompact(stats.avg), accent: '#7c3aed' },
+    { label: 'Min', value: formatCompact(stats.min), accent: TD.TEXT_3 },
+    { label: 'Max', value: formatCompact(stats.max), accent: TD.SUCCESS_ALT },
+    {
+      label: 'Trend',
+      value: formatValue(growthRate, 'percentage'),
+      trendDelta: growthRate,
+      accent: growthRate < 0 ? TD.DANGER : growthRate === 0 ? TD.TEXT_3 : TD.SUCCESS_ALT,
+    },
   ]
 
   // Advanced stats (available via toggle)
   const advancedCards = [
-    { label: 'Total Items', value: metrics.totalItems, color: 'gray' },
-    { label: 'Engagement Rate', value: formatValue(metrics.engagementRate, 'percentage'), color: 'green' },
-    { label: 'Median', value: formatValue(metrics.median), color: 'pink' },
-    { label: 'Unique Values', value: metrics.uniqueValues, color: 'purple' },
-    { label: 'Std Deviation', value: formatValue(metrics.stdDev), color: 'indigo' },
-    { label: 'IQR (Spread)', value: formatValue(iqr), color: 'blue' },
-    { label: 'Variability', value: formatValue(cv, 'percentage'), color: 'green' },
+    { label: 'Total Items', value: formatCompact(metrics.totalItems), accent: TD.TEXT_3 },
+    { label: 'Engagement Rate', value: formatValue(metrics.engagementRate, 'percentage'), accent: TD.SUCCESS_ALT },
+    { label: 'Median', value: formatCompact(metrics.median), accent: '#db2777' },
+    { label: 'Unique Values', value: formatCompact(metrics.uniqueValues), accent: '#7c3aed' },
+    { label: 'Std Deviation', value: formatCompact(metrics.stdDev), accent: '#6366f1' },
+    { label: 'IQR (Spread)', value: formatCompact(iqr), accent: TD.ACCENT_MID },
+    { label: 'Variability', value: formatValue(cv, 'percentage'), accent: TD.SUCCESS_ALT },
   ]
-
-  const colorClasses = {
-    blue: 'border-blue-500',
-    green: 'border-green-500',
-    purple: 'border-purple-500',
-    indigo: 'border-indigo-500',
-    pink: 'border-pink-500',
-    gray: 'border-gray-500',
-    red: 'border-red-500',
-  }
 
   return (
     <div className="space-y-4">
       {/* Primary (default) */}
       <div className="flex items-center justify-between gap-3">
-        <p className="text-sm font-semibold text-gray-900">Key metrics</p>
+        <p style={{ fontSize: '14px', fontWeight: 600, color: TD.TEXT_1 }}>Key metrics</p>
         <button
           type="button"
           onClick={() => setShowAdvanced((v) => !v)}
-          className="text-sm text-blue-700 hover:text-blue-900 font-medium"
+          style={{ fontSize: '14px', fontWeight: 500, color: TD.ACCENT_MID, background: 'none', border: 'none', cursor: 'pointer' }}
         >
           {showAdvanced ? 'Hide advanced stats' : 'Show advanced stats'}
         </button>
@@ -176,11 +172,25 @@ function MetricCards({ data, numericColumns, selectedNumeric, stats }) {
         {primaryCards.map((card, index) => (
           <div
             key={index}
-            className={`bg-white rounded-lg shadow-sm p-4 border-l-4 ${colorClasses[card.color] || 'border-gray-500'} border border-gray-200 hover:shadow-md hover:scale-105 transition-all duration-200 cursor-pointer group`}
+            className="rounded-lg p-4 transition-all duration-200 cursor-pointer group"
+            style={{
+              background: TD.CARD_BG,
+              border: `0.5px solid ${TD.CARD_BORDER}`,
+              borderLeft: `4px solid ${card.accent}`,
+            }}
             title={`${card.label}: ${card.value}`}
           >
-            <p className="text-xs text-gray-600 font-medium mb-1 group-hover:text-gray-900 transition-colors">{card.label}</p>
-            <p className="text-xl font-bold text-gray-900 group-hover:text-blue-600 transition-colors">{card.value}</p>
+            <p style={{ fontSize: '12px', fontWeight: 500, color: TD.TEXT_3, marginBottom: '4px' }}>{card.label}</p>
+            <p style={{ fontSize: '20px', fontWeight: 500, color: TD.TEXT_1 }}>{card.value}</p>
+            {card.label === 'Trend' && (
+              <p style={{ fontSize: '12px', marginTop: '6px', color: TD.TEXT_2 }}>
+                {(card.trendDelta ?? 0) < 0
+                  ? '↓ Declining from prior period'
+                  : (card.trendDelta ?? 0) > 0
+                    ? '↑ Growing from prior period'
+                    : 'Flat vs prior period'}
+              </p>
+            )}
           </div>
         ))}
       </div>
@@ -191,11 +201,16 @@ function MetricCards({ data, numericColumns, selectedNumeric, stats }) {
           {advancedCards.map((card, index) => (
             <div
               key={`adv-${index}`}
-              className={`bg-white rounded-lg shadow-sm p-4 border-l-4 ${colorClasses[card.color] || 'border-gray-500'} border border-gray-200 hover:shadow-md hover:scale-105 transition-all duration-200 cursor-pointer group`}
+              className="rounded-lg p-4 transition-all duration-200 cursor-pointer group"
+              style={{
+                background: TD.CARD_BG,
+                border: `0.5px solid ${TD.CARD_BORDER}`,
+                borderLeft: `4px solid ${card.accent}`,
+              }}
               title={`${card.label}: ${card.value}`}
             >
-              <p className="text-xs text-gray-600 font-medium mb-1 group-hover:text-gray-900 transition-colors">{card.label}</p>
-              <p className="text-xl font-bold text-gray-900 group-hover:text-blue-600 transition-colors">{card.value}</p>
+              <p style={{ fontSize: '12px', fontWeight: 500, color: TD.TEXT_3, marginBottom: '4px' }}>{card.label}</p>
+              <p style={{ fontSize: '18px', fontWeight: 600, color: TD.TEXT_1 }}>{card.value}</p>
             </div>
           ))}
         </div>

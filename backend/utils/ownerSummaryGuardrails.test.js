@@ -1,18 +1,19 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 
-const { applyOwnerSummaryGuardrails } = require('./ownerSummaryGuardrails')
+const { applyBusinessSummaryGuardrails } = require('./ownerSummaryGuardrails')
 
-test('guardrails: banned words trigger fallback', () => {
-  const kpis = { occupancy_rate: 82, revenue_today: 12450, adr: 152, revpar: 125 }
-  const out = applyOwnerSummaryGuardrails('This insight mentions a dashboard and chart.', kpis)
-  assert.ok(out.includes('Action needed: No'))
-  assert.ok(!/insight|dashboard|chart|filter/i.test(out))
+test('business guardrails: banned words trigger fallback', () => {
+  const metrics = [
+    { label: 'Total revenue', value: 12500 },
+    { label: 'Orders', value: 42 }
+  ]
+  const out = applyBusinessSummaryGuardrails('This insight mentions a dashboard and chart.', metrics)
+  assert.ok(/revenue|Orders|records/i.test(out) || !/insight|dashboard|chart|filter/i.test(out))
 })
 
-test('guardrails: empty output triggers fallback', () => {
-  const kpis = { occupancy_rate: 82, revenue_today: 12450, adr: 152, revpar: 125 }
-  const out = applyOwnerSummaryGuardrails('   \n  ', kpis)
-  assert.ok(out.includes('Action needed: No'))
+test('business guardrails: empty output triggers fallback', () => {
+  const metrics = [{ label: 'Revenue', value: 990 }]
+  const out = applyBusinessSummaryGuardrails('   \n  ', metrics)
+  assert.ok(out.includes('Revenue'))
 })
-

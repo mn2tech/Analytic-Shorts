@@ -72,7 +72,7 @@ function Signup() {
         setSuccess(true)
         // If user exists and is confirmed, take them to the feed
         if (result.user && result.user.email_confirmed_at) {
-          navigate('/feed')
+          navigate('/hub')
         } else {
           // Email confirmation required or user not immediately available
           // Show success message and redirect to login

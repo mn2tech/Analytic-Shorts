@@ -1,6 +1,6 @@
 /**
  * StudioShell – Shared layout: collapsible Studio title + full-width main content.
- * Report Chat, Data, Preview are under Menu > Navigate > Studio (app sidebar).
+ * Report Chat, Data, Preview routes live under /studio (global nav: Navbar + links).
  */
 
 import { useState, useEffect } from 'react'
@@ -117,7 +117,7 @@ export default function StudioShell({
         </div>
       </header>
 
-      {/* Body: full-width main content (Studio sub-pages via app sidebar only) */}
+      {/* Body: full-width main content */}
       <div className="flex-1 flex min-h-0">
         <main className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden px-4 py-4">
           {children}

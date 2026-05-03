@@ -17,7 +17,7 @@ function Login() {
   const safeRedirect =
     redirectTo && redirectTo.startsWith('/') && !redirectTo.startsWith('//')
       ? decodeURIComponent(redirectTo)
-      : '/feed'
+      : '/hub'
 
   // Redirect if already logged in
   useEffect(() => {

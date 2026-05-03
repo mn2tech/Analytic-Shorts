@@ -4,7 +4,7 @@ import { parseNumericValue } from '../../utils/numberUtils'
 /**
  * SalesInsightsWidget - Automatically generates insights from sales data
  */
-function SalesInsightsWidget({ data, selectedNumeric, selectedCategorical, selectedDate }) {
+function SalesInsightsWidget({ data, selectedNumeric, selectedCategorical, selectedDate, forceDark = false }) {
   const insights = useMemo(() => {
     if (!data || data.length === 0 || !selectedNumeric) {
       return []
@@ -136,31 +136,39 @@ function SalesInsightsWidget({ data, selectedNumeric, selectedCategorical, selec
 
   if (insights.length === 0) {
     return (
-      <div className="h-full flex items-center justify-center text-gray-400 text-sm p-4">
+      <div className="h-full flex items-center justify-center text-gray-400 dark:text-slate-400 text-sm p-4">
         <div className="text-center">
           <p>No insights available</p>
-          <p className="text-xs text-gray-400 mt-1">Ensure data has numeric and category columns</p>
+          <p className="text-xs text-gray-400 dark:text-slate-500 mt-1">Ensure data has numeric and category columns</p>
         </div>
       </div>
     )
   }
 
-  const colorClasses = {
-    blue: 'bg-blue-50 border-blue-200 text-blue-900',
-    purple: 'bg-purple-50 border-purple-200 text-purple-900',
-    green: 'bg-green-50 border-green-200 text-green-900',
-    red: 'bg-red-50 border-red-200 text-red-900',
-    orange: 'bg-orange-50 border-orange-200 text-orange-900'
-  }
+  const colorClasses = forceDark
+    ? {
+        blue: 'bg-blue-950/40 border-blue-700 text-blue-100',
+        purple: 'bg-purple-950/40 border-purple-700 text-purple-100',
+        green: 'bg-emerald-950/40 border-emerald-700 text-emerald-100',
+        red: 'bg-red-950/40 border-red-700 text-red-100',
+        orange: 'bg-orange-950/40 border-orange-700 text-orange-100',
+      }
+    : {
+        blue: 'bg-blue-50 border-blue-200 text-blue-900 dark:bg-blue-950/40 dark:border-blue-700 dark:text-blue-100',
+        purple: 'bg-purple-50 border-purple-200 text-purple-900 dark:bg-purple-950/40 dark:border-purple-700 dark:text-purple-100',
+        green: 'bg-green-50 border-green-200 text-green-900 dark:bg-emerald-950/40 dark:border-emerald-700 dark:text-emerald-100',
+        red: 'bg-red-50 border-red-200 text-red-900 dark:bg-red-950/40 dark:border-red-700 dark:text-red-100',
+        orange: 'bg-orange-50 border-orange-200 text-orange-900 dark:bg-orange-950/40 dark:border-orange-700 dark:text-orange-100',
+      }
 
   return (
     <div className="h-full overflow-y-auto p-4 space-y-3">
       <div className="mb-4">
-        <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-slate-100 flex items-center gap-2">
           <span>📖</span>
           <span>Sales Insights</span>
         </h3>
-        <p className="text-xs text-gray-500 mt-1">
+        <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
           Key findings from your sales data
         </p>
       </div>
@@ -180,8 +188,8 @@ function SalesInsightsWidget({ data, selectedNumeric, selectedCategorical, selec
         </div>
       ))}
 
-      <div className="mt-4 pt-4 border-t border-gray-200">
-        <p className="text-xs text-gray-500 text-center">
+      <div className="mt-4 pt-4 border-t border-gray-200 dark:border-slate-700">
+        <p className="text-xs text-gray-500 dark:text-slate-400 text-center">
           💡 Tip: Use filters to analyze specific products, regions, or time periods
         </p>
       </div>
