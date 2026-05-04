@@ -112,8 +112,15 @@ hr.divider { border: none; border-top: 0.5px solid var(--c-border); margin: 1rem
 .inv-tot-row.final { font-weight: 700; font-size: 15px; border-top: 2px solid var(--c-text); margin-top: 4px; padding-top: 8px; }
 .inv-footer-note { padding-top: 1rem; border-top: 0.5px solid var(--c-border); font-size: 12px; color: var(--c-muted); }
 @media print {
-  .sidebar, .page-header, .filter-bar, .modal-overlay { display: none !important; }
-  .view { display: block !important; padding: 0; }
+  body * { visibility: hidden; }
+  #print-area, #print-area * { visibility: visible; }
+  #print-area {
+    position: fixed; top: 0; left: 0;
+    width: 100%; padding: 2rem;
+    background: #fff; color: #111;
+  }
+  .inv-tbl th { background: #185FA5 !important; color: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .inv-bill { background: #f8f8f8 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
 </style>
 </head>
@@ -241,7 +248,7 @@ hr.divider { border: none; border-top: 0.5px solid var(--c-border); margin: 1rem
       <button class="modal-close" onclick="closeModal('preview-modal')">&#x2715;</button>
     </div>
   </div>
-  <div id="preview-content"></div>
+  <div id="print-area"><div id="preview-content"></div></div>
 </div>
 </div>
 
