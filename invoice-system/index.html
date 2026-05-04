@@ -21,6 +21,22 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
   body { background: #1a1a1a; color: #eee; }
   :root { --c-bg: #242424; --c-bg-2: #1a1a1a; --c-text: #eee; --c-muted: #aaa; --c-border: rgba(255,255,255,0.1); --c-border-md: rgba(255,255,255,0.18); }
 }
+/* Login Screen */
+.login-screen { display:none; position:fixed; inset:0; background:linear-gradient(135deg,#0f3460 0%,#185FA5 100%); z-index:1000; align-items:center; justify-content:center; }
+.login-screen.show { display:flex; }
+.login-box { background:#fff; border-radius:16px; padding:2.5rem; width:100%; max-width:380px; box-shadow:0 20px 60px rgba(0,0,0,0.3); }
+.login-logo { font-size:22px; font-weight:700; color:#111; margin-bottom:4px; }
+.login-logo span { color:#378ADD; }
+.login-sub { font-size:13px; color:#666; margin-bottom:2rem; }
+.login-label { font-size:12px; font-weight:500; color:#666; margin-bottom:5px; display:block; }
+.login-input { width:100%; padding:10px 12px; border:1px solid rgba(0,0,0,0.2); border-radius:8px; font-size:14px; font-family:inherit; margin-bottom:1rem; background:#fff; color:#111; }
+.login-input:focus { outline:none; border-color:#378ADD; box-shadow:0 0 0 3px rgba(55,138,221,0.15); }
+.login-btn { width:100%; padding:11px; background:#185FA5; color:#fff; border:none; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; font-family:inherit; transition:background 0.15s; }
+.login-btn:hover { background:#0C447C; }
+.login-error { color:#A32D2D; font-size:12px; margin-top:-8px; margin-bottom:12px; display:none; }
+.login-error.show { display:block; }
+.logout-btn { position:fixed; bottom:20px; left:20px; padding:7px 14px; font-size:12px; background:var(--c-bg); border:0.5px solid var(--c-border-md); border-radius:var(--radius); cursor:pointer; color:var(--c-muted); font-family:inherit; z-index:50; }
+.logout-btn:hover { background:var(--c-danger-light); color:var(--c-danger); }
 .app { display: flex; min-height: 100vh; }
 .sidebar { width: 210px; flex-shrink: 0; background: var(--c-bg); border-right: 0.5px solid var(--c-border); padding: 1.25rem 0; display: flex; flex-direction: column; gap: 4px; position: sticky; top: 0; height: 100vh; }
 .sidebar-logo { font-size: 14px; font-weight: 600; color: var(--c-text); padding: 0 1rem 1rem; border-bottom: 0.5px solid var(--c-border); margin-bottom: 8px; }
@@ -126,6 +142,19 @@ hr.divider { border: none; border-top: 0.5px solid var(--c-border); margin: 1rem
 </head>
 <body>
 <div class="toast" id="toast"></div>
+
+<!-- LOGIN -->
+<div class="login-screen show" id="login-screen">
+  <div class="login-box">
+    <div class="login-logo">NM2<span>TECH</span></div>
+    <div class="login-sub">Invoice Management System</div>
+    <label class="login-label">Password</label>
+    <input type="password" class="login-input" id="login-pw" placeholder="Enter password" onkeydown="if(event.key==='Enter')doLogin()">
+    <div class="login-error" id="login-error">Incorrect password. Please try again.</div>
+    <button class="login-btn" onclick="doLogin()">Sign In</button>
+  </div>
+</div>
+<button class="logout-btn" id="logout-btn" onclick="doLogout()">Sign Out</button>
 <div class="app">
   <aside class="sidebar">
     <div class="sidebar-logo">NM2<span>TECH</span><small>Invoice System</small></div>
@@ -450,7 +479,39 @@ async function delContractor(id){
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 document.querySelectorAll('.modal-overlay').forEach(el=>{el.addEventListener('click',e=>{if(e.target===el)el.classList.remove('open');});});
 
-loadAll();
+// --- PASSWORD AUTH ---
+const APP_PASSWORD = 'NM2TECH2026!';
+const SESSION_KEY = 'nm2tech_auth';
+
+function doLogin() {
+  const pw = document.getElementById('login-pw').value;
+  const err = document.getElementById('login-error');
+  if (pw === APP_PASSWORD) {
+    sessionStorage.setItem(SESSION_KEY, 'true');
+    document.getElementById('login-screen').classList.remove('show');
+    document.getElementById('logout-btn').style.display = 'block';
+    err.classList.remove('show');
+    loadAll();
+  } else {
+    err.classList.add('show');
+    document.getElementById('login-pw').value = '';
+    document.getElementById('login-pw').focus();
+  }
+}
+
+function doLogout() {
+  sessionStorage.removeItem(SESSION_KEY);
+  document.getElementById('login-screen').classList.add('show');
+  document.getElementById('logout-btn').style.display = 'none';
+  document.getElementById('login-pw').value = '';
+}
+
+// Check if already logged in this session
+if (sessionStorage.getItem(SESSION_KEY) === 'true') {
+  document.getElementById('login-screen').classList.remove('show');
+  document.getElementById('logout-btn').style.display = 'block';
+  loadAll();
+}
 </script>
 </body>
 </html>
