@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>NM2TECH Invoice System</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; color: #111; min-height: 100vh; }
@@ -24,7 +25,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .sidebar { width: 210px; flex-shrink: 0; background: var(--c-bg); border-right: 0.5px solid var(--c-border); padding: 1.25rem 0; display: flex; flex-direction: column; gap: 4px; position: sticky; top: 0; height: 100vh; }
 .sidebar-logo { font-size: 14px; font-weight: 600; color: var(--c-text); padding: 0 1rem 1rem; border-bottom: 0.5px solid var(--c-border); margin-bottom: 8px; }
 .sidebar-logo span { color: var(--c-accent-mid); }
-.sidebar-logo small { display: block; font-size: 10px; font-weight: 400; color: var(--c-muted); margin-top: 2px; letter-spacing: 0.05em; }
+.sidebar-logo small { display: block; font-size: 10px; font-weight: 400; color: var(--c-muted); margin-top: 2px; }
 .nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 1rem; font-size: 13px; color: var(--c-muted); cursor: pointer; border: none; background: none; width: 100%; text-align: left; transition: background 0.12s, color 0.12s; font-family: inherit; }
 .nav-item:hover { background: var(--c-bg-2); color: var(--c-text); }
 .nav-item.active { background: var(--c-accent-light); color: var(--c-accent); font-weight: 500; }
@@ -64,7 +65,7 @@ tr:hover td { background: var(--c-bg-2); }
 .modal { background: var(--c-bg); border-radius: var(--radius-lg); border: 0.5px solid var(--c-border); width: 100%; max-width: 680px; padding: 1.5rem; flex-shrink: 0; }
 .modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.25rem; }
 .modal-title { font-size: 16px; font-weight: 600; }
-.modal-close { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--c-muted); line-height: 1; padding: 4px; }
+.modal-close { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--c-muted); }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .form-group { display: flex; flex-direction: column; gap: 5px; }
 .form-group.full { grid-column: 1/-1; }
@@ -87,8 +88,9 @@ hr.divider { border: none; border-top: 0.5px solid var(--c-border); margin: 1rem
 .filter-bar input, .filter-bar select { max-width: 180px; }
 .action-row { display: flex; gap: 6px; }
 .section-label { font-size: 11px; font-weight: 500; color: var(--c-muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
-
-/* Invoice Preview */
+.toast { position: fixed; bottom: 24px; right: 24px; background: #222; color: #fff; padding: 10px 18px; border-radius: var(--radius); font-size: 13px; z-index: 999; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+.toast.show { opacity: 1; }
+.loading { text-align: center; padding: 2rem; color: var(--c-muted); font-size: 13px; }
 .inv-preview { padding: 0.5rem 0; }
 .inv-hdr { display: flex; justify-content: space-between; margin-bottom: 2rem; }
 .inv-co-name { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
@@ -109,24 +111,14 @@ hr.divider { border: none; border-top: 0.5px solid var(--c-border); margin: 1rem
 .inv-tot-row { display: flex; justify-content: space-between; padding: 5px 0; font-size: 13px; }
 .inv-tot-row.final { font-weight: 700; font-size: 15px; border-top: 2px solid var(--c-text); margin-top: 4px; padding-top: 8px; }
 .inv-footer-note { padding-top: 1rem; border-top: 0.5px solid var(--c-border); font-size: 12px; color: var(--c-muted); }
-
-@media (max-width: 640px) {
-  .sidebar { width: 56px; }
-  .sidebar-logo, .nav-item span { display: none; }
-  .stat-grid { grid-template-columns: 1fr 1fr; }
-  .form-grid { grid-template-columns: 1fr; }
-  .form-group.full { grid-column: 1; }
-}
 @media print {
   .sidebar, .page-header, .filter-bar, .modal-overlay { display: none !important; }
   .view { display: block !important; padding: 0; }
-  .inv-preview { padding: 1rem; }
-  .modal { border: none; max-width: 100%; }
 }
 </style>
 </head>
 <body>
-
+<div class="toast" id="toast"></div>
 <div class="app">
   <aside class="sidebar">
     <div class="sidebar-logo">NM2<span>TECH</span><small>Invoice System</small></div>
@@ -147,63 +139,33 @@ hr.divider { border: none; border-top: 0.5px solid var(--c-border); margin: 1rem
       <span>Contractors</span>
     </button>
   </aside>
-
   <main class="main">
-    <!-- DASHBOARD -->
     <div id="view-dashboard" class="view active">
-      <div class="page-header">
-        <div class="page-title">Dashboard</div>
-        <button class="btn btn-primary" onclick="openInvoiceModal()">+ New Invoice</button>
+      <div class="page-header"><div class="page-title">Dashboard</div><button class="btn btn-primary" onclick="openInvoiceModal()">+ New Invoice</button></div>
+      <div class="stat-grid">
+        <div class="stat-card"><div class="stat-label">Total Billed</div><div class="stat-value" id="s-total">—</div></div>
+        <div class="stat-card"><div class="stat-label">Collected</div><div class="stat-value green" id="s-paid">—</div></div>
+        <div class="stat-card"><div class="stat-label">Pending</div><div class="stat-value amber" id="s-pending">—</div></div>
+        <div class="stat-card"><div class="stat-label">Overdue</div><div class="stat-value danger" id="s-overdue">—</div></div>
       </div>
-      <div class="stat-grid" id="stat-grid"></div>
       <div class="section-label">Recent Invoices</div>
-      <div class="card">
-        <table><thead><tr><th>Invoice</th><th>Client</th><th>Date</th><th>Amount</th><th>Status</th><th></th></tr></thead>
-        <tbody id="recent-list"></tbody></table>
-      </div>
+      <div class="card"><table><thead><tr><th>Invoice</th><th>Client</th><th>Date</th><th>Amount</th><th>Status</th><th></th></tr></thead><tbody id="recent-list"><tr><td colspan="6"><div class="loading">Loading...</div></td></tr></tbody></table></div>
     </div>
-
-    <!-- INVOICES -->
     <div id="view-invoices" class="view">
-      <div class="page-header">
-        <div class="page-title">Invoices</div>
-        <button class="btn btn-primary" onclick="openInvoiceModal()">+ New Invoice</button>
-      </div>
+      <div class="page-header"><div class="page-title">Invoices</div><button class="btn btn-primary" onclick="openInvoiceModal()">+ New Invoice</button></div>
       <div class="filter-bar">
-        <input type="text" placeholder="Search invoices..." oninput="renderInvoiceList()" id="inv-search">
-        <select onchange="renderInvoiceList()" id="inv-filter">
-          <option value="">All statuses</option>
-          <option>Draft</option><option>Pending</option><option>Paid</option><option>Overdue</option>
-        </select>
+        <input type="text" placeholder="Search..." oninput="renderInvoiceList()" id="inv-search">
+        <select onchange="renderInvoiceList()" id="inv-filter"><option value="">All statuses</option><option>Draft</option><option>Pending</option><option>Paid</option><option>Overdue</option></select>
       </div>
-      <div class="card">
-        <table><thead><tr><th>Invoice #</th><th>Client</th><th>Date</th><th>Due</th><th>Amount</th><th>Status</th><th></th></tr></thead>
-        <tbody id="invoice-list"></tbody></table>
-      </div>
+      <div class="card"><table><thead><tr><th>Invoice #</th><th>Client</th><th>Date</th><th>Due</th><th>Amount</th><th>Status</th><th></th></tr></thead><tbody id="invoice-list"><tr><td colspan="7"><div class="loading">Loading...</div></td></tr></tbody></table></div>
     </div>
-
-    <!-- CLIENTS -->
     <div id="view-clients" class="view">
-      <div class="page-header">
-        <div class="page-title">Clients</div>
-        <button class="btn btn-primary" onclick="openClientModal()">+ Add Client</button>
-      </div>
-      <div class="card">
-        <table><thead><tr><th>Company</th><th>Contact</th><th>Email</th><th>Phone</th><th>Invoices</th><th></th></tr></thead>
-        <tbody id="client-list"></tbody></table>
-      </div>
+      <div class="page-header"><div class="page-title">Clients</div><button class="btn btn-primary" onclick="openClientModal()">+ Add Client</button></div>
+      <div class="card"><table><thead><tr><th>Company</th><th>Contact</th><th>Email</th><th>Phone</th><th>Invoices</th><th></th></tr></thead><tbody id="client-list"><tr><td colspan="6"><div class="loading">Loading...</div></td></tr></tbody></table></div>
     </div>
-
-    <!-- CONTRACTORS -->
     <div id="view-contractors" class="view">
-      <div class="page-header">
-        <div class="page-title">Contractors</div>
-        <button class="btn btn-primary" onclick="openContractorModal()">+ Add Contractor</button>
-      </div>
-      <div class="card">
-        <table><thead><tr><th>Name</th><th>Role</th><th>Rate/hr</th><th>Email</th><th></th></tr></thead>
-        <tbody id="contractor-list"></tbody></table>
-      </div>
+      <div class="page-header"><div class="page-title">Contractors</div><button class="btn btn-primary" onclick="openContractorModal()">+ Add Contractor</button></div>
+      <div class="card"><table><thead><tr><th>Name</th><th>Role</th><th>Rate/hr</th><th>Email</th><th></th></tr></thead><tbody id="contractor-list"><tr><td colspan="5"><div class="loading">Loading...</div></td></tr></tbody></table></div>
     </div>
   </main>
 </div>
@@ -211,27 +173,19 @@ hr.divider { border: none; border-top: 0.5px solid var(--c-border); margin: 1rem
 <!-- INVOICE MODAL -->
 <div class="modal-overlay" id="invoice-modal">
 <div class="modal">
-  <div class="modal-header">
-    <div class="modal-title" id="inv-modal-title">New Invoice</div>
-    <button class="modal-close" onclick="closeModal('invoice-modal')">&#x2715;</button>
-  </div>
+  <div class="modal-header"><div class="modal-title" id="inv-modal-title">New Invoice</div><button class="modal-close" onclick="closeModal('invoice-modal')">&#x2715;</button></div>
   <div class="form-grid">
     <div class="form-group"><label>Client</label><select id="inv-client"></select></div>
     <div class="form-group"><label>Invoice #</label><input type="text" id="inv-number"></div>
     <div class="form-group"><label>Invoice Date</label><input type="date" id="inv-date"></div>
     <div class="form-group"><label>Due Date</label><input type="date" id="inv-due"></div>
-    <div class="form-group"><label>Status</label>
-      <select id="inv-status"><option>Draft</option><option>Pending</option><option>Paid</option><option>Overdue</option></select>
-    </div>
+    <div class="form-group"><label>Status</label><select id="inv-status"><option>Draft</option><option>Pending</option><option>Paid</option><option>Overdue</option></select></div>
     <div class="form-group"><label>Tax Rate (%)</label><input type="number" id="inv-tax" value="0" min="0" max="100"></div>
     <div class="form-group full"><label>Notes</label><textarea id="inv-notes"></textarea></div>
   </div>
   <hr class="divider">
   <div style="font-size:13px;font-weight:600;margin-bottom:8px;">Line Items</div>
-  <table class="li-table">
-    <thead><tr><th style="width:22%">Contractor</th><th style="width:36%">Description</th><th style="width:10%">Hrs</th><th style="width:12%">Rate ($)</th><th style="width:13%">Total</th><th style="width:7%"></th></tr></thead>
-    <tbody id="line-items"></tbody>
-  </table>
+  <table class="li-table"><thead><tr><th style="width:22%">Contractor</th><th style="width:36%">Description</th><th style="width:10%">Hrs</th><th style="width:12%">Rate</th><th style="width:13%">Total</th><th style="width:7%"></th></tr></thead><tbody id="line-items"></tbody></table>
   <button class="btn btn-sm" onclick="addLineItem()" style="margin-bottom:1rem;">+ Add Line</button>
   <div class="totals" id="inv-totals"></div>
   <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:1.5rem;">
@@ -244,10 +198,7 @@ hr.divider { border: none; border-top: 0.5px solid var(--c-border); margin: 1rem
 <!-- CLIENT MODAL -->
 <div class="modal-overlay" id="client-modal">
 <div class="modal">
-  <div class="modal-header">
-    <div class="modal-title" id="cl-modal-title">Add Client</div>
-    <button class="modal-close" onclick="closeModal('client-modal')">&#x2715;</button>
-  </div>
+  <div class="modal-header"><div class="modal-title" id="cl-modal-title">Add Client</div><button class="modal-close" onclick="closeModal('client-modal')">&#x2715;</button></div>
   <div class="form-grid">
     <div class="form-group full"><label>Company Name</label><input type="text" id="cl-company"></div>
     <div class="form-group"><label>Contact Name</label><input type="text" id="cl-contact"></div>
@@ -266,10 +217,7 @@ hr.divider { border: none; border-top: 0.5px solid var(--c-border); margin: 1rem
 <!-- CONTRACTOR MODAL -->
 <div class="modal-overlay" id="contractor-modal">
 <div class="modal">
-  <div class="modal-header">
-    <div class="modal-title" id="con-modal-title">Add Contractor</div>
-    <button class="modal-close" onclick="closeModal('contractor-modal')">&#x2715;</button>
-  </div>
+  <div class="modal-header"><div class="modal-title" id="con-modal-title">Add Contractor</div><button class="modal-close" onclick="closeModal('contractor-modal')">&#x2715;</button></div>
   <div class="form-grid">
     <div class="form-group"><label>Full Name</label><input type="text" id="con-name"></div>
     <div class="form-group"><label>Role / Title</label><input type="text" id="con-role"></div>
@@ -298,259 +246,204 @@ hr.divider { border: none; border-top: 0.5px solid var(--c-border); margin: 1rem
 </div>
 
 <script>
+const SUPABASE_URL = 'https://ybpzhhzadvarebdclykl.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlicHpoaHphZHZhcmViZGNseWtsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ3ODIwNDYsImV4cCI6MjA3MDM1ODA0Nn0.tz0-MnNOJQrygPVrI3lCfrtGcHg5lvTC-TN-Tc17BTA';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const EIN = '84-3422048';
-const CO = { name: 'NM2TECH LLC', addr: '4800 Willow Stead Dr', city: 'Olney, MD 20832', phone: '240-483-6963', email: 'michael@nm2tech.com', web: 'www.nm2tech.com' };
-const STORAGE_KEY = 'nm2tech-invoices-v1';
+const CO = {name:'NM2TECH LLC',addr:'4800 Willow Stead Dr',city:'Olney, MD 20832',phone:'240-483-6963',email:'michael@nm2tech.com',web:'www.nm2tech.com'};
 
-let db = { invoices: [], clients: [], contractors: [], nextNum: 15 };
-let editingInvId = null;
+let clients=[],contractors=[],invoices=[],invoiceItems=[];
+let editingInvId=null;
 
-function loadDB() {
-  try { const s = localStorage.getItem(STORAGE_KEY); if (s) db = JSON.parse(s); } catch(e) {}
-  if (!db.clients.length) seed();
-  render();
+function toast(msg,dur=2500){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),dur);}
+
+async function loadAll(){
+  try{
+    const[c,con,inv,items]=await Promise.all([
+      sb.from('clients').select('*').order('company'),
+      sb.from('contractors').select('*').order('name'),
+      sb.from('invoices').select('*').order('date',{ascending:false}),
+      sb.from('invoice_items').select('*')
+    ]);
+    clients=c.data||[];contractors=con.data||[];invoices=inv.data||[];invoiceItems=items.data||[];
+    render();
+  }catch(e){toast('Error loading: '+e.message);}
 }
 
-function saveDB() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(db)); } catch(e) {} }
+const gc=id=>clients.find(c=>c.id===id)||{};
+const gcon=id=>contractors.find(c=>c.id===id)||{};
+const getItems=invId=>invoiceItems.filter(i=>i.invoice_id===invId);
+function calcInv(inv){const its=getItems(inv.id);const sub=its.reduce((s,i)=>s+(i.hours*i.rate),0);const tax=sub*(inv.tax||0)/100;return{subtotal:sub,tax,total:sub+tax};}
+function fmt(n){return '$'+Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function nextNum(){if(!invoices.length)return'0000015';const nums=invoices.map(i=>parseInt(i.number)||0);return String(Math.max(...nums)+1).padStart(7,'0');}
 
-function seed() {
-  db.clients = [{ id:'cl1', company:'Onyx Government Services, LLC', contact:'HR Department', email:'hr@onyxgov.com', phone:'240-483-6963', fax:'', address:'14155 Newbrook Dr. Suite 160\nChantilly VA, 20151' }];
-  db.contractors = [
-    { id:'co1', name:'Frank Domico', role:'SAS Developer', rate:100, email:'frank@nm2tech.com' },
-    { id:'co2', name:'Daniel Tata', role:'Data Analytics / Tableau', rate:96, email:'daniel@nm2tech.com' },
-    { id:'co3', name:'Reginald Jones', role:'SAS Admin 9.4', rate:105, email:'reginald@nm2tech.com' },
-  ];
-  db.invoices = [{ id:'inv14', number:'0000014', clientId:'cl1', date:'2026-04-06', due:'2026-05-06', status:'Pending', tax:0, notes:'Make all checks payable to NM2TECH LLC.', items:[
-    { contractorId:'co1', description:'Supporting TTB with SAS Dashboarding and Statistical analysis', hours:176, rate:100 },
-    { contractorId:'co2', description:'Supporting TTB on SAS Data analytics with Tableau Dashboard Reporting', hours:176, rate:96 },
-    { contractorId:'co3', description:'Supporting TTB on SAS Administration 9.4 M9', hours:176, rate:105 },
-  ]}];
-  db.nextNum = 15;
-  saveDB();
+function render(){renderDash();renderInvoiceList();renderClients();renderContractors();}
+
+function renderDash(){
+  const total=invoices.reduce((s,i)=>s+calcInv(i).total,0);
+  const paid=invoices.filter(i=>i.status==='Paid').reduce((s,i)=>s+calcInv(i).total,0);
+  const pend=invoices.filter(i=>i.status==='Pending').reduce((s,i)=>s+calcInv(i).total,0);
+  const od=invoices.filter(i=>i.status==='Overdue').length;
+  document.getElementById('s-total').textContent=fmt(total);
+  document.getElementById('s-paid').textContent=fmt(paid);
+  document.getElementById('s-pending').textContent=fmt(pend);
+  document.getElementById('s-overdue').textContent=od;
+  const recent=invoices.slice(0,6);
+  document.getElementById('recent-list').innerHTML=recent.length?recent.map(i=>invRow(i,true)).join(''):'<tr><td colspan="6"><div class="empty-state">No invoices yet</div></td></tr>';
 }
 
-const gc = id => db.clients.find(c=>c.id===id)||{};
-const gcon = id => db.contractors.find(c=>c.id===id)||{};
-function calc(inv) { const sub=inv.items.reduce((s,i)=>s+i.hours*i.rate,0); const tax=sub*(inv.tax||0)/100; return {subtotal:sub,tax,total:sub+tax}; }
-function fmt(n) { return '$'+Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
-function padNum(n) { return String(n).padStart(7,'0'); }
+function renderInvoiceList(){
+  const s=(document.getElementById('inv-search')?.value||'').toLowerCase();
+  const f=document.getElementById('inv-filter')?.value||'';
+  let invs=[...invoices];
+  if(s)invs=invs.filter(i=>{const cl=gc(i.client_id);return(cl.company||'').toLowerCase().includes(s)||i.number.includes(s);});
+  if(f)invs=invs.filter(i=>i.status===f);
+  document.getElementById('invoice-list').innerHTML=invs.length?invs.map(i=>invRow(i,false)).join(''):'<tr><td colspan="7"><div class="empty-state">No invoices found</div></td></tr>';
+}
 
-function showView(name, btn) {
+function invRow(inv,brief){
+  const cl=gc(inv.client_id);const{total}=calcInv(inv);
+  const badge=`<span class="badge badge-${inv.status.toLowerCase()}">${inv.status}</span>`;
+  if(brief)return`<tr><td style="font-weight:600;color:var(--c-accent)">#${inv.number}</td><td>${cl.company||'—'}</td><td>${inv.date||''}</td><td style="font-weight:600">${fmt(total)}</td><td>${badge}</td><td><div class="action-row"><button class="btn btn-sm" onclick="previewInv('${inv.id}')">View</button><button class="btn btn-sm" onclick="editInv('${inv.id}')">Edit</button></div></td></tr>`;
+  return`<tr><td style="font-weight:600;color:var(--c-accent)">#${inv.number}</td><td>${cl.company||'—'}</td><td>${inv.date||''}</td><td>${inv.due||''}</td><td style="font-weight:600">${fmt(total)}</td><td>${badge}</td><td><div class="action-row"><button class="btn btn-sm" onclick="previewInv('${inv.id}')">View</button><button class="btn btn-sm" onclick="editInv('${inv.id}')">Edit</button><button class="btn btn-sm btn-danger" onclick="delInv('${inv.id}')">Del</button></div></td></tr>`;
+}
+
+function renderClients(){
+  document.getElementById('client-list').innerHTML=clients.length?clients.map(cl=>{
+    const n=invoices.filter(i=>i.client_id===cl.id).length;
+    return`<tr><td style="font-weight:600">${cl.company}</td><td>${cl.contact||''}</td><td style="color:var(--c-accent)">${cl.email||''}</td><td>${cl.phone||''}</td><td><span class="badge badge-pending">${n}</span></td><td><div class="action-row"><button class="btn btn-sm" onclick="editClient('${cl.id}')">Edit</button><button class="btn btn-sm btn-danger" onclick="delClient('${cl.id}')">Del</button></div></td></tr>`;
+  }).join(''):'<tr><td colspan="6"><div class="empty-state">No clients yet</div></td></tr>';
+}
+
+function renderContractors(){
+  document.getElementById('contractor-list').innerHTML=contractors.length?contractors.map(c=>`<tr><td style="font-weight:600">${c.name}</td><td>${c.role||''}</td><td>$${c.rate}/hr</td><td style="color:var(--c-accent)">${c.email||''}</td><td><div class="action-row"><button class="btn btn-sm" onclick="editContractor('${c.id}')">Edit</button><button class="btn btn-sm btn-danger" onclick="delContractor('${c.id}')">Del</button></div></td></tr>`).join(''):'<tr><td colspan="5"><div class="empty-state">No contractors yet</div></td></tr>';
+}
+
+function showView(name,btn){
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   document.getElementById('view-'+name).classList.add('active');
   btn.classList.add('active');
-  render();
 }
 
-function render() { renderDash(); renderInvoiceList(); renderClients(); renderContractors(); }
-
-function renderDash() {
-  const total=db.invoices.reduce((s,i)=>s+calc(i).total,0);
-  const paid=db.invoices.filter(i=>i.status==='Paid').reduce((s,i)=>s+calc(i).total,0);
-  const pend=db.invoices.filter(i=>i.status==='Pending').reduce((s,i)=>s+calc(i).total,0);
-  const od=db.invoices.filter(i=>i.status==='Overdue').length;
-  document.getElementById('stat-grid').innerHTML=`
-    <div class="stat-card"><div class="stat-label">Total Billed</div><div class="stat-value">${fmt(total)}</div></div>
-    <div class="stat-card"><div class="stat-label">Collected</div><div class="stat-value green">${fmt(paid)}</div></div>
-    <div class="stat-card"><div class="stat-label">Pending</div><div class="stat-value amber">${fmt(pend)}</div></div>
-    <div class="stat-card"><div class="stat-label">Overdue</div><div class="stat-value ${od>0?'danger':''}">${od}</div></div>`;
-  const recent=[...db.invoices].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,6);
-  document.getElementById('recent-list').innerHTML=recent.length?recent.map(i=>invRow(i,true)).join(''):'<tr><td colspan="6"><div class="empty-state">No invoices yet</div></td></tr>';
-}
-
-function renderInvoiceList() {
-  const s=(document.getElementById('inv-search')?.value||'').toLowerCase();
-  const f=document.getElementById('inv-filter')?.value||'';
-  let invs=[...db.invoices].sort((a,b)=>b.date.localeCompare(a.date));
-  if(s) invs=invs.filter(i=>{const cl=gc(i.clientId);return (cl.company||'').toLowerCase().includes(s)||i.number.includes(s);});
-  if(f) invs=invs.filter(i=>i.status===f);
-  document.getElementById('invoice-list').innerHTML=invs.length?invs.map(i=>invRow(i,false)).join(''):'<tr><td colspan="7"><div class="empty-state">No invoices found</div></td></tr>';
-}
-
-function invRow(inv,brief) {
-  const cl=gc(inv.clientId); const {total}=calc(inv);
-  const badge=`<span class="badge badge-${inv.status.toLowerCase()}">${inv.status}</span>`;
-  if(brief) return `<tr><td style="font-weight:600;color:var(--c-accent)">#${inv.number}</td><td>${cl.company||'—'}</td><td>${inv.date}</td><td style="font-weight:600">${fmt(total)}</td><td>${badge}</td><td><div class="action-row"><button class="btn btn-sm" onclick="previewInv('${inv.id}')">View</button><button class="btn btn-sm" onclick="editInv('${inv.id}')">Edit</button></div></td></tr>`;
-  return `<tr><td style="font-weight:600;color:var(--c-accent)">#${inv.number}</td><td>${cl.company||'—'}</td><td>${inv.date}</td><td>${inv.due}</td><td style="font-weight:600">${fmt(total)}</td><td>${badge}</td><td><div class="action-row"><button class="btn btn-sm" onclick="previewInv('${inv.id}')">View</button><button class="btn btn-sm" onclick="editInv('${inv.id}')">Edit</button><button class="btn btn-sm btn-danger" onclick="delInv('${inv.id}')">Del</button></div></td></tr>`;
-}
-
-function renderClients() {
-  document.getElementById('client-list').innerHTML=db.clients.length?db.clients.map(cl=>{
-    const n=db.invoices.filter(i=>i.clientId===cl.id).length;
-    return `<tr><td style="font-weight:600">${cl.company}</td><td>${cl.contact}</td><td style="color:var(--c-accent)">${cl.email}</td><td>${cl.phone}</td><td><span class="badge badge-pending">${n}</span></td><td><div class="action-row"><button class="btn btn-sm" onclick="editClient('${cl.id}')">Edit</button><button class="btn btn-sm btn-danger" onclick="delClient('${cl.id}')">Del</button></div></td></tr>`;
-  }).join(''):'<tr><td colspan="6"><div class="empty-state">No clients yet</div></td></tr>';
-}
-
-function renderContractors() {
-  document.getElementById('contractor-list').innerHTML=db.contractors.length?db.contractors.map(c=>
-    `<tr><td style="font-weight:600">${c.name}</td><td>${c.role}</td><td>$${c.rate}/hr</td><td style="color:var(--c-accent)">${c.email}</td><td><div class="action-row"><button class="btn btn-sm" onclick="editContractor('${c.id}')">Edit</button><button class="btn btn-sm btn-danger" onclick="delContractor('${c.id}')">Del</button></div></td></tr>`
-  ).join(''):'<tr><td colspan="5"><div class="empty-state">No contractors yet</div></td></tr>';
-}
-
-function openInvoiceModal(inv) {
+function openInvoiceModal(inv){
   editingInvId=inv?inv.id:null;
   document.getElementById('inv-modal-title').textContent=inv?'Edit Invoice':'New Invoice';
-  document.getElementById('inv-client').innerHTML='<option value="">Select client...</option>'+db.clients.map(c=>`<option value="${c.id}"${inv&&inv.clientId===c.id?' selected':''}>${c.company}</option>`).join('');
+  document.getElementById('inv-client').innerHTML='<option value="">Select client...</option>'+clients.map(c=>`<option value="${c.id}"${inv&&inv.client_id===c.id?' selected':''}>${c.company}</option>`).join('');
   const today=new Date().toISOString().split('T')[0];
   const due30=new Date(Date.now()+30*864e5).toISOString().split('T')[0];
-  document.getElementById('inv-number').value=inv?inv.number:padNum(db.nextNum);
+  document.getElementById('inv-number').value=inv?inv.number:nextNum();
   document.getElementById('inv-date').value=inv?inv.date:today;
   document.getElementById('inv-due').value=inv?inv.due:due30;
   document.getElementById('inv-status').value=inv?inv.status:'Pending';
   document.getElementById('inv-tax').value=inv?inv.tax:0;
   document.getElementById('inv-notes').value=inv?inv.notes:'Make all checks payable to NM2TECH LLC.';
   document.getElementById('line-items').innerHTML='';
-  (inv?inv.items:[{contractorId:'',description:'',hours:0,rate:0}]).forEach(addLineItem);
+  const items=inv?getItems(inv.id):[{contractor_id:'',description:'',hours:0,rate:0}];
+  items.forEach(addLineItem);
   updateTotals();
   document.getElementById('invoice-modal').classList.add('open');
 }
 
-function addLineItem(item) {
-  item=item||{contractorId:'',description:'',hours:0,rate:0};
+function addLineItem(item){
+  item=item||{contractor_id:'',description:'',hours:0,rate:0};
   const tr=document.createElement('tr');
-  tr.innerHTML=`<td><select class="li-con" onchange="autoRate(this)"><option value="">—</option>${db.contractors.map(c=>`<option value="${c.id}"${c.id===item.contractorId?' selected':''}>${c.name}</option>`).join('')}</select></td><td><input type="text" class="li-desc" value="${item.description.replace(/"/g,'&quot;')}" placeholder="Description"></td><td><input type="number" class="li-hrs" value="${item.hours}" min="0" oninput="updateTotals()"></td><td><input type="number" class="li-rate" value="${item.rate}" min="0" oninput="updateTotals()"></td><td class="li-tot" style="font-weight:600;padding:5px 8px;white-space:nowrap;">${fmt(item.hours*item.rate)}</td><td><button class="btn btn-sm btn-danger" onclick="this.closest('tr').remove();updateTotals()">&#x2715;</button></td>`;
+  tr.innerHTML=`<td><select class="li-con" onchange="autoRate(this)"><option value="">—</option>${contractors.map(c=>`<option value="${c.id}"${c.id===item.contractor_id?' selected':''}>${c.name}</option>`).join('')}</select></td><td><input type="text" class="li-desc" value="${(item.description||'').replace(/"/g,'&quot;')}" placeholder="Description"></td><td><input type="number" class="li-hrs" value="${item.hours||0}" min="0" oninput="updateTotals()"></td><td><input type="number" class="li-rate" value="${item.rate||0}" min="0" oninput="updateTotals()"></td><td class="li-tot" style="font-weight:600;padding:5px 8px;">${fmt((item.hours||0)*(item.rate||0))}</td><td><button class="btn btn-sm btn-danger" onclick="this.closest('tr').remove();updateTotals()">&#x2715;</button></td>`;
   document.getElementById('line-items').appendChild(tr);
   updateTotals();
 }
 
-function autoRate(sel) {
-  const c=db.contractors.find(c=>c.id===sel.value);
-  if(c){sel.closest('tr').querySelector('.li-rate').value=c.rate;updateTotals();}
+function autoRate(sel){const c=contractors.find(c=>c.id===sel.value);if(c){sel.closest('tr').querySelector('.li-rate').value=c.rate;updateTotals();}}
+
+function getFormItems(){return Array.from(document.querySelectorAll('#line-items tr')).map(tr=>({contractor_id:tr.querySelector('.li-con').value||null,description:tr.querySelector('.li-desc').value,hours:parseFloat(tr.querySelector('.li-hrs').value)||0,rate:parseFloat(tr.querySelector('.li-rate').value)||0}));}
+
+function updateTotals(){
+  const items=getFormItems();const tax=parseFloat(document.getElementById('inv-tax').value)||0;
+  const sub=items.reduce((s,i)=>s+i.hours*i.rate,0);const taxAmt=sub*tax/100;
+  document.querySelectorAll('#line-items tr').forEach((tr,i)=>{const t=tr.querySelector('.li-tot');if(t)t.textContent=fmt(items[i].hours*items[i].rate);});
+  document.getElementById('inv-totals').innerHTML=`<div class="total-row"><span class="total-label">Subtotal</span><span class="total-value">${fmt(sub)}</span></div>${tax>0?`<div class="total-row"><span class="total-label">Tax (${tax}%)</span><span class="total-value">${fmt(taxAmt)}</span></div>`:''}<div class="total-row final"><span class="total-label">Total Due</span><span class="total-value">${fmt(sub+taxAmt)}</span></div>`;
 }
 
-function getItems() {
-  return Array.from(document.querySelectorAll('#line-items tr')).map(tr=>({
-    contractorId:tr.querySelector('.li-con').value,
-    description:tr.querySelector('.li-desc').value,
-    hours:parseFloat(tr.querySelector('.li-hrs').value)||0,
-    rate:parseFloat(tr.querySelector('.li-rate').value)||0,
-  }));
-}
-
-function updateTotals() {
-  const items=getItems();
-  const tax=parseFloat(document.getElementById('inv-tax').value)||0;
-  const sub=items.reduce((s,i)=>s+i.hours*i.rate,0);
-  const taxAmt=sub*tax/100;
-  document.querySelectorAll('#line-items tr').forEach((tr,i)=>{
-    const t=tr.querySelector('.li-tot');
-    if(t) t.textContent=fmt(items[i].hours*items[i].rate);
-  });
-  document.getElementById('inv-totals').innerHTML=`
-    <div class="total-row"><span class="total-label">Subtotal</span><span class="total-value">${fmt(sub)}</span></div>
-    ${tax>0?`<div class="total-row"><span class="total-label">Tax (${tax}%)</span><span class="total-value">${fmt(taxAmt)}</span></div>`:''}
-    <div class="total-row final"><span class="total-label">Total Due</span><span class="total-value">${fmt(sub+taxAmt)}</span></div>`;
-}
-
-function saveInvoice() {
-  const clientId=document.getElementById('inv-client').value;
+async function saveInvoice(){
+  const client_id=document.getElementById('inv-client').value;
   const number=document.getElementById('inv-number').value.trim();
-  if(!clientId||!number){alert('Please select a client and enter an invoice number.');return;}
-  const inv={id:editingInvId||'inv'+Date.now(),number,clientId,date:document.getElementById('inv-date').value,due:document.getElementById('inv-due').value,status:document.getElementById('inv-status').value,tax:parseFloat(document.getElementById('inv-tax').value)||0,notes:document.getElementById('inv-notes').value,items:getItems()};
-  if(editingInvId){const i=db.invoices.findIndex(x=>x.id===editingInvId);db.invoices[i]=inv;}
-  else{db.invoices.push(inv);db.nextNum++;}
-  saveDB();closeModal('invoice-modal');render();
+  if(!client_id||!number){alert('Please select a client and enter an invoice number.');return;}
+  const invData={number,client_id,date:document.getElementById('inv-date').value,due:document.getElementById('inv-due').value,status:document.getElementById('inv-status').value,tax:parseFloat(document.getElementById('inv-tax').value)||0,notes:document.getElementById('inv-notes').value};
+  const formItems=getFormItems();
+  try{
+    let invId=editingInvId;
+    if(editingInvId){
+      await sb.from('invoices').update(invData).eq('id',editingInvId);
+      await sb.from('invoice_items').delete().eq('invoice_id',editingInvId);
+    }else{
+      const{data}=await sb.from('invoices').insert(invData).select().single();
+      invId=data.id;
+    }
+    if(formItems.length)await sb.from('invoice_items').insert(formItems.map(item=>({...item,invoice_id:invId})));
+    toast(editingInvId?'Invoice updated!':'Invoice created!');
+    closeModal('invoice-modal');await loadAll();
+  }catch(e){toast('Error: '+e.message);}
 }
 
-function editInv(id){const inv=db.invoices.find(i=>i.id===id);if(inv)openInvoiceModal(inv);}
-function delInv(id){if(!confirm('Delete this invoice?'))return;db.invoices=db.invoices.filter(i=>i.id!==id);saveDB();render();}
+function editInv(id){openInvoiceModal(invoices.find(i=>i.id===id));}
+async function delInv(id){
+  if(!confirm('Delete this invoice?'))return;
+  try{await sb.from('invoice_items').delete().eq('invoice_id',id);await sb.from('invoices').delete().eq('id',id);toast('Deleted');await loadAll();}
+  catch(e){toast('Error: '+e.message);}
+}
 
-function previewInv(id) {
-  const inv=db.invoices.find(i=>i.id===id);if(!inv)return;
-  const cl=gc(inv.clientId);const{subtotal,tax,total}=calc(inv);
-  const rows=inv.items.map(item=>{
-    const con=gcon(item.contractorId);
-    return `<tr><td>${con.name||'Staff'}</td><td style="color:var(--c-muted)">${item.description}</td><td style="text-align:center">${item.hours}</td><td style="text-align:right">${fmt(item.rate)}</td><td style="text-align:right;font-weight:600">${fmt(item.hours*item.rate)}</td></tr>`;
-  }).join('');
-  document.getElementById('preview-content').innerHTML=`
-    <div class="inv-preview">
-      <div class="inv-hdr">
-        <div>
-          <div class="inv-co-name">${CO.name}</div>
-          <div class="inv-co-meta">${CO.addr}<br>${CO.city}<br>P: ${CO.phone}<br>${CO.email}<br>${CO.web}<br>EIN: ${EIN}</div>
-        </div>
-        <div style="text-align:right">
-          <div class="inv-big-title">INVOICE</div>
-          <div class="inv-num">#${inv.number}</div>
-          <div class="inv-dates">Date: ${inv.date}<br>Due: ${inv.due}</div>
-        </div>
-      </div>
-      <div class="inv-bill">
-        <div><div class="inv-bill-lbl">Bill To</div><div class="inv-bill-co">${cl.company}</div><div class="inv-bill-meta">${(cl.address||'').replace(/\n/g,'<br>')}<br>${cl.phone}<br>${cl.email}</div></div>
-        <div><div class="inv-bill-lbl">From</div><div class="inv-bill-co">${CO.name}</div><div class="inv-bill-meta">EIN: ${EIN}<br>${CO.email}<br>${CO.web}</div></div>
-      </div>
-      <table class="inv-tbl">
-        <thead><tr><th>Contractor</th><th>Description</th><th style="text-align:center">Hours</th><th style="text-align:right">Rate</th><th style="text-align:right">Amount</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-      <div class="inv-totals-wrap">
-        <div class="inv-totals-box">
-          <div class="inv-tot-row"><span>Subtotal</span><span>${fmt(subtotal)}</span></div>
-          ${inv.tax>0?`<div class="inv-tot-row"><span>Tax (${inv.tax}%)</span><span>${fmt(tax)}</span></div>`:''}
-          <div class="inv-tot-row final"><span>Total Due</span><span>${fmt(total)}</span></div>
-        </div>
-      </div>
-      ${inv.notes?`<div class="inv-footer-note">${inv.notes}</div>`:''}
-    </div>`;
+function previewInv(id){
+  const inv=invoices.find(i=>i.id===id);if(!inv)return;
+  const cl=gc(inv.client_id);const items=getItems(id);const{subtotal,tax,total}=calcInv(inv);
+  const rows=items.map(item=>{const con=gcon(item.contractor_id);return`<tr><td>${con.name||'Staff'}</td><td style="color:var(--c-muted)">${item.description||''}</td><td style="text-align:center">${item.hours}</td><td style="text-align:right">${fmt(item.rate)}</td><td style="text-align:right;font-weight:600">${fmt(item.hours*item.rate)}</td></tr>`;}).join('');
+  document.getElementById('preview-content').innerHTML=`<div class="inv-preview"><div class="inv-hdr"><div><div class="inv-co-name">${CO.name}</div><div class="inv-co-meta">${CO.addr}<br>${CO.city}<br>P: ${CO.phone}<br>${CO.email}<br>${CO.web}<br>EIN: ${EIN}</div></div><div style="text-align:right"><div class="inv-big-title">INVOICE</div><div class="inv-num">#${inv.number}</div><div class="inv-dates">Date: ${inv.date||''}<br>Due: ${inv.due||''}</div></div></div><div class="inv-bill"><div><div class="inv-bill-lbl">Bill To</div><div class="inv-bill-co">${cl.company||''}</div><div class="inv-bill-meta">${(cl.address||'').replace(/\n/g,'<br>')}<br>${cl.phone||''}<br>${cl.email||''}</div></div><div><div class="inv-bill-lbl">From</div><div class="inv-bill-co">${CO.name}</div><div class="inv-bill-meta">EIN: ${EIN}<br>${CO.email}<br>${CO.web}</div></div></div><table class="inv-tbl"><thead><tr><th>Contractor</th><th>Description</th><th style="text-align:center">Hours</th><th style="text-align:right">Rate</th><th style="text-align:right">Amount</th></tr></thead><tbody>${rows}</tbody></table><div class="inv-totals-wrap"><div class="inv-totals-box"><div class="inv-tot-row"><span>Subtotal</span><span>${fmt(subtotal)}</span></div>${inv.tax>0?`<div class="inv-tot-row"><span>Tax (${inv.tax}%)</span><span>${fmt(tax)}</span></div>`:''}<div class="inv-tot-row final"><span>Total Due</span><span>${fmt(total)}</span></div></div></div>${inv.notes?`<div class="inv-footer-note">${inv.notes}</div>`:''}</div>`;
   document.getElementById('preview-modal').classList.add('open');
 }
 
-function openClientModal(cl) {
+function openClientModal(cl){
   document.getElementById('cl-modal-title').textContent=cl?'Edit Client':'Add Client';
-  document.getElementById('cl-company').value=cl?.company||'';
-  document.getElementById('cl-contact').value=cl?.contact||'';
-  document.getElementById('cl-email').value=cl?.email||'';
-  document.getElementById('cl-phone').value=cl?.phone||'';
-  document.getElementById('cl-fax').value=cl?.fax||'';
-  document.getElementById('cl-address').value=cl?.address||'';
-  document.getElementById('client-modal')._edit=cl?.id||null;
-  document.getElementById('client-modal').classList.add('open');
+  document.getElementById('cl-company').value=cl?.company||'';document.getElementById('cl-contact').value=cl?.contact||'';
+  document.getElementById('cl-email').value=cl?.email||'';document.getElementById('cl-phone').value=cl?.phone||'';
+  document.getElementById('cl-fax').value=cl?.fax||'';document.getElementById('cl-address').value=cl?.address||'';
+  document.getElementById('client-modal')._edit=cl?.id||null;document.getElementById('client-modal').classList.add('open');
 }
-
-function saveClient() {
+async function saveClient(){
   const id=document.getElementById('client-modal')._edit;
-  const cl={id:id||'cl'+Date.now(),company:document.getElementById('cl-company').value,contact:document.getElementById('cl-contact').value,email:document.getElementById('cl-email').value,phone:document.getElementById('cl-phone').value,fax:document.getElementById('cl-fax').value,address:document.getElementById('cl-address').value};
-  if(!cl.company){alert('Company name required.');return;}
-  if(id){const i=db.clients.findIndex(c=>c.id===id);db.clients[i]=cl;}else db.clients.push(cl);
-  saveDB();closeModal('client-modal');render();
+  const data={company:document.getElementById('cl-company').value,contact:document.getElementById('cl-contact').value,email:document.getElementById('cl-email').value,phone:document.getElementById('cl-phone').value,fax:document.getElementById('cl-fax').value,address:document.getElementById('cl-address').value};
+  if(!data.company){alert('Company name required.');return;}
+  try{if(id)await sb.from('clients').update(data).eq('id',id);else await sb.from('clients').insert(data);toast(id?'Client updated!':'Client added!');closeModal('client-modal');await loadAll();}
+  catch(e){toast('Error: '+e.message);}
 }
-
-function editClient(id){openClientModal(db.clients.find(c=>c.id===id));}
-function delClient(id){
-  if(db.invoices.some(i=>i.clientId===id)){alert('Cannot delete — client has invoices.');return;}
+function editClient(id){openClientModal(clients.find(c=>c.id===id));}
+async function delClient(id){
+  if(invoices.some(i=>i.client_id===id)){alert('Cannot delete — client has invoices.');return;}
   if(!confirm('Delete client?'))return;
-  db.clients=db.clients.filter(c=>c.id!==id);saveDB();render();
+  try{await sb.from('clients').delete().eq('id',id);toast('Client deleted');await loadAll();}catch(e){toast('Error: '+e.message);}
 }
 
-function openContractorModal(c) {
+function openContractorModal(c){
   document.getElementById('con-modal-title').textContent=c?'Edit Contractor':'Add Contractor';
-  document.getElementById('con-name').value=c?.name||'';
-  document.getElementById('con-role').value=c?.role||'';
-  document.getElementById('con-rate').value=c?.rate||'';
-  document.getElementById('con-email').value=c?.email||'';
-  document.getElementById('contractor-modal')._edit=c?.id||null;
-  document.getElementById('contractor-modal').classList.add('open');
+  document.getElementById('con-name').value=c?.name||'';document.getElementById('con-role').value=c?.role||'';
+  document.getElementById('con-rate').value=c?.rate||'';document.getElementById('con-email').value=c?.email||'';
+  document.getElementById('contractor-modal')._edit=c?.id||null;document.getElementById('contractor-modal').classList.add('open');
 }
-
-function saveContractor() {
+async function saveContractor(){
   const id=document.getElementById('contractor-modal')._edit;
-  const c={id:id||'co'+Date.now(),name:document.getElementById('con-name').value,role:document.getElementById('con-role').value,rate:parseFloat(document.getElementById('con-rate').value)||0,email:document.getElementById('con-email').value};
-  if(!c.name){alert('Name required.');return;}
-  if(id){const i=db.contractors.findIndex(x=>x.id===id);db.contractors[i]=c;}else db.contractors.push(c);
-  saveDB();closeModal('contractor-modal');render();
+  const data={name:document.getElementById('con-name').value,role:document.getElementById('con-role').value,rate:parseFloat(document.getElementById('con-rate').value)||0,email:document.getElementById('con-email').value};
+  if(!data.name){alert('Name required.');return;}
+  try{if(id)await sb.from('contractors').update(data).eq('id',id);else await sb.from('contractors').insert(data);toast(id?'Contractor updated!':'Contractor added!');closeModal('contractor-modal');await loadAll();}
+  catch(e){toast('Error: '+e.message);}
 }
-
-function editContractor(id){openContractorModal(db.contractors.find(c=>c.id===id));}
-function delContractor(id){if(!confirm('Delete contractor?'))return;db.contractors=db.contractors.filter(c=>c.id!==id);saveDB();render();}
+function editContractor(id){openContractorModal(contractors.find(c=>c.id===id));}
+async function delContractor(id){
+  if(!confirm('Delete contractor?'))return;
+  try{await sb.from('contractors').delete().eq('id',id);toast('Contractor deleted');await loadAll();}catch(e){toast('Error: '+e.message);}
+}
 
 function closeModal(id){document.getElementById(id).classList.remove('open');}
+document.querySelectorAll('.modal-overlay').forEach(el=>{el.addEventListener('click',e=>{if(e.target===el)el.classList.remove('open');});});
 
-document.querySelectorAll('.modal-overlay').forEach(el=>{
-  el.addEventListener('click',e=>{if(e.target===el)el.classList.remove('open');});
-});
-
-loadDB();
+loadAll();
 </script>
 </body>
 </html>
