@@ -60,6 +60,28 @@ const INNSOFT_TAX_SETTINGS = {
   stateRate: 0.07,
   hotelFlatPerNight: 5,
 }
+const GATEWAY_INN_RECEIPT_PROFILE = {
+  legalName: 'GATEWAY INN - SAVANNAH',
+  addressLine1: '11520 ABERCORN ST',
+  addressLine2: 'SAVANNAH, GA 31419',
+  phone: '912-927-6274',
+  email: 'gatewayinnsavannah@gmail.com',
+  wifi: 'Guest WIFI',
+  wifiPassword: 'Gatewayinn',
+}
+const GATEWAY_INN_POLICY_LINES = [
+  'MANAGEMENT ASSUMES NO RESPONSIBILITY FOR ACCIDENTS, INJURIES, THEFT OR LOSS DUE TO ANY CAUSE.',
+  'ONLY REGISTERED GUESTS ARE ALLOWED INSIDE THE ROOMS. NO PETS. NO REFUNDS.',
+  'THANK YOU FOR STAYING HERE! WE HOPE YOU HAVE ENJOYED YOUR STAY.',
+  'WEEKLY & DAILY GUESTS CANNOT STAY OVER 14 DAYS (2 WEEKS) CONTINUOUSLY FROM THEIR CHECK-IN DATES.',
+  'WEEKLY TWICE ROOM FULL SERVICE IS MANDATORY FOR DAILY & WEEKLY GUESTS.',
+  'DEPOSITS REQUIRED FOR WEEKLY GUEST: $50 (CASH ONLY).',
+  'ONLY REGISTERED GUESTS CAN REQUEST ROOM KEYS WITH A PHYSICAL ID.',
+  'PER ADULTS/KIDS: $5.00 EXTRA TOWARDS ROOM RENTS ON DAILY/WEEKLY BASIS.',
+  'CHECK-IN TIME: 3:00 PM',
+  'CHECK-OUT TIME: 11:00 AM',
+  'EARLY CHECK-IN FEE: $20 EXTRA (CASH ONLY).',
+]
 
 function calculateInnsoftTaxBreakdown(roomSubtotal, nights = 1) {
   const taxableSubtotal = Math.max(0, Number(roomSubtotal) || 0)
@@ -218,6 +240,161 @@ function formatCurrency(value) {
   return amount.toLocaleString(undefined, { style: 'currency', currency: 'USD' })
 }
 
+function formatReceiptDateTime(value) {
+  if (!value) return '—'
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return String(value)
+  return d.toLocaleString([], {
+    month: '2-digit',
+    day: '2-digit',
+    year: '2-digit',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
+
+function buildGatewayReceiptHtml({
+  roomDisplay,
+  guestName,
+  checkInDate,
+  checkOutDate,
+  nights,
+  roomSubtotal,
+  taxAmount,
+  totalAmount,
+  creditTotal,
+  balanceAmount,
+  amountTenderedLabel,
+  tenderedTotal,
+  changeDue,
+  clerkName = 'MCC Front Desk',
+  footerNote = '',
+  paymentHistory = [],
+}) {
+  const nowStamp = new Date()
+  const policyHtml = GATEWAY_INN_POLICY_LINES.map((line) => `<p>${line}</p>`).join('')
+  const tableRowDate = nowStamp.toLocaleDateString([], { month: 'numeric', day: 'numeric', year: '2-digit' })
+  const noteHtml = footerNote ? `<p class="center note">${footerNote}</p>` : ''
+  const paymentLines = (Array.isArray(paymentHistory) ? paymentHistory : [])
+    .map((entry) => {
+      const ref = entry?.reference ? ` [${entry.reference}]` : ''
+      const kind = entry?.kind === 'refund' ? 'REFUND' : entry?.kind === 'void' ? 'VOID' : 'PAYMENT'
+      const amount = formatCurrency(entry?.amount || 0)
+      const method = entry?.method || 'N/A'
+      const when = formatReceiptDateTime(entry?.timestamp)
+      return `<p>${kind}${ref}: ${amount} via ${method} (${when})</p>`
+    })
+    .join('')
+  const paymentHistoryHtml = paymentLines
+    ? `<div class="payment-history"><p class="title">Payment History</p>${paymentLines}</div>`
+    : ''
+  return `
+    <!doctype html>
+    <html>
+    <head>
+      <title>Guest Receipt - Room ${roomDisplay}</title>
+      <style>
+        body { font-family: "Times New Roman", serif; margin: 20px; color: #111; font-size: 12px; line-height: 1.25; }
+        .sheet { max-width: 780px; margin: 0 auto; }
+        .center { text-align: center; }
+        h1 { margin: 0; font-size: 28px; letter-spacing: 0.5px; }
+        .hotel-meta { font-size: 11px; margin-top: 2px; }
+        .printed { margin-top: 4px; font-size: 11px; }
+        .rule { border-top: 1px solid #111; margin: 12px 0; }
+        .guest-lines p { margin: 2px 0; }
+        .stay-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; margin: 8px 0 10px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 6px; border: 1px solid #111; }
+        th, td { border: 1px solid #111; padding: 5px 6px; text-align: right; }
+        th:first-child, td:first-child { text-align: left; }
+        .money-summary { margin-top: 10px; text-align: center; }
+        .money-summary p { margin: 2px 0; }
+        .guest-sign { margin-top: 20px; }
+        .guest-sign .line { border-bottom: 1px solid #111; width: 260px; height: 20px; display: inline-block; vertical-align: bottom; }
+        .policy { margin-top: 16px; border-top: 1px solid #111; padding-top: 8px; }
+        .policy p { margin: 1px 0; text-align: center; font-size: 11px; }
+        .note { margin-top: 8px; font-style: italic; }
+        .payment-history { margin-top: 10px; border-top: 1px solid #111; padding-top: 6px; }
+        .payment-history .title { margin: 0 0 4px; font-weight: 700; text-align: center; }
+        .payment-history p { margin: 1px 0; font-size: 11px; text-align: center; }
+        .actions { margin-top: 18px; text-align: center; }
+        .actions button { padding: 8px 12px; }
+        @media print { .actions { display: none; } }
+      </style>
+    </head>
+    <body>
+      <div class="sheet">
+        <div class="center">
+          <h1>${GATEWAY_INN_RECEIPT_PROFILE.legalName}</h1>
+          <div class="hotel-meta">${GATEWAY_INN_RECEIPT_PROFILE.addressLine1}</div>
+          <div class="hotel-meta">${GATEWAY_INN_RECEIPT_PROFILE.addressLine2}</div>
+          <div class="hotel-meta">WIFI NAME: ${GATEWAY_INN_RECEIPT_PROFILE.wifi} - PASSWORD: ${GATEWAY_INN_RECEIPT_PROFILE.wifiPassword}</div>
+          <div class="hotel-meta">${GATEWAY_INN_RECEIPT_PROFILE.phone}</div>
+          <div class="hotel-meta">${GATEWAY_INN_RECEIPT_PROFILE.email}</div>
+          <div class="printed">Printed: ${formatReceiptDateTime(nowStamp)}</div>
+        </div>
+
+        <div class="rule"></div>
+
+        <div class="guest-lines">
+          <p><strong>${guestName}</strong></p>
+          <p>Room: <strong>${roomDisplay}</strong></p>
+        </div>
+
+        <div class="stay-grid">
+          <div>Check-in: ${formatReceiptDateTime(checkInDate)}</div>
+          <div>Check-out: ${formatReceiptDateTime(checkOutDate)}</div>
+          <div>Nights: ${nights}</div>
+          <div>Clerk: ${clerkName}</div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Room</th>
+              <th>Tax</th>
+              <th>Total</th>
+              <th>Credit</th>
+              <th>Balance</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>${tableRowDate}</td>
+              <td>${formatCurrency(roomSubtotal)}</td>
+              <td>${formatCurrency(taxAmount)}</td>
+              <td>${formatCurrency(totalAmount)}</td>
+              <td>${formatCurrency(creditTotal)}</td>
+              <td>${formatCurrency(balanceAmount)}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="money-summary">
+          <p>Amount Tendered: ${amountTenderedLabel}</p>
+          <p><strong>TOTAL: ${formatCurrency(tenderedTotal)}</strong></p>
+          <p>Change: ${formatCurrency(changeDue)}</p>
+        </div>
+        ${paymentHistoryHtml}
+
+        <p class="center">Check-in time: 3:00 pm &nbsp;&nbsp; Check-out time: 11:00 am</p>
+        ${noteHtml}
+
+        <p class="guest-sign">Guest Signature: <span class="line"></span></p>
+
+        <div class="policy">
+          ${policyHtml}
+        </div>
+
+        <div class="actions">
+          <button onclick="window.print()">Print</button>
+        </div>
+      </div>
+    </body>
+    </html>
+  `
+}
+
 function isRlsPolicyError(error) {
   const message = String(error?.message || '').toLowerCase()
   return message.includes('row-level security') || message.includes('violates row-level security policy')
@@ -234,21 +411,70 @@ function nightsStayedSoFar(value) {
   return Math.floor(diffMs / (1000 * 60 * 60 * 24))
 }
 
+function isTodayDateOnly(value) {
+  const parsed = parseDateOnly(value)
+  if (!parsed) return false
+  const now = new Date()
+  return (
+    parsed.getFullYear() === now.getFullYear() &&
+    parsed.getMonth() === now.getMonth() &&
+    parsed.getDate() === now.getDate()
+  )
+}
+
+function getDefaultRatePerNight(rateValue) {
+  const parsed = Number(rateValue)
+  if (!Number.isFinite(parsed) || parsed < 0) return '0.00'
+  return parsed.toFixed(2)
+}
+
+function sanitizeUploadFileName(fileName) {
+  return String(fileName || 'scan')
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-zA-Z0-9._-]/g, '')
+}
+
+function appendPaymentEvent(existing, nextEvent) {
+  const list = Array.isArray(existing) ? existing : []
+  return [...list, nextEvent]
+}
+
+function createPaymentReference(prefix = 'PMT') {
+  const rand = Math.floor(Math.random() * 100000).toString().padStart(5, '0')
+  return `${prefix}-${Date.now().toString().slice(-6)}-${rand}`
+}
+
+function makePaymentEvent({ amount, method, timestamp, stage, kind = 'payment', note = '' }) {
+  const reference = createPaymentReference(kind === 'refund' ? 'RFD' : kind === 'void' ? 'VOID' : 'PMT')
+  return {
+    id: reference,
+    reference,
+    amount: Number(amount) || 0,
+    method: method || 'N/A',
+    timestamp: timestamp || new Date().toISOString(),
+    stage: stage || 'front_desk',
+    kind,
+    note: String(note || '').trim() || null,
+  }
+}
+
 function NewReservationPanel({ isOpen, roomOverlay, roomData, onClose, onSave }) {
   const defaultCheckInDate = toDateInputValue(new Date())
   const defaultCheckOutDate = toDateInputValue(addDays(new Date(), 1))
+  const defaultRatePerNight = getDefaultRatePerNight(roomData?.rate_per_night ?? roomData?.ratePerNight)
   const [formValues, setFormValues] = useState(() => ({
     firstName: '',
     lastName: '',
     email: '',
     phone: '',
-    idType: 'Passport',
+    idType: "Driver's License",
     idNumber: '',
     checkInDate: defaultCheckInDate,
     checkOutDate: defaultCheckOutDate,
     adults: 1,
     children: 0,
-    ratePerNight: roomData?.rate_per_night ?? roomData?.ratePerNight ?? 0,
+    ratePerNight: defaultRatePerNight,
     depositCollected: 0,
     paymentMethod: 'Cash',
     source: 'Walk-in',
@@ -256,6 +482,7 @@ function NewReservationPanel({ isOpen, roomOverlay, roomData, onClose, onSave })
   }))
   const [errors, setErrors] = useState({})
   const [isSaving, setIsSaving] = useState(false)
+  const [scanFile, setScanFile] = useState(null)
 
   useEffect(() => {
     if (!isOpen) return
@@ -264,13 +491,13 @@ function NewReservationPanel({ isOpen, roomOverlay, roomData, onClose, onSave })
       lastName: '',
       email: '',
       phone: '',
-      idType: 'Passport',
+      idType: "Driver's License",
       idNumber: '',
       checkInDate: defaultCheckInDate,
       checkOutDate: defaultCheckOutDate,
       adults: 1,
       children: 0,
-      ratePerNight: roomData?.rate_per_night ?? roomData?.ratePerNight ?? 0,
+      ratePerNight: defaultRatePerNight,
       depositCollected: 0,
       paymentMethod: 'Cash',
       source: 'Walk-in',
@@ -278,7 +505,8 @@ function NewReservationPanel({ isOpen, roomOverlay, roomData, onClose, onSave })
     })
     setErrors({})
     setIsSaving(false)
-  }, [defaultCheckInDate, defaultCheckOutDate, isOpen, roomData?.rate_per_night, roomData?.ratePerNight, roomOverlay?.id])
+    setScanFile(null)
+  }, [defaultCheckInDate, defaultCheckOutDate, defaultRatePerNight, isOpen, roomOverlay?.id])
 
   const nights = useMemo(
     () => dateDiffNights(formValues.checkInDate, formValues.checkOutDate),
@@ -347,6 +575,7 @@ function NewReservationPanel({ isOpen, roomOverlay, roomData, onClose, onSave })
         taxBreakdown,
         totalAmount,
         balanceDue,
+        idScanFile: scanFile,
       })
     } catch (err) {
       setErrors((prev) => ({
@@ -455,7 +684,16 @@ function NewReservationPanel({ isOpen, roomOverlay, roomData, onClose, onSave })
                 </div>
                 <div>
                   <label className={labelClass}>Rate per night</label>
-                  <input className={inputClass} type="number" min="0" step="0.01" value={formValues.ratePerNight} onChange={(e) => updateValue('ratePerNight', e.target.value)} />
+                  <input
+                    className={inputClass}
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={formValues.ratePerNight}
+                    onFocus={(e) => e.target.select()}
+                    onClick={(e) => e.target.select()}
+                    onChange={(e) => updateValue('ratePerNight', e.target.value)}
+                  />
                   {errors.ratePerNight && <p className="mt-1 text-xs text-red-400">{errors.ratePerNight}</p>}
                 </div>
                 <div>
@@ -508,6 +746,20 @@ function NewReservationPanel({ isOpen, roomOverlay, roomData, onClose, onSave })
             <section className="space-y-3">
               <h3 className={sectionLabelClass}>Extras</h3>
               <div className="grid grid-cols-1 gap-3">
+                <div>
+                  <label className={labelClass}>Add Scan (ID/Document)</label>
+                  <input
+                    className={inputClass}
+                    type="file"
+                    accept="image/*,.pdf"
+                    onChange={(e) => setScanFile(e.target.files?.[0] || null)}
+                  />
+                  {scanFile && (
+                    <p className="mt-1 text-xs text-emerald-300">
+                      Selected: {scanFile.name}
+                    </p>
+                  )}
+                </div>
                 <div>
                   <label className={labelClass}>Booking Source</label>
                   <select className={inputClass} value={formValues.source} onChange={(e) => updateValue('source', e.target.value)}>
@@ -576,9 +828,12 @@ function ReservedCheckInPanel({ isOpen, roomOverlay, roomData, onClose, onComple
   const checkOutDate = roomData?.checkOut || roomData?.check_out
   const nights = roomData?.nights ?? dateDiffNights(checkInDate, checkOutDate)
   const ratePerNight = Number(roomData?.rate_per_night ?? roomData?.ratePerNight ?? 0) || 0
-  const roomSubtotal = nights * ratePerNight
+  const roomSubtotalFromState = Number(roomData?.roomSubtotal ?? roomData?.room_subtotal)
+  const computedRoomSubtotal = nights * ratePerNight
+  const roomSubtotal = Number.isNaN(roomSubtotalFromState) ? computedRoomSubtotal : roomSubtotalFromState
   const taxBreakdown = calculateInnsoftTaxBreakdown(roomSubtotal, nights)
   const totalAmount = Number(roomData?.totalAmount ?? taxBreakdown.totalWithTax) || 0
+  const taxAmount = Math.max(0, totalAmount - roomSubtotal)
   const amountPaid = Number(roomData?.amountPaid ?? roomData?.depositCollected ?? 0) || 0
   const balanceDue = Math.max(0, Number(roomData?.balanceDue ?? totalAmount - amountPaid) || 0)
   const amountReceivedNumber = Number(amountReceived) || 0
@@ -589,6 +844,9 @@ function ReservedCheckInPanel({ isOpen, roomOverlay, roomData, onClose, onComple
   const hasBalanceDue = balanceDue > 0
   const hasSufficientPayment = !hasBalanceDue || amountReceivedCents >= balanceDueCents
   const canSubmit = checklistComplete && hasSufficientPayment && !isSaving
+  const idScanUrl = roomData?.id_scan_url || null
+  const idScanDisplayName = roomData?.id_scan_name || 'Scanned ID / document'
+  const paymentHistory = Array.isArray(roomData?.payment_history) ? roomData.payment_history : []
 
   const printCheckInReceipt = (receiptWindow) => {
     const targetWindow = receiptWindow || window.open('', '_blank', 'width=900,height=700')
@@ -596,61 +854,31 @@ function ReservedCheckInPanel({ isOpen, roomOverlay, roomData, onClose, onComple
     const paymentCollected = balanceDue > 0 ? balanceDue : 0
     const totalPayments = amountPaid + paymentCollected
     const remainingBalance = Math.max(0, totalAmount - totalPayments)
-    const hasDetailedBreakdown = roomSubtotal > 0 || taxBreakdown.taxTotal > 0
-    const lineItemsHtml = hasDetailedBreakdown
-      ? `
-            <tr><td>Room charge</td><td>${nights} nights × ${formatCurrency(ratePerNight)}</td><td style="text-align:right;">${formatCurrency(roomSubtotal)}</td></tr>
-            <tr><td>City tax</td><td>8% of room charge</td><td style="text-align:right;">${formatCurrency(taxBreakdown.cityTax)}</td></tr>
-            <tr><td>State tax</td><td>7% of room charge</td><td style="text-align:right;">${formatCurrency(taxBreakdown.stateTax)}</td></tr>
-            <tr><td>Hotel tax</td><td>${nights} nights × ${formatCurrency(INNSOFT_TAX_SETTINGS.hotelFlatPerNight)}</td><td style="text-align:right;">${formatCurrency(taxBreakdown.hotelTax)}</td></tr>
-          `
-      : `
-            <tr><td>Stay charges</td><td>Total stay amount (includes tax)</td><td style="text-align:right;">${formatCurrency(totalAmount)}</td></tr>
-          `
-    const html = `
-      <!doctype html>
-      <html>
-      <head>
-        <title>Check-In Receipt - Room ${roomDisplay}</title>
-        <style>
-          body { font-family: Arial, sans-serif; margin: 28px; color: #0f172a; }
-          h1 { margin: 0; font-size: 28px; }
-          .sub { color: #334155; margin-top: 6px; }
-          table { width: 100%; border-collapse: collapse; margin-top: 16px; }
-          th, td { border-bottom: 1px solid #cbd5e1; padding: 10px 6px; text-align: left; }
-          .summary { margin-top: 16px; width: 360px; margin-left: auto; }
-          .summary p { display: flex; justify-content: space-between; margin: 6px 0; }
-          .zero { color: #166534; font-weight: 700; }
-          .footer { margin-top: 24px; color: #475569; }
-          .actions { margin-top: 24px; }
-          .actions button { padding: 10px 16px; }
-          @media print { .actions { display: none; } }
-        </style>
-      </head>
-      <body>
-        <h1>${hotelName}</h1>
-        <p class="sub">Check-In Receipt</p>
-        <p><strong>${guestName}</strong> — Room ${roomDisplay}</p>
-        <p class="sub">Check-in: ${formatDateDisplay(checkInDate)} | Check-out: ${formatDateDisplay(checkOutDate)} | Nights: ${nights}</p>
-        <table>
-          <thead><tr><th>Item</th><th>Details</th><th style="text-align:right;">Amount</th></tr></thead>
-          <tbody>
-            ${lineItemsHtml}
-            ${paymentCollected > 0 ? `<tr><td>Payment collected at check-in</td><td>${paymentMethod}</td><td style="text-align:right;">-${formatCurrency(paymentCollected)}</td></tr>` : ''}
-          </tbody>
-        </table>
-        <div class="summary">
-          <p><span>Total stay charges</span><strong>${formatCurrency(totalAmount)}</strong></p>
-          <p><span>Prior payments / deposits</span><strong>${formatCurrency(amountPaid)}</strong></p>
-          <p><span>Collected at check-in</span><strong>${formatCurrency(paymentCollected)}</strong></p>
-          <p><span>Balance remaining</span><strong class="${remainingBalance === 0 ? 'zero' : ''}">${formatCurrency(remainingBalance)}</strong></p>
-          ${changeDue > 0 ? `<p><span>Cash change due</span><strong>${formatCurrency(changeDue)}</strong></p>` : ''}
-        </div>
-        <p class="footer">Thank you. This receipt confirms check-in payment activity; final charges may change if additional items are added during the stay.</p>
-        <div class="actions"><button onclick="window.print()">Print</button></div>
-      </body>
-      </html>
-    `
+    const paymentsLabel = paymentCollected > 0 ? `${formatCurrency(paymentCollected)} / ${paymentMethod}` : 'No payment collected'
+    const paymentHistoryForReceipt = paymentCollected > 0
+      ? appendPaymentEvent(paymentHistory, makePaymentEvent({
+        amount: paymentCollected,
+        method: paymentMethod,
+        timestamp: new Date().toISOString(),
+        stage: 'check_in',
+      }))
+      : paymentHistory
+    const html = buildGatewayReceiptHtml({
+      roomDisplay,
+      guestName,
+      checkInDate,
+      checkOutDate,
+      nights,
+      roomSubtotal,
+      taxAmount,
+      totalAmount,
+      creditTotal: totalPayments,
+      balanceAmount: remainingBalance,
+      amountTenderedLabel: paymentsLabel,
+      tenderedTotal: paymentCollected,
+      changeDue,
+      paymentHistory: paymentHistoryForReceipt,
+    })
     targetWindow.document.open()
     targetWindow.document.write(html)
     targetWindow.document.close()
@@ -735,7 +963,7 @@ function ReservedCheckInPanel({ isOpen, roomOverlay, roomData, onClose, onComple
                 <p className="text-slate-400">Number of nights</p><p className="text-right text-white">{nights}</p>
                 <p className="text-slate-400">Rate per night</p><p className="text-right text-white">{formatCurrency(ratePerNight)}</p>
                 <p className="text-slate-400">Room subtotal</p><p className="text-right text-white">{formatCurrency(roomSubtotal)}</p>
-                <p className="text-slate-400">Tax</p><p className="text-right text-white">{formatCurrency(taxBreakdown.taxTotal)}</p>
+                <p className="text-slate-400">Tax</p><p className="text-right text-white">{formatCurrency(taxAmount)}</p>
                 <p className="text-slate-400">Total amount due</p><p className="text-right text-white">{formatCurrency(totalAmount)}</p>
                 <p className="text-slate-400">Amount already paid</p><p className="text-right text-white">{formatCurrency(amountPaid)}</p>
                 <p className="text-slate-200 font-semibold">Balance remaining</p>
@@ -744,6 +972,30 @@ function ReservedCheckInPanel({ isOpen, roomOverlay, roomData, onClose, onComple
                 </p>
               </div>
             </section>
+
+            {idScanUrl && (
+              <section className="rounded-lg border border-cyan-400/25 bg-cyan-950/30 p-4 space-y-3">
+                <p className="text-xs font-semibold tracking-wide uppercase text-slate-400">Guest scan on file</p>
+                <p className="text-sm text-cyan-100 truncate" title={idScanDisplayName}>{idScanDisplayName}</p>
+                <div className="flex flex-wrap gap-2">
+                  <a
+                    href={idScanUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center justify-center px-3 py-2 rounded-md bg-cyan-700/80 hover:bg-cyan-600 text-white text-sm font-semibold"
+                  >
+                    View scan
+                  </a>
+                  <a
+                    href={idScanUrl}
+                    download={typeof idScanDisplayName === 'string' ? idScanDisplayName : undefined}
+                    className="inline-flex items-center justify-center px-3 py-2 rounded-md border border-cyan-400/40 bg-slate-800 hover:bg-slate-700 text-cyan-100 text-sm font-semibold"
+                  >
+                    Download
+                  </a>
+                </div>
+              </section>
+            )}
 
             <section className="space-y-3">
               <p className="text-xs font-semibold tracking-wide uppercase text-slate-400">Pre Check-In Checklist</p>
@@ -763,6 +1015,22 @@ function ReservedCheckInPanel({ isOpen, roomOverlay, roomData, onClose, onComple
                 ))}
               </div>
             </section>
+
+            {paymentHistory.length > 0 && (
+              <section className="rounded-lg border border-emerald-500/25 bg-emerald-900/10 p-4 space-y-2">
+                <p className="text-xs font-semibold tracking-wide uppercase text-slate-400">Payment activity</p>
+                <div className="space-y-1 text-sm">
+                  {paymentHistory.map((entry, idx) => (
+                    <p key={`${entry.timestamp || idx}-${entry.amount || 0}`}>
+                      <span className="text-emerald-300 font-semibold">{formatCurrency(entry.amount)}</span>
+                      <span className="text-slate-300"> via {entry.method || 'Unknown'}</span>
+                      {entry.reference && <span className="text-slate-400"> [{entry.reference}]</span>}
+                      <span className="text-slate-400"> ({formatReceiptDateTime(entry.timestamp)})</span>
+                    </p>
+                  ))}
+                </div>
+              </section>
+            )}
 
             {balanceDue > 0 && (
               <section className="space-y-3 rounded-lg border border-red-500/20 bg-slate-800/65 p-4">
@@ -792,6 +1060,8 @@ function ReservedCheckInPanel({ isOpen, roomOverlay, roomData, onClose, onComple
                       min="0"
                       step="0.01"
                       value={amountReceived}
+                      onFocus={(e) => e.target.select()}
+                      onClick={(e) => e.target.select()}
                       onChange={(e) => {
                         setAmountReceived(e.target.value)
                         setError('')
@@ -827,12 +1097,15 @@ function ReservedCheckInPanel({ isOpen, roomOverlay, roomData, onClose, onComple
   )
 }
 
-function OccupiedRoomPanel({ isOpen, roomOverlay, roomData, onClose, onCompleteCheckout }) {
+function OccupiedRoomPanel({ isOpen, roomOverlay, roomData, onClose, onCompleteCheckout, onAppendPaymentEntry }) {
   const [isCheckoutMode, setIsCheckoutMode] = useState(false)
   const [extraCharges, setExtraCharges] = useState([])
   const [paymentMethod, setPaymentMethod] = useState('Cash')
   const [amountReceived, setAmountReceived] = useState('')
   const [waiveBalance, setWaiveBalance] = useState(false)
+  const [refundAmount, setRefundAmount] = useState('')
+  const [refundNote, setRefundNote] = useState('')
+  const [voidNote, setVoidNote] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState('')
   const roomTypeLabel = roomOverlay?.label || roomOverlay?.type || roomData?.room_type || 'Room'
@@ -843,17 +1116,24 @@ function OccupiedRoomPanel({ isOpen, roomOverlay, roomData, onClose, onCompleteC
   const stayed = nightsStayedSoFar(checkInDate)
   const nights = Math.max(1, roomData?.nights ?? dateDiffNights(checkInDate, checkOutDate) ?? stayed ?? 1)
   const ratePerNight = Number(roomData?.rate_per_night ?? roomData?.ratePerNight ?? 0) || 0
-  const roomChargeTotal = nights * ratePerNight
+  const roomChargeSubtotalFromState = Number(roomData?.roomSubtotal ?? roomData?.room_subtotal)
+  const computedRoomChargeTotal = nights * ratePerNight
+  const roomChargeTotal = Number.isNaN(roomChargeSubtotalFromState) ? computedRoomChargeTotal : roomChargeSubtotalFromState
   const taxBreakdown = calculateInnsoftTaxBreakdown(roomChargeTotal, nights)
   const depositsPaid = Number(roomData?.amountPaid ?? roomData?.depositCollected ?? 0) || 0
   const extraChargesTotal = extraCharges.reduce((sum, charge) => sum + (Number(charge.amount) || 0), 0)
   const totalCharges = roomChargeTotal + taxBreakdown.taxTotal + extraChargesTotal
   const balanceBeforePayment = Math.max(0, totalCharges - depositsPaid)
   const amountReceivedNumber = Number(amountReceived) || 0
-  const effectivePayment = Math.min(balanceBeforePayment, amountReceivedNumber)
-  const remainingBalance = Math.max(0, balanceBeforePayment - effectivePayment)
+  const balanceBeforePaymentCents = toCents(balanceBeforePayment)
+  const amountReceivedCents = toCents(amountReceivedNumber)
+  const effectivePaymentCents = Math.min(balanceBeforePaymentCents, amountReceivedCents)
+  const effectivePayment = effectivePaymentCents / 100
+  const remainingBalanceCents = Math.max(0, balanceBeforePaymentCents - effectivePaymentCents)
+  const remainingBalance = remainingBalanceCents / 100
   const changeDue = paymentMethod === 'Cash' ? Math.max(0, amountReceivedNumber - balanceBeforePayment) : 0
-  const canCompleteCheckout = !isSaving && (remainingBalance === 0 || waiveBalance)
+  const canCompleteCheckout = !isSaving && (remainingBalanceCents === 0 || waiveBalance)
+  const paymentHistory = Array.isArray(roomData?.payment_history) ? roomData.payment_history : []
 
   useEffect(() => {
     if (!isOpen) return
@@ -862,6 +1142,9 @@ function OccupiedRoomPanel({ isOpen, roomOverlay, roomData, onClose, onCompleteC
     setPaymentMethod('Cash')
     setAmountReceived('')
     setWaiveBalance(false)
+    setRefundAmount('')
+    setRefundNote('')
+    setVoidNote('')
     setIsSaving(false)
     setError('')
   }, [isOpen, roomOverlay?.id])
@@ -884,8 +1167,46 @@ function OccupiedRoomPanel({ isOpen, roomOverlay, roomData, onClose, onCompleteC
     return String(charge.customDescription || '').trim() || 'Other'
   }
 
+  const addLedgerEntry = async (kind) => {
+    if (!onAppendPaymentEntry || !roomOverlay?.id) return
+    if (kind === 'refund') {
+      const amt = Number(refundAmount) || 0
+      if (amt <= 0) {
+        setError('Refund amount must be greater than zero.')
+        return
+      }
+      await onAppendPaymentEntry(roomOverlay.id, makePaymentEvent({
+        amount: -Math.abs(amt),
+        method: paymentMethod,
+        timestamp: new Date().toISOString(),
+        stage: 'checkout_adjustment',
+        kind: 'refund',
+        note: refundNote,
+      }))
+      setRefundAmount('')
+      setRefundNote('')
+      setError('')
+      return
+    }
+
+    await onAppendPaymentEntry(roomOverlay.id, makePaymentEvent({
+      amount: 0,
+      method: paymentMethod,
+      timestamp: new Date().toISOString(),
+      stage: 'checkout_adjustment',
+      kind: 'void',
+      note: voidNote || 'Voided entry',
+    }))
+    setVoidNote('')
+    setError('')
+  }
+
   const handleComplete = async () => {
     if (!canCompleteCheckout) return
+    const receiptWindow = window.open('', '_blank', 'width=900,height=700')
+    if (receiptWindow) {
+      receiptWindow.document.write('<p style="font-family: Arial, sans-serif; padding: 24px;">Preparing check-out receipt...</p>')
+    }
     setError('')
     setIsSaving(true)
     try {
@@ -896,15 +1217,56 @@ function OccupiedRoomPanel({ isOpen, roomOverlay, roomData, onClose, onCompleteC
           amount: Number(charge.amount) || 0,
         }))
         .filter((charge) => charge.amount > 0 && charge.description)
+      const waivedAmount = remainingBalance > 0 && waiveBalance ? remainingBalance : 0
+      const checkoutTotalCredits = depositsPaid + effectivePayment + waivedAmount
+      const checkoutBalanceShown = Math.max(0, totalCharges - checkoutTotalCredits)
+      const tenderedLabel = effectivePayment > 0 ? `${formatCurrency(effectivePayment)} / ${paymentMethod}` : 'No payment collected'
+      const footerNote = waivedAmount > 0
+        ? `Manager override applied: ${formatCurrency(waivedAmount)} waived at checkout.`
+        : ''
+      const checkoutPaymentEvent = (Number(effectivePayment) || 0) > 0
+        ? makePaymentEvent({
+          amount: Number(effectivePayment) || 0,
+          method: paymentMethod,
+          timestamp: checkoutDate,
+          stage: 'check_out',
+        })
+        : null
+      const receiptSnapshot = {
+        roomDisplay,
+        guestName,
+        checkInDate,
+        checkOutDate: checkoutDate,
+        nights,
+        roomSubtotal: roomChargeTotal + extraChargesTotal,
+        taxAmount: taxBreakdown.taxTotal,
+        totalAmount: totalCharges,
+        creditTotal: checkoutTotalCredits,
+        balanceAmount: checkoutBalanceShown,
+        amountTenderedLabel: tenderedLabel,
+        tenderedTotal: effectivePayment,
+        changeDue,
+        footerNote,
+        paymentHistory: checkoutPaymentEvent ? appendPaymentEvent(paymentHistory, checkoutPaymentEvent) : paymentHistory,
+      }
       await onCompleteCheckout({
         checkoutDate,
         extraCharges: cleanedCharges,
         paymentMethod,
         paymentAmount: effectivePayment,
         waiveBalance: remainingBalance > 0 && waiveBalance,
+        receiptSnapshot,
+        checkoutPaymentEvent,
       })
+      const html = buildGatewayReceiptHtml(receiptSnapshot)
+      if (receiptWindow) {
+        receiptWindow.document.open()
+        receiptWindow.document.write(html)
+        receiptWindow.document.close()
+      }
       setIsSaving(false)
     } catch (err) {
+      receiptWindow?.close()
       setError(err?.message || 'Unable to complete check-out.')
       setIsSaving(false)
     }
@@ -1038,6 +1400,62 @@ function OccupiedRoomPanel({ isOpen, roomOverlay, roomData, onClose, onCompleteC
                     <span className="text-slate-100">Balance due</span>
                     <span className={balanceBeforePayment > 0 ? 'text-red-400' : 'text-emerald-400'}>{formatCurrency(balanceBeforePayment)}</span>
                   </div>
+                  {paymentHistory.length > 0 && (
+                    <div className="pt-2 mt-2 border-t border-white/10 space-y-1">
+                      <p className="text-xs text-slate-400 uppercase tracking-wide">Ledger</p>
+                      {paymentHistory.map((entry, idx) => (
+                        <p key={`${entry.timestamp || idx}-${entry.amount || 0}`}>
+                          <span className="text-emerald-300 font-semibold">{formatCurrency(entry.amount)}</span>
+                          <span className="text-slate-300"> via {entry.method || 'Unknown'}</span>
+                          {entry.reference && <span className="text-slate-400"> [{entry.reference}]</span>}
+                          <span className="text-slate-400"> ({formatReceiptDateTime(entry.timestamp)})</span>
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                </section>
+
+                <section className="rounded-lg border border-amber-400/25 bg-amber-900/10 p-4 space-y-3">
+                  <p className="text-xs font-semibold tracking-wide uppercase text-slate-400">Ledger Adjustments</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <input
+                      className="w-full rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-white"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="Refund amount"
+                      value={refundAmount}
+                      onChange={(e) => setRefundAmount(e.target.value)}
+                    />
+                    <input
+                      className="w-full rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-white"
+                      placeholder="Refund note"
+                      value={refundNote}
+                      onChange={(e) => setRefundNote(e.target.value)}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => addLedgerEntry('refund')}
+                    className="px-3 py-2 rounded-md bg-amber-700/80 hover:bg-amber-600 text-white text-sm font-semibold"
+                  >
+                    Add Refund Entry
+                  </button>
+                  <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2">
+                    <input
+                      className="w-full rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-white"
+                      placeholder="Void note"
+                      value={voidNote}
+                      onChange={(e) => setVoidNote(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => addLedgerEntry('void')}
+                      className="px-3 py-2 rounded-md border border-amber-400/40 bg-slate-800 hover:bg-slate-700 text-amber-100 text-sm font-semibold"
+                    >
+                      Add Void Note
+                    </button>
+                  </div>
                 </section>
 
                 <section className="rounded-lg border border-white/10 bg-slate-800/70 p-4 space-y-3">
@@ -1062,6 +1480,8 @@ function OccupiedRoomPanel({ isOpen, roomOverlay, roomData, onClose, onCompleteC
                       min="0"
                       step="0.01"
                       value={amountReceived}
+                      onFocus={(e) => e.target.select()}
+                      onClick={(e) => e.target.select()}
                       onChange={(e) => setAmountReceived(e.target.value)}
                     />
                   </div>
@@ -1156,6 +1576,7 @@ function HousekeepingPanel({ isOpen, roomOverlay, roomData, onClose, onMarkInPro
   const isMaintenance = roomData?.status === 'maintenance'
   const checklistDone = Object.values(tasks).every(Boolean)
   const canMarkClean = !isSaving && (checklistDone || skipChecklist)
+  const lastCheckoutReceipt = roomData?.last_checkout_receipt_snapshot || null
 
   const agoLabel = (value) => {
     if (!value) return '—'
@@ -1211,6 +1632,16 @@ function HousekeepingPanel({ isOpen, roomOverlay, roomData, onClose, onMarkInPro
       setError(err?.message || 'Unable to mark room clean.')
       setIsSaving(false)
     }
+  }
+
+  const handleReprintLastCheckoutReceipt = () => {
+    if (!lastCheckoutReceipt) return
+    const receiptWindow = window.open('', '_blank', 'width=900,height=700')
+    if (!receiptWindow) return
+    const html = buildGatewayReceiptHtml(lastCheckoutReceipt)
+    receiptWindow.document.open()
+    receiptWindow.document.write(html)
+    receiptWindow.document.close()
   }
 
   return (
@@ -1293,6 +1724,17 @@ function HousekeepingPanel({ isOpen, roomOverlay, roomData, onClose, onMarkInPro
                 onChange={(e) => setNotes(e.target.value)}
               />
             </section>
+            {lastCheckoutReceipt && (
+              <section className="rounded-lg border border-cyan-400/25 bg-cyan-500/10 p-3">
+                <button
+                  type="button"
+                  onClick={handleReprintLastCheckoutReceipt}
+                  className="w-full px-4 py-2 rounded-md bg-cyan-700/70 hover:bg-cyan-600 text-white font-semibold"
+                >
+                  Reprint Last Checkout Receipt
+                </button>
+              </section>
+            )}
 
             {error && <p className="text-sm text-red-400">{error}</p>}
           </div>
@@ -2248,6 +2690,23 @@ function MotelCommandCenter({
       guestId = createdGuest.id
     }
 
+    let idScanUrl = null
+    let idScanName = null
+    if (values.idScanFile instanceof File) {
+      const safeName = sanitizeUploadFileName(values.idScanFile.name)
+      const path = `guest-${guestId}/${Date.now()}-${safeName}`
+      const upload = await supabase.storage
+        .from('guest-scans')
+        .upload(path, values.idScanFile, { upsert: false })
+      if (!upload.error) {
+        const { data: publicData } = supabase.storage.from('guest-scans').getPublicUrl(path)
+        idScanUrl = publicData?.publicUrl || null
+        idScanName = values.idScanFile.name
+      } else {
+        console.warn('Guest scan upload skipped:', upload.error?.message || upload.error)
+      }
+    }
+
     let { data: roomRecord, error: roomLookupError } = await supabase
       .from('rooms')
       .select('id')
@@ -2301,6 +2760,8 @@ function MotelCommandCenter({
           check_out: values.checkOutDate,
           checkOut: values.checkOutDate,
           rate_per_night: Number(values.ratePerNight) || 0,
+          id_scan_url: idScanUrl,
+          id_scan_name: idScanName,
           roomSubtotal: values.roomSubtotal,
           totalAmount: values.totalAmount,
           balanceDue: values.balanceDue,
@@ -2308,8 +2769,14 @@ function MotelCommandCenter({
       }
       return room
     }))
+    const shouldOpenCheckIn = isTodayDateOnly(values.checkInDate)
     setReservationPanelRoomId(null)
-    notify(`Reservation created for ${guestName}!`, 'success')
+    if (shouldOpenCheckIn) {
+      setCheckInPanelRoomId(reservationPanelRoomId)
+      notify(`Reservation created for ${guestName}. Check-in is due today, opening check-in screen.`, 'info')
+    } else {
+      notify(`Reservation created for ${guestName}!`, 'success')
+    }
   }, [notify, reservationPanelRoomId, reservationRoomOverlay])
 
   const handleCompleteCheckIn = useCallback(async ({ balanceDue, paymentMethod, amountReceived }) => {
@@ -2369,6 +2836,9 @@ function MotelCommandCenter({
     if (roomUpdateError) throw roomUpdateError
 
     const guestName = selectedRoom.guestName || selectedRoom.guest_name || 'Guest'
+    const paymentEvent = balanceDue > 0
+      ? makePaymentEvent({ amount: balanceDue, method: paymentMethod, timestamp: nowIso, stage: 'check_in' })
+      : null
     setRoomData((prev) => prev.map((room) => {
       if (room.room === checkInPanelRoomId || room.roomNumber === checkInPanelRoomId) {
         return {
@@ -2377,6 +2847,7 @@ function MotelCommandCenter({
           actual_check_in: nowIso,
           amountPaid: (Number(room.amountPaid) || 0) + (balanceDue > 0 ? balanceDue : 0),
           balanceDue: Math.max(0, (Number(room.balanceDue) || 0) - (balanceDue > 0 ? balanceDue : 0)),
+          payment_history: paymentEvent ? appendPaymentEvent(room.payment_history, paymentEvent) : room.payment_history,
         }
       }
       return room
@@ -2389,7 +2860,7 @@ function MotelCommandCenter({
     }
   }, [checkInPanelRoomId, checkInRoomOverlay, notify, roomStatusMap])
 
-  const handleCompleteCheckout = useCallback(async ({ checkoutDate, extraCharges, paymentMethod, paymentAmount }) => {
+  const handleCompleteCheckout = useCallback(async ({ checkoutDate, extraCharges, paymentMethod, paymentAmount, receiptSnapshot, checkoutPaymentEvent }) => {
     if (!occupiedPanelRoomId) throw new Error('No occupied room selected.')
     const roomNumber = getRoomDisplayLabel(occupiedPanelRoomId, occupiedRoomOverlay)
     const selectedRoom = roomStatusMap[occupiedPanelRoomId] ?? roomStatusMap[canonicalRoomKey(occupiedPanelRoomId)]
@@ -2461,6 +2932,9 @@ function MotelCommandCenter({
     if (roomUpdateError) throw roomUpdateError
 
     const guestName = selectedRoom.guestName || selectedRoom.guest_name || 'Guest'
+    const paymentEventToApply = checkoutPaymentEvent || ((Number(paymentAmount) || 0) > 0
+      ? makePaymentEvent({ amount: Number(paymentAmount) || 0, method: paymentMethod, timestamp: checkoutDate, stage: 'check_out' })
+      : null)
     setRoomData((prev) => prev.map((room) => {
       if (room.room === occupiedPanelRoomId || room.roomNumber === occupiedPanelRoomId) {
         return {
@@ -2470,6 +2944,8 @@ function MotelCommandCenter({
           checkOut: checkoutDate,
           actual_check_out: checkoutDate,
           balanceDue: 0,
+          last_checkout_receipt_snapshot: receiptSnapshot || null,
+          payment_history: paymentEventToApply ? appendPaymentEvent(room.payment_history, paymentEventToApply) : room.payment_history,
         }
       }
       return room
@@ -2481,6 +2957,19 @@ function MotelCommandCenter({
       notify(`✅ ${guestName} checked out from Room ${roomNumber}. Payment log was blocked by DB policy (RLS).`, 'warning')
     }
   }, [notify, occupiedPanelRoomId, occupiedRoomOverlay, roomStatusMap])
+
+  const handleAppendPaymentEntry = useCallback(async (roomId, entry) => {
+    if (!roomId || !entry) return
+    setRoomData((prev) => prev.map((room) => {
+      if (room.room === roomId || room.roomNumber === roomId) {
+        return {
+          ...room,
+          payment_history: appendPaymentEvent(room.payment_history, entry),
+        }
+      }
+      return room
+    }))
+  }, [])
 
   const handleMarkCleaningInProgress = useCallback(async ({ assignedTo, notes, startedAt }) => {
     if (!housekeepingPanelRoomId) throw new Error('No room selected.')
@@ -2546,6 +3035,8 @@ function MotelCommandCenter({
           checkOut: null,
           check_out: null,
           actual_check_out: null,
+          last_checkout_receipt_snapshot: null,
+          payment_history: null,
           cleaning_assigned_to: null,
           maintenance_started_at: null,
           maintenance_notes: null,
@@ -3043,6 +3534,7 @@ function MotelCommandCenter({
         roomData={occupiedRoomData}
         onClose={() => setOccupiedPanelRoomId(null)}
         onCompleteCheckout={handleCompleteCheckout}
+        onAppendPaymentEntry={handleAppendPaymentEntry}
       />
       <HousekeepingPanel
         isOpen={!!housekeepingPanelRoomId}
