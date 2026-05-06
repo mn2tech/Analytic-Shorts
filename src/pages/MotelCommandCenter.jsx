@@ -428,6 +428,13 @@ function getDefaultRatePerNight(rateValue) {
   return parsed.toFixed(2)
 }
 
+function formatRateFromDigitEntry(rawValue) {
+  const digitsOnly = String(rawValue ?? '').replace(/\D/g, '')
+  if (!digitsOnly) return '0.00'
+  const shifted = Number(digitsOnly) / 100
+  return shifted.toFixed(2)
+}
+
 function sanitizeUploadFileName(fileName) {
   return String(fileName || 'scan')
     .trim()
@@ -593,13 +600,7 @@ function NewReservationPanel({ isOpen, roomOverlay, roomData, onClose, onSave })
   }
 
   const handleRatePerNightChange = (rawValue) => {
-    const value = String(rawValue ?? '').trim()
-    // Fast-entry behavior: typing a single digit like "4" becomes "0.4".
-    if (/^\d$/.test(value)) {
-      updateValue('ratePerNight', `0.${value}`)
-      return
-    }
-    updateValue('ratePerNight', value)
+    updateValue('ratePerNight', formatRateFromDigitEntry(rawValue))
   }
 
   const validate = () => {
@@ -740,13 +741,14 @@ function NewReservationPanel({ isOpen, roomOverlay, roomData, onClose, onSave })
                   <label className={labelClass}>Rate per night</label>
                   <input
                     className={inputClass}
-                    type="number"
-                    min="0"
-                    step="0.01"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
                     value={formValues.ratePerNight}
                     onFocus={(e) => e.target.select()}
                     onClick={(e) => e.target.select()}
                     onChange={(e) => handleRatePerNightChange(e.target.value)}
+                    onBlur={(e) => updateValue('ratePerNight', formatRateFromDigitEntry(e.target.value))}
                   />
                   {errors.ratePerNight && <p className="mt-1 text-xs text-red-400">{errors.ratePerNight}</p>}
                 </div>
