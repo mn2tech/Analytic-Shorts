@@ -34,7 +34,15 @@ const MAP_STATUS_FILL_COLORS = {
   checked_in: '#ef4444',
   reserved: '#3b82f6',
   dirty: '#eab308',
+  clean: '#10b981',
+  inspected: '#14b8a6',
+  out_of_order: '#334155',
   maintenance: '#6b7280',
+  blocked: '#475569',
+  hold: '#0ea5e9',
+  no_show: '#f97316',
+  checked_out: '#a78bfa',
+  cancelled: '#64748b',
   unavailable: '#6b7280',
 }
 const DISPLAY_STATUS_LABELS = {
@@ -43,7 +51,15 @@ const DISPLAY_STATUS_LABELS = {
   checked_in: 'Checked In',
   reserved: 'Reserved',
   dirty: 'Dirty',
+  clean: 'Clean',
+  inspected: 'Inspected',
+  out_of_order: 'Out of Order',
   maintenance: 'Maintenance',
+  blocked: 'Blocked',
+  hold: 'On Hold',
+  no_show: 'No Show',
+  checked_out: 'Checked Out',
+  cancelled: 'Cancelled',
   unavailable: 'Unavailable',
 }
 const STATUS_VISUALS = {
@@ -51,8 +67,16 @@ const STATUS_VISUALS = {
   occupied: { label: 'OCC', icon: 'BED', textColor: '#7F1D1D', badgeBg: 'rgba(254, 226, 226, 0.95)' },
   checked_in: { label: 'OCC', icon: 'BED', textColor: '#7F1D1D', badgeBg: 'rgba(254, 226, 226, 0.95)' },
   dirty: { label: 'DRT', icon: 'CLN', textColor: '#713F12', badgeBg: 'rgba(254, 243, 199, 0.95)' },
+  clean: { label: 'CLN', icon: 'OK', textColor: '#064E3B', badgeBg: 'rgba(209, 250, 229, 0.95)' },
+  inspected: { label: 'INSP', icon: 'OK', textColor: '#134E4A', badgeBg: 'rgba(204, 251, 241, 0.95)' },
   reserved: { label: 'RSV', icon: 'IN', textColor: '#1E3A8A', badgeBg: 'rgba(219, 234, 254, 0.95)' },
   maintenance: { label: 'MNT', icon: 'FIX', textColor: '#111827', badgeBg: 'rgba(229, 231, 235, 0.95)' },
+  out_of_order: { label: 'OOO', icon: 'FIX', textColor: '#0F172A', badgeBg: 'rgba(203, 213, 225, 0.95)' },
+  blocked: { label: 'BLK', icon: 'N/A', textColor: '#0F172A', badgeBg: 'rgba(203, 213, 225, 0.95)' },
+  hold: { label: 'HLD', icon: 'IN', textColor: '#0C4A6E', badgeBg: 'rgba(186, 230, 253, 0.95)' },
+  no_show: { label: 'NS', icon: 'N/A', textColor: '#7C2D12', badgeBg: 'rgba(254, 215, 170, 0.95)' },
+  checked_out: { label: 'CO', icon: 'OUT', textColor: '#4C1D95', badgeBg: 'rgba(237, 233, 254, 0.95)' },
+  cancelled: { label: 'CXL', icon: 'N/A', textColor: '#334155', badgeBg: 'rgba(226, 232, 240, 0.95)' },
   unavailable: { label: 'UNA', icon: 'N/A', textColor: '#111827', badgeBg: 'rgba(229, 231, 235, 0.95)' },
 }
 const INNSOFT_TAX_SETTINGS = {
@@ -159,7 +183,34 @@ function normalizeRoomStatus(value) {
     .replace(/\s+/g, '_')
   if (!normalized) return 'available'
   if (normalized === 'checkedin') return 'checked_in'
+  if (normalized === 'cleaning_pending') return 'dirty'
+  if (normalized === 'needs_inspection') return 'dirty'
+  if (normalized === 'outoforder') return 'out_of_order'
+  if (normalized === 'noshow') return 'no_show'
+  if (normalized === 'canceled') return 'cancelled'
   return normalized
+}
+
+function makeRemarkEvent({
+  reservationId = null,
+  guestId = null,
+  roomNumber = null,
+  type = 'front_desk',
+  text = '',
+  createdBy = 'Front Desk',
+  timestamp = new Date().toISOString(),
+}) {
+  return {
+    id: crypto.randomUUID(),
+    reservation_id: reservationId,
+    guest_id: guestId,
+    room_number: roomNumber,
+    note_type: type,
+    note_text: text,
+    created_by: createdBy,
+    created_at: timestamp,
+    updated_at: timestamp,
+  }
 }
 
 function clearGuestContextForAvailableRoom(room, statusOverride = room?.status) {
@@ -242,6 +293,18 @@ function formatCurrency(value) {
 
 function formatReceiptDateTime(value) {
   if (!value) return '—'
+  const text = String(value).trim()
+  // Avoid UTC timezone shifts for date-only strings (YYYY-MM-DD).
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    const local = parseDateOnly(text)
+    if (local) {
+      return local.toLocaleDateString([], {
+        month: '2-digit',
+        day: '2-digit',
+        year: '2-digit',
+      })
+    }
+  }
   const d = new Date(value)
   if (Number.isNaN(d.getTime())) return String(value)
   return d.toLocaleString([], {
@@ -398,6 +461,11 @@ function buildGatewayReceiptHtml({
 function isRlsPolicyError(error) {
   const message = String(error?.message || '').toLowerCase()
   return message.includes('row-level security') || message.includes('violates row-level security policy')
+}
+
+function isMissingRelationError(error) {
+  const message = String(error?.message || '').toLowerCase()
+  return message.includes('does not exist') || message.includes('relation') && message.includes('not found')
 }
 
 function nightsStayedSoFar(value) {
@@ -849,7 +917,17 @@ function NewReservationPanel({ isOpen, roomOverlay, roomData, onClose, onSave })
   )
 }
 
-function ReservedCheckInPanel({ isOpen, roomOverlay, roomData, onClose, onComplete, hotelName = 'Gateway Inn' }) {
+function ReservedCheckInPanel({
+  isOpen,
+  roomOverlay,
+  roomData,
+  onClose,
+  onComplete,
+  onCancelReservation,
+  onMarkNoShow,
+  onAddRemark,
+  hotelName = 'Gateway Inn',
+}) {
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState('')
   const [checklist, setChecklist] = useState({
@@ -860,6 +938,8 @@ function ReservedCheckInPanel({ isOpen, roomOverlay, roomData, onClose, onComple
   })
   const [paymentMethod, setPaymentMethod] = useState('Cash')
   const [amountReceived, setAmountReceived] = useState('')
+  const [remarkType, setRemarkType] = useState('front_desk')
+  const [remarkText, setRemarkText] = useState('')
 
   useEffect(() => {
     if (!isOpen) return
@@ -878,6 +958,8 @@ function ReservedCheckInPanel({ isOpen, roomOverlay, roomData, onClose, onComple
     })
     setPaymentMethod('Cash')
     setAmountReceived(seededBalance > 0 ? seededBalance.toFixed(2) : '')
+    setRemarkType('front_desk')
+    setRemarkText('')
     setError('')
     setIsSaving(false)
   }, [isOpen, roomData?.amountPaid, roomData?.balanceDue, roomData?.depositCollected, roomData?.totalAmount, roomOverlay?.id])
@@ -975,6 +1057,49 @@ function ReservedCheckInPanel({ isOpen, roomOverlay, roomData, onClose, onComple
       return
     }
     setIsSaving(false)
+  }
+
+  const handleAddRemark = async () => {
+    if (!onAddRemark) return
+    const note = String(remarkText || '').trim()
+    if (!note) {
+      setError('Enter a remark before saving.')
+      return
+    }
+    setError('')
+    try {
+      await onAddRemark({
+        roomId: roomData?.room || roomDisplay,
+        noteType: remarkType,
+        noteText: note,
+      })
+      setRemarkText('')
+    } catch (err) {
+      setError(err?.message || 'Unable to add remark.')
+    }
+  }
+
+  const handleCancel = async () => {
+    if (!onCancelReservation) return
+    const reason = window.prompt('Enter cancellation reason (required):', '')
+    if (!reason || !String(reason).trim()) return
+    const feeInput = window.prompt('Cancellation fee (optional, default 0.00):', '0.00')
+    const fee = Number(feeInput || 0) || 0
+    try {
+      await onCancelReservation({ roomId: roomData?.room || roomDisplay, reason: String(reason).trim(), fee })
+    } catch (err) {
+      setError(err?.message || 'Unable to cancel reservation.')
+    }
+  }
+
+  const handleNoShow = async () => {
+    if (!onMarkNoShow) return
+    const reason = window.prompt('Enter no-show note (optional):', '') || ''
+    try {
+      await onMarkNoShow({ roomId: roomData?.room || roomDisplay, reason: String(reason).trim() })
+    } catch (err) {
+      setError(err?.message || 'Unable to mark no-show.')
+    }
   }
 
   const toggleChecklist = (key) => {
@@ -1141,17 +1266,53 @@ function ReservedCheckInPanel({ isOpen, roomOverlay, roomData, onClose, onComple
             )}
 
             {error && <p className="text-sm text-red-400">{error}</p>}
+            <section className="rounded-lg border border-cyan-400/25 bg-cyan-950/20 p-4 space-y-2">
+              <p className="text-xs font-semibold tracking-wide uppercase text-slate-400">Guest Remarks</p>
+              <div className="grid grid-cols-1 sm:grid-cols-[180px_1fr_auto] gap-2">
+                <select
+                  className="rounded-md border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white"
+                  value={remarkType}
+                  onChange={(e) => setRemarkType(e.target.value)}
+                >
+                  <option value="front_desk">Front Desk</option>
+                  <option value="housekeeping">Housekeeping</option>
+                  <option value="maintenance">Maintenance</option>
+                  <option value="billing">Billing</option>
+                  <option value="vip">VIP</option>
+                  <option value="complaint">Complaint</option>
+                  <option value="preference">Preference</option>
+                  <option value="internal">Internal</option>
+                </select>
+                <input
+                  className="rounded-md border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white"
+                  placeholder="Add note..."
+                  value={remarkText}
+                  onChange={(e) => setRemarkText(e.target.value)}
+                />
+                <button type="button" onClick={handleAddRemark} className="px-3 py-2 rounded-md bg-cyan-700/85 hover:bg-cyan-600 text-white text-sm font-semibold">
+                  Add
+                </button>
+              </div>
+            </section>
           </div>
 
           <div className="px-5 py-4 border-t border-white/10">
-            <button
-              type="button"
-              onClick={handleSubmit}
-              disabled={!canSubmit}
-              className={`w-full px-4 py-3 rounded-md text-white font-semibold transition-colors ${canSubmit ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-slate-600 cursor-not-allowed text-slate-300'}`}
-            >
-              {isSaving ? 'Completing Check-In...' : 'Complete Check-In'}
-            </button>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <button type="button" onClick={handleNoShow} className="px-4 py-3 rounded-md border border-amber-400/40 bg-slate-800 hover:bg-slate-700 text-amber-100 font-semibold">
+                Mark No-Show
+              </button>
+              <button type="button" onClick={handleCancel} className="px-4 py-3 rounded-md bg-rose-700/90 hover:bg-rose-600 text-white font-semibold">
+                Cancel Reservation
+              </button>
+              <button
+                type="button"
+                onClick={handleSubmit}
+                disabled={!canSubmit}
+                className={`px-4 py-3 rounded-md text-white font-semibold transition-colors ${canSubmit ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-slate-600 cursor-not-allowed text-slate-300'}`}
+              >
+                {isSaving ? 'Completing Check-In...' : 'Complete Check-In'}
+              </button>
+            </div>
           </div>
         </div>
       </aside>
@@ -1159,8 +1320,27 @@ function ReservedCheckInPanel({ isOpen, roomOverlay, roomData, onClose, onComple
   )
 }
 
-function OccupiedRoomPanel({ isOpen, roomOverlay, roomData, onClose, onCompleteCheckout, onAppendPaymentEntry }) {
+function OccupiedRoomPanel({
+  isOpen,
+  roomOverlay,
+  roomData,
+  onClose,
+  onCompleteCheckout,
+  onAppendPaymentEntry,
+  onTransferGuest,
+  transferCandidates = [],
+}) {
   const [isCheckoutMode, setIsCheckoutMode] = useState(false)
+  const [isTransferMode, setIsTransferMode] = useState(false)
+  const [isTransferConfirmOpen, setIsTransferConfirmOpen] = useState(false)
+  const [transferRoomTypeFilter, setTransferRoomTypeFilter] = useState('all')
+  const [transferFloorFilter, setTransferFloorFilter] = useState('all')
+  const [transferSelectedRoomId, setTransferSelectedRoomId] = useState('')
+  const [transferReason, setTransferReason] = useState('')
+  const [transferManagerOverride, setTransferManagerOverride] = useState(false)
+  const [transferApprover, setTransferApprover] = useState('')
+  const [transferApplyRateChange, setTransferApplyRateChange] = useState(false)
+  const [transferNewRate, setTransferNewRate] = useState('')
   const [extraCharges, setExtraCharges] = useState([])
   const [paymentMethod, setPaymentMethod] = useState('Cash')
   const [amountReceived, setAmountReceived] = useState('')
@@ -1182,6 +1362,9 @@ function OccupiedRoomPanel({ isOpen, roomOverlay, roomData, onClose, onCompleteC
   const roomChargeSubtotalFromState = Number(roomData?.roomSubtotal ?? roomData?.room_subtotal)
   const computedRoomChargeTotal = nights * ratePerNight
   const roomChargeTotal = Number.isNaN(roomChargeSubtotalFromState) ? computedRoomChargeTotal : roomChargeSubtotalFromState
+  const displayRatePerNight = (ratePerNight > 0)
+    ? ratePerNight
+    : (nights > 0 ? (roomChargeTotal / nights) : 0)
   const taxBreakdown = calculateInnsoftTaxBreakdown(roomChargeTotal, nights)
   const paymentHistory = Array.isArray(roomData?.payment_history) ? roomData.payment_history : []
   const ledgerNetPaid = sumPaymentHistory(paymentHistory)
@@ -1207,10 +1390,42 @@ function OccupiedRoomPanel({ isOpen, roomOverlay, roomData, onClose, onCompleteC
     const reference = String(entry?.reference || '').trim()
     return (entry?.kind || 'payment') === 'payment' && amount > 0 && reference && !voidedReferences.has(reference)
   })
+  const transferCandidateRooms = transferCandidates
+    .filter((room) => room.id !== roomDisplay && room.id !== roomData?.room)
+    .filter((room) => transferRoomTypeFilter === 'all' || (String(room.room_type || '').toLowerCase() === transferRoomTypeFilter))
+    .filter((room) => transferFloorFilter === 'all' || String(room.unit || '').toLowerCase() === transferFloorFilter)
+  const selectedTransferRoom = transferCandidateRooms.find((room) => String(room.id) === String(transferSelectedRoomId)) || null
+  const transferCurrentRate = Number(ratePerNight) || 0
+  const transferCandidateRate = selectedTransferRoom
+    ? Number(selectedTransferRoom.rate_per_night ?? selectedTransferRoom.ratePerNight ?? transferCurrentRate) || 0
+    : transferCurrentRate
+  const transferEffectiveRate = transferApplyRateChange
+    ? Number(transferNewRate || 0) || 0
+    : transferCandidateRate
+  const transferRateDiff = transferEffectiveRate - transferCurrentRate
+  const transferStatus = String(selectedTransferRoom?.status || '').toLowerCase()
+  const transferTargetBlocked = !!selectedTransferRoom && ['occupied', 'checked_in', 'maintenance', 'out_of_order', 'unavailable'].includes(transferStatus)
+  const transferTargetNeedsOverride = !!selectedTransferRoom && ['dirty', 'maintenance', 'out_of_order', 'unavailable'].includes(transferStatus)
+  const canSubmitTransfer = !isSaving &&
+    !!selectedTransferRoom &&
+    !!String(transferReason || '').trim() &&
+    (!transferTargetBlocked || transferManagerOverride) &&
+    (!transferTargetNeedsOverride || transferManagerOverride) &&
+    (!transferManagerOverride || !!String(transferApprover || '').trim())
 
   useEffect(() => {
     if (!isOpen) return
     setIsCheckoutMode(false)
+    setIsTransferMode(false)
+    setIsTransferConfirmOpen(false)
+    setTransferRoomTypeFilter('all')
+    setTransferFloorFilter('all')
+    setTransferSelectedRoomId('')
+    setTransferReason('')
+    setTransferManagerOverride(false)
+    setTransferApprover('')
+    setTransferApplyRateChange(false)
+    setTransferNewRate('')
     setExtraCharges([])
     setPaymentMethod('Cash')
     setAmountReceived(balanceBeforePayment > 0 ? balanceBeforePayment.toFixed(2) : '')
@@ -1288,6 +1503,32 @@ function OccupiedRoomPanel({ isOpen, roomOverlay, roomData, onClose, onCompleteC
     setVoidTargetReference('')
     setVoidNote('')
     setError('')
+  }
+
+  const handleTransferSubmit = async () => {
+    if (!onTransferGuest) return
+    if (!canSubmitTransfer || !selectedTransferRoom) {
+      setError('Select an eligible room and enter transfer reason.')
+      return
+    }
+    setError('')
+    setIsSaving(true)
+    try {
+      await onTransferGuest({
+        fromRoomId: roomData?.room || roomDisplay,
+        toRoomId: selectedTransferRoom.id,
+        reason: String(transferReason || '').trim(),
+        managerOverride: transferManagerOverride,
+        approver: String(transferApprover || '').trim() || null,
+        applyRateChange: transferApplyRateChange,
+        newRatePerNight: transferEffectiveRate,
+      })
+      setIsTransferConfirmOpen(false)
+      setIsTransferMode(false)
+    } catch (err) {
+      setError(err?.message || 'Unable to transfer guest.')
+    }
+    setIsSaving(false)
   }
 
   const handleComplete = async () => {
@@ -1376,7 +1617,11 @@ function OccupiedRoomPanel({ isOpen, roomOverlay, roomData, onClose, onCompleteC
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-xl font-semibold text-white">
-                  {isCheckoutMode ? `Check Out — Room ${roomDisplay}` : 'Current Stay'}
+                  {isTransferMode
+                    ? `Move Guest — Room ${roomDisplay}`
+                    : isCheckoutMode
+                      ? `Check Out — Room ${roomDisplay}`
+                      : 'Current Stay'}
                 </h2>
                 <p className="text-sm text-slate-300 mt-1">
                   Room {roomDisplay}{roomTypeLabel && roomTypeLabel !== roomDisplay ? ` — ${roomTypeLabel}` : ''}
@@ -1388,7 +1633,97 @@ function OccupiedRoomPanel({ isOpen, roomOverlay, roomData, onClose, onCompleteC
             </div>
           </div>
           <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
-            {!isCheckoutMode ? (
+            {isTransferMode ? (
+              <section className="rounded-lg border border-cyan-400/30 bg-slate-800/70 p-4 space-y-3">
+                <p className="text-xl font-semibold text-white">Transfer Active Stay</p>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <p className="text-slate-400">Guest</p><p className="text-right text-white">{guestName}</p>
+                  <p className="text-slate-400">From Room</p><p className="text-right text-white">{roomDisplay}</p>
+                  <p className="text-slate-400">Checkout date</p><p className="text-right text-white">{formatDateDisplay(checkOutDate)}</p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <select
+                    className="w-full rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-white"
+                    value={transferRoomTypeFilter}
+                    onChange={(e) => setTransferRoomTypeFilter(e.target.value)}
+                  >
+                    <option value="all">All room types</option>
+                    {[...new Set((transferCandidates || []).map((r) => String(r.room_type || '').toLowerCase()).filter(Boolean))]
+                      .map((type) => <option key={type} value={type}>{type}</option>)}
+                  </select>
+                  <select
+                    className="w-full rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-white"
+                    value={transferFloorFilter}
+                    onChange={(e) => setTransferFloorFilter(e.target.value)}
+                  >
+                    <option value="all">All floors/units</option>
+                    {[...new Set((transferCandidates || []).map((r) => String(r.unit || '').toLowerCase()).filter(Boolean))]
+                      .map((unit) => <option key={unit} value={unit}>{unit.toUpperCase()}</option>)}
+                  </select>
+                </div>
+                <select
+                  className="w-full rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-white"
+                  value={transferSelectedRoomId}
+                  onChange={(e) => setTransferSelectedRoomId(e.target.value)}
+                >
+                  <option value="">Select target room</option>
+                  {transferCandidateRooms.map((room) => (
+                    <option key={room.id} value={room.id}>
+                      {room.id} - {(room.status || 'available').toUpperCase()} - {(room.room_type || 'Room')}
+                    </option>
+                  ))}
+                </select>
+                <textarea
+                  className="w-full min-h-[90px] rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-white"
+                  placeholder="Transfer reason (guest request, maintenance issue, upgrade, etc.)"
+                  value={transferReason}
+                  onChange={(e) => setTransferReason(e.target.value)}
+                />
+                <label className="inline-flex items-center gap-2 text-sm text-slate-200">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 accent-amber-500"
+                    checked={transferApplyRateChange}
+                    onChange={(e) => setTransferApplyRateChange(e.target.checked)}
+                  />
+                  Apply rate change for destination room
+                </label>
+                {transferApplyRateChange && (
+                  <input
+                    className="w-full rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-white"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={transferNewRate}
+                    onChange={(e) => setTransferNewRate(e.target.value)}
+                    placeholder="New nightly rate"
+                  />
+                )}
+                <div className="rounded-md border border-white/10 bg-slate-900/50 p-3 text-sm">
+                  <p className="text-slate-300">Rate difference: <span className={`font-semibold ${transferRateDiff >= 0 ? 'text-amber-300' : 'text-emerald-300'}`}>{transferRateDiff >= 0 ? '+' : '-'}{formatCurrency(Math.abs(transferRateDiff))}/night</span></p>
+                  {transferTargetBlocked && !transferManagerOverride && (
+                    <p className="text-red-400 mt-1">Target room is blocked by status ({transferStatus}). Manager override required.</p>
+                  )}
+                </div>
+                <label className="inline-flex items-center gap-2 text-sm text-slate-200">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 accent-amber-500"
+                    checked={transferManagerOverride}
+                    onChange={(e) => setTransferManagerOverride(e.target.checked)}
+                  />
+                  Manager override
+                </label>
+                {transferManagerOverride && (
+                  <input
+                    className="w-full rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-white"
+                    placeholder="Approver name/ID"
+                    value={transferApprover}
+                    onChange={(e) => setTransferApprover(e.target.value)}
+                  />
+                )}
+              </section>
+            ) : !isCheckoutMode ? (
               <div className="rounded-lg border border-white/10 bg-slate-800/70 p-4 space-y-3">
                 <p className="text-2xl font-bold text-white">{guestName}</p>
                 <div className="grid grid-cols-2 gap-2 text-sm">
@@ -1419,7 +1754,7 @@ function OccupiedRoomPanel({ isOpen, roomOverlay, roomData, onClose, onCompleteC
                       <p className="col-span-5 text-right">Amount</p>
                     </div>
                     <div className="grid grid-cols-12 px-3 py-2 text-sm border-t border-white/10">
-                      <p className="col-span-7 text-white">Room charge ({nights} nights × {formatCurrency(ratePerNight)})</p>
+                      <p className="col-span-7 text-white">Room charge ({nights} nights × {formatCurrency(displayRatePerNight)})</p>
                       <p className="col-span-5 text-right text-white">{formatCurrency(roomChargeTotal)}</p>
                     </div>
                     <div className="grid grid-cols-12 px-3 py-2 text-sm border-t border-white/10">
@@ -1504,61 +1839,6 @@ function OccupiedRoomPanel({ isOpen, roomOverlay, roomData, onClose, onCompleteC
                   )}
                 </section>
 
-                <section className="rounded-lg border border-amber-400/25 bg-amber-900/10 p-4 space-y-3">
-                  <p className="text-xs font-semibold tracking-wide uppercase text-slate-400">Ledger Adjustments</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <input
-                      className="w-full rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-white"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      placeholder="Refund amount"
-                      value={refundAmount}
-                      onChange={(e) => setRefundAmount(e.target.value)}
-                    />
-                    <input
-                      className="w-full rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-white"
-                      placeholder="Refund note"
-                      value={refundNote}
-                      onChange={(e) => setRefundNote(e.target.value)}
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => addLedgerEntry('refund')}
-                    className="px-3 py-2 rounded-md bg-amber-700/80 hover:bg-amber-600 text-white text-sm font-semibold"
-                  >
-                    Add Refund Entry
-                  </button>
-                  <select
-                    className="w-full rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-white"
-                    value={voidTargetReference}
-                    onChange={(e) => setVoidTargetReference(e.target.value)}
-                  >
-                    <option value="">Select payment reference to void</option>
-                    {voidablePaymentEntries.map((entry, idx) => (
-                      <option key={`${entry.reference || idx}-${entry.timestamp || ''}`} value={entry.reference || ''}>
-                        {(entry.reference || 'NoRef')} - {formatCurrency(entry.amount)} - {entry.method || 'Unknown'}
-                      </option>
-                    ))}
-                  </select>
-                  <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2">
-                    <input
-                      className="w-full rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-white"
-                      placeholder="Void note"
-                      value={voidNote}
-                      onChange={(e) => setVoidNote(e.target.value)}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => addLedgerEntry('void')}
-                      className="px-3 py-2 rounded-md border border-amber-400/40 bg-slate-800 hover:bg-slate-700 text-amber-100 text-sm font-semibold"
-                    >
-                      Void Selected Payment
-                    </button>
-                  </div>
-                </section>
-
                 <section className="rounded-lg border border-white/10 bg-slate-800/70 p-4 space-y-3">
                   <p className="text-xs font-semibold tracking-wide uppercase text-slate-400">Final Payment</p>
                   <div>
@@ -1600,10 +1880,29 @@ function OccupiedRoomPanel({ isOpen, roomOverlay, roomData, onClose, onCompleteC
             {error && <p className="text-sm text-red-400">{error}</p>}
           </div>
           <div className="px-5 py-4 border-t border-white/10">
-            {!isCheckoutMode ? (
-              <button type="button" onClick={() => setIsCheckoutMode(true)} className="w-full px-4 py-3 rounded-md bg-amber-500/90 hover:bg-amber-400 text-slate-950 font-semibold">
-                Check Out
-              </button>
+            {isTransferMode ? (
+              <div className="flex gap-3">
+                <button type="button" onClick={() => setIsTransferMode(false)} className="flex-1 px-4 py-3 rounded-md border border-white/20 bg-slate-700 text-white font-semibold">
+                  Back
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsTransferConfirmOpen(true)}
+                  disabled={!canSubmitTransfer}
+                  className={`flex-1 px-4 py-3 rounded-md font-semibold ${canSubmitTransfer ? 'bg-cyan-600 hover:bg-cyan-500 text-white' : 'bg-slate-600 text-slate-300 cursor-not-allowed'}`}
+                >
+                  Confirm Move
+                </button>
+              </div>
+            ) : !isCheckoutMode ? (
+              <div className="grid grid-cols-2 gap-3">
+                <button type="button" onClick={() => setIsTransferMode(true)} className="px-4 py-3 rounded-md bg-cyan-700/85 hover:bg-cyan-600 text-white font-semibold">
+                  Move Guest
+                </button>
+                <button type="button" onClick={() => setIsCheckoutMode(true)} className="px-4 py-3 rounded-md bg-amber-500/90 hover:bg-amber-400 text-slate-950 font-semibold">
+                  Check Out
+                </button>
+              </div>
             ) : (
               <div className="flex gap-3">
                 <button type="button" onClick={() => setIsCheckoutMode(false)} className="flex-1 px-4 py-3 rounded-md border border-white/20 bg-slate-700 text-white font-semibold">
@@ -1622,6 +1921,32 @@ function OccupiedRoomPanel({ isOpen, roomOverlay, roomData, onClose, onCompleteC
           </div>
         </div>
       </aside>
+      <div className={`fixed inset-0 z-[70] flex items-center justify-center px-4 ${isTransferConfirmOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'} transition-opacity`}>
+        <div className="absolute inset-0 bg-slate-950/70" onClick={() => setIsTransferConfirmOpen(false)} />
+        <div className="relative w-full max-w-md rounded-xl border border-white/15 bg-slate-900 p-5 shadow-2xl space-y-3">
+          <p className="text-lg font-semibold text-white">Move Guest?</p>
+          <div className="text-sm space-y-1">
+            <p className="text-slate-200">Guest: <span className="text-white font-semibold">{guestName}</span></p>
+            <p className="text-slate-200">From: <span className="text-white font-semibold">Room {roomDisplay}</span></p>
+            <p className="text-slate-200">To: <span className="text-white font-semibold">Room {selectedTransferRoom?.id || '—'}</span></p>
+            <p className="text-slate-200">Rate difference: <span className={`font-semibold ${transferRateDiff >= 0 ? 'text-amber-300' : 'text-emerald-300'}`}>{transferRateDiff >= 0 ? '+' : '-'}{formatCurrency(Math.abs(transferRateDiff))}/night</span></p>
+            <p className="text-slate-200">Housekeeping status: <span className="text-white font-semibold">{String(selectedTransferRoom?.status || 'unknown').toUpperCase()}</span></p>
+          </div>
+          <div className="flex gap-3 pt-2">
+            <button type="button" onClick={() => setIsTransferConfirmOpen(false)} className="flex-1 px-4 py-2.5 rounded-md border border-white/20 bg-slate-700 text-white font-semibold">
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleTransferSubmit}
+              disabled={!canSubmitTransfer || isSaving}
+              className={`flex-1 px-4 py-2.5 rounded-md font-semibold ${canSubmitTransfer && !isSaving ? 'bg-cyan-600 hover:bg-cyan-500 text-white' : 'bg-slate-600 text-slate-300 cursor-not-allowed'}`}
+            >
+              {isSaving ? 'Moving...' : 'Proceed'}
+            </button>
+          </div>
+        </div>
+      </div>
     </>
   )
 }
@@ -2262,6 +2587,249 @@ function MotelRoomContextCard({ roomData, roomOverlays = [] }) {
   )
 }
 
+function RoomStatusTable({
+  roomOverlays = [],
+  roomStatusMap = {},
+  statusFilter = null,
+  isInfrastructureCheck = null,
+  onSelectRoom,
+}) {
+  const rows = useMemo(() => roomOverlays
+    .filter((overlay) => !(isInfrastructureCheck?.(overlay)))
+    .map((overlay) => {
+      const statusData = roomStatusMap[overlay.id] ?? roomStatusMap[canonicalRoomKey(overlay.id)] ?? {}
+      const status = normalizeRoomStatus(statusData.status || 'available')
+      return {
+        id: overlay.id,
+        roomDisplay: getRoomDisplayLabel(overlay.id, overlay),
+        unit: overlay.unit || '—',
+        type: formatRoomTypeLabel(overlay.type || overlay.label || statusData.room_type || 'Room'),
+        status,
+        guest: statusData.guestName || statusData.guest_name || '—',
+        checkIn: statusData.checkIn || statusData.check_in || null,
+        checkOut: statusData.checkOut || statusData.check_out || null,
+        balanceDue: Number(statusData.balanceDue || 0) || 0,
+      }
+    })
+    .filter((row) => !statusFilter || row.status === statusFilter),
+  [isInfrastructureCheck, roomOverlays, roomStatusMap, statusFilter])
+
+  return (
+    <div className="w-full h-full overflow-auto">
+      <table className="w-full text-sm">
+        <thead className="sticky top-0 z-10 bg-slate-900/95 border-b border-white/10">
+          <tr className="text-slate-300">
+            <th className="text-left px-3 py-2">Room</th>
+            <th className="text-left px-3 py-2">Status</th>
+            <th className="text-left px-3 py-2">Guest</th>
+            <th className="text-left px-3 py-2">Check-In</th>
+            <th className="text-left px-3 py-2">Check-Out</th>
+            <th className="text-left px-3 py-2">Balance</th>
+            <th className="text-left px-3 py-2">Type</th>
+            <th className="text-left px-3 py-2">Unit</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => {
+            const statusColor = MAP_STATUS_FILL_COLORS[row.status] || '#64748b'
+            const statusLabel = DISPLAY_STATUS_LABELS[row.status] || row.status
+            return (
+            <tr
+              key={row.id}
+              onClick={() => onSelectRoom?.(row.id)}
+              className="border-b border-white/5 hover:bg-slate-800/70 cursor-pointer"
+              style={{ backgroundColor: `${statusColor}14` }}
+            >
+              <td className="px-3 py-2 font-semibold text-white">
+                <span className="inline-flex items-center gap-2">
+                  <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ backgroundColor: statusColor }} />
+                  {row.roomDisplay}
+                </span>
+              </td>
+              <td className="px-3 py-2 text-slate-200">
+                <span
+                  className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold"
+                  style={{
+                    borderColor: `${statusColor}77`,
+                    backgroundColor: `${statusColor}22`,
+                    color: statusColor,
+                  }}
+                >
+                  {statusLabel}
+                </span>
+              </td>
+              <td className="px-3 py-2 text-slate-300">{row.guest}</td>
+              <td className="px-3 py-2 text-slate-400">{formatDateDisplay(row.checkIn)}</td>
+              <td className="px-3 py-2 text-slate-400">{formatDateDisplay(row.checkOut)}</td>
+              <td className="px-3 py-2 text-slate-200">{formatCurrency(row.balanceDue)}</td>
+              <td className="px-3 py-2 text-slate-400">{row.type}</td>
+              <td className="px-3 py-2 text-slate-400">{row.unit}</td>
+            </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function VisualizationStatisticsPanel({
+  roomOverlays = [],
+  roomStatusMap = {},
+  metrics = {},
+  isInfrastructureCheck = null,
+}) {
+  const isSameLocalDate = (value, now) => {
+    if (!value) return false
+    const text = String(value).trim()
+    let d = null
+    if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+      d = parseDateOnly(text)
+    } else {
+      d = new Date(value)
+      if (Number.isNaN(d.getTime())) return false
+    }
+    return d.getFullYear() === now.getFullYear()
+      && d.getMonth() === now.getMonth()
+      && d.getDate() === now.getDate()
+  }
+
+  const operationalRows = useMemo(() => roomOverlays
+    .filter((overlay) => !(isInfrastructureCheck?.(overlay)))
+    .map((overlay) => {
+      const statusData = roomStatusMap[overlay.id] ?? roomStatusMap[canonicalRoomKey(overlay.id)] ?? {}
+      const status = normalizeRoomStatus(statusData.status || 'available')
+      const payments = Array.isArray(statusData.payment_history) ? sumPaymentHistory(statusData.payment_history) : (Number(statusData.amountPaid) || 0)
+      return {
+        id: overlay.id,
+        unit: overlay.unit || 'Unassigned',
+        status,
+        checkIn: statusData.actual_check_in || statusData.checkIn || statusData.check_in || null,
+        checkOut: statusData.actual_check_out || statusData.checkOut || statusData.check_out || null,
+        revenue: Math.max(0, payments),
+        balanceDue: Math.max(0, Number(statusData.balanceDue) || 0),
+      }
+    }), [isInfrastructureCheck, roomOverlays, roomStatusMap])
+
+  const statusCounts = useMemo(() => {
+    const counts = {}
+    operationalRows.forEach((row) => {
+      counts[row.status] = (counts[row.status] || 0) + 1
+    })
+    return Object.entries(counts).sort((a, b) => b[1] - a[1])
+  }, [operationalRows])
+
+  const todaySnapshot = useMemo(() => {
+    const now = new Date()
+    const arrivals = operationalRows.filter((row) => isSameLocalDate(row.checkIn, now)).length
+    const departures = operationalRows.filter((row) => isSameLocalDate(row.checkOut, now)).length
+    const inHouse = operationalRows.filter((row) => ['occupied', 'checked_in'].includes(row.status)).length
+    const revenueToday = operationalRows.reduce((sum, row) => sum + row.revenue, 0)
+    const balanceDueTotal = operationalRows.reduce((sum, row) => sum + row.balanceDue, 0)
+    return { arrivals, departures, inHouse, revenueToday, balanceDueTotal }
+  }, [operationalRows])
+
+  const housekeepingByUnit = useMemo(() => {
+    const counts = {}
+    operationalRows
+      .filter((row) => ['dirty', 'maintenance', 'out_of_order'].includes(row.status))
+      .forEach((row) => {
+        counts[row.unit] = (counts[row.unit] || 0) + 1
+      })
+    return Object.entries(counts).sort((a, b) => b[1] - a[1])
+  }, [operationalRows])
+
+  const maxCount = statusCounts.reduce((m, [, count]) => Math.max(m, count), 1)
+  const maxHousekeepingCount = housekeepingByUnit.reduce((m, [, count]) => Math.max(m, count), 1)
+
+  return (
+    <div className="w-full h-full overflow-auto px-4 py-4 space-y-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-3">
+        <div className="rounded-xl border border-white/10 bg-slate-900/70 p-3">
+          <p className="text-xs uppercase tracking-wide text-slate-400">Occupancy</p>
+          <p className="text-2xl font-bold text-rose-300">{metrics.occupancyRatePct || 0}%</p>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-slate-900/70 p-3">
+          <p className="text-xs uppercase tracking-wide text-slate-400">Arrivals Today</p>
+          <p className="text-2xl font-bold text-cyan-300">{todaySnapshot.arrivals}</p>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-slate-900/70 p-3">
+          <p className="text-xs uppercase tracking-wide text-slate-400">Departures Today</p>
+          <p className="text-2xl font-bold text-indigo-300">{todaySnapshot.departures}</p>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-slate-900/70 p-3">
+          <p className="text-xs uppercase tracking-wide text-slate-400">In-House Guests</p>
+          <p className="text-2xl font-bold text-rose-300">{todaySnapshot.inHouse}</p>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-slate-900/70 p-3">
+          <p className="text-xs uppercase tracking-wide text-slate-400">Available</p>
+          <p className="text-2xl font-bold text-emerald-300">{metrics.available || 0}</p>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-slate-900/70 p-3">
+          <p className="text-xs uppercase tracking-wide text-slate-400">Dirty</p>
+          <p className="text-2xl font-bold text-amber-300">{metrics.dirty || 0}</p>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-slate-900/70 p-3">
+          <p className="text-xs uppercase tracking-wide text-slate-400">Maintenance</p>
+          <p className="text-2xl font-bold text-slate-300">{metrics.maintenance || 0}</p>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-slate-900/70 p-3">
+          <p className="text-xs uppercase tracking-wide text-slate-400">Revenue Snapshot</p>
+          <p className="text-2xl font-bold text-emerald-300">{formatCurrency(todaySnapshot.revenueToday)}</p>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-slate-900/70 p-3">
+          <p className="text-xs uppercase tracking-wide text-slate-400">Balance Due</p>
+          <p className="text-2xl font-bold text-amber-300">{formatCurrency(todaySnapshot.balanceDueTotal)}</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <div className="rounded-xl border border-white/10 bg-slate-900/70 p-4">
+          <p className="text-sm font-semibold text-white mb-3">Room Status Distribution</p>
+          <div className="space-y-2">
+            {statusCounts.map(([status, count]) => {
+              const color = MAP_STATUS_FILL_COLORS[status] || '#64748b'
+              const widthPct = Math.max(4, Math.round((count / maxCount) * 100))
+              return (
+                <div key={status} className="space-y-1">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-200">{DISPLAY_STATUS_LABELS[status] || status}</span>
+                    <span className="text-slate-400">{count}</span>
+                  </div>
+                  <div className="h-2.5 rounded bg-slate-800/90 overflow-hidden">
+                    <div className="h-full rounded" style={{ width: `${widthPct}%`, backgroundColor: color }} />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-slate-900/70 p-4">
+          <p className="text-sm font-semibold text-white mb-3">Housekeeping Workload by Unit</p>
+          <div className="space-y-2">
+            {housekeepingByUnit.length === 0 ? (
+              <p className="text-sm text-slate-400">No active dirty/maintenance workload.</p>
+            ) : housekeepingByUnit.map(([unit, count]) => {
+              const widthPct = Math.max(6, Math.round((count / maxHousekeepingCount) * 100))
+              return (
+                <div key={unit} className="space-y-1">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-200">{unit}</span>
+                    <span className="text-slate-400">{count} rooms</span>
+                  </div>
+                  <div className="h-2.5 rounded bg-slate-800/90 overflow-hidden">
+                    <div className="h-full rounded bg-amber-400" style={{ width: `${widthPct}%` }} />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function ContextRow({ label, value }) {
   return (
     <div className="flex items-start justify-between gap-4">
@@ -2359,6 +2927,7 @@ function MotelCommandCenter({
   const [isTimelinePlaying, setIsTimelinePlaying] = useState(false)
   const [dataSourceMode, setDataSourceMode] = useState('api')
   const [commandCenterMode, setCommandCenterMode] = useState(initialCommandCenterMode)
+  const [roomViewMode, setRoomViewMode] = useState('map')
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [liveTime, setLiveTime] = useState(() => new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false }))
   const [reservationPanelRoomId, setReservationPanelRoomId] = useState(null)
@@ -2665,6 +3234,22 @@ function MotelCommandCenter({
       null
     )
     : null
+  const transferCandidateRooms = useMemo(
+    () => roomOverlays
+      .filter((overlay) => !checkInfrastructureOverlay(overlay))
+      .map((overlay) => {
+        const statusData = roomStatusMap[overlay.id] ?? roomStatusMap[canonicalRoomKey(overlay.id)] ?? {}
+        return {
+          id: overlay.id,
+          unit: overlay.unit || null,
+          room_type: overlay.type || overlay.label || statusData.room_type || null,
+          status: normalizeRoomStatus(statusData.status || 'available'),
+          room_id: statusData.room_id || null,
+          rate_per_night: statusData.rate_per_night ?? statusData.ratePerNight ?? null,
+        }
+      }),
+    [checkInfrastructureOverlay, roomOverlays, roomStatusMap]
+  )
   const housekeepingRoomOverlay = useMemo(
     () => roomOverlays.find((room) => room.id === housekeepingPanelRoomId) || null,
     [roomOverlays, housekeepingPanelRoomId]
@@ -2732,7 +3317,23 @@ function MotelCommandCenter({
     const clickedRoom = roomStatusMap[roomId] ?? roomStatusMap[canonicalRoomKey(roomId)]
     const overlay = roomOverlays.find((r) => r.id === roomId)
     if (!clickedRoom || !overlay) return
-    if (checkInfrastructureOverlay(overlay)) return
+    const roomStatus = normalizeRoomStatus(clickedRoom.status || 'available')
+    const isGuestOperationalStatus = new Set([
+      'available',
+      'reserved',
+      'occupied',
+      'checked_in',
+      'dirty',
+      'maintenance',
+      'clean',
+      'inspected',
+      'hold',
+      'blocked',
+      'out_of_order',
+    ]).has(roomStatus)
+    // Some imported maps can mislabel guest rooms as infrastructure by text.
+    // If a room has an active operational status, allow normal panel routing.
+    if (checkInfrastructureOverlay(overlay) && !isGuestOperationalStatus) return
     if (clickedRoom.status === 'available') {
       setReservationPanelRoomId(roomId)
       setCheckInPanelRoomId(null)
@@ -2839,6 +3440,7 @@ function MotelCommandCenter({
       status: 'reserved',
       rate_per_night: Number(values.ratePerNight) || 0,
       source: values.source,
+      special_requests: String(values.specialRequests || '').trim() || null,
     }
 
     const { error: createReservationError } = await supabase
@@ -2870,6 +3472,13 @@ function MotelCommandCenter({
           roomSubtotal: values.roomSubtotal,
           totalAmount: values.totalAmount,
           balanceDue: values.balanceDue,
+          remarks: values.specialRequests ? [makeRemarkEvent({
+            reservationId: room.reservation_id || null,
+            guestId,
+            roomNumber: reservationPanelRoomId,
+            type: 'preference',
+            text: String(values.specialRequests || '').trim(),
+          })] : room.remarks,
         }
       }
       return room
@@ -2883,6 +3492,147 @@ function MotelCommandCenter({
       notify(`Reservation created for ${guestName}!`, 'success')
     }
   }, [notify, reservationPanelRoomId, reservationRoomOverlay])
+
+  const appendAuditLog = useCallback(async ({
+    action,
+    reservationId = null,
+    roomNumber = null,
+    oldValue = null,
+    newValue = null,
+    employee = 'Front Desk',
+  }) => {
+    const payload = {
+      action,
+      reservation_id: reservationId,
+      room_number: roomNumber,
+      old_value: oldValue,
+      new_value: newValue,
+      employee,
+      timestamp: new Date().toISOString(),
+    }
+    const { error } = await supabase.from('audit_log').insert(payload)
+    if (error && !isMissingRelationError(error) && !isRlsPolicyError(error)) {
+      console.warn('Audit log write failed:', error?.message || error)
+    }
+  }, [])
+
+  const handleCancelReservation = useCallback(async ({ roomId, reason, fee = 0 }) => {
+    const selectedRoom = roomStatusMap[roomId] ?? roomStatusMap[canonicalRoomKey(roomId)]
+    if (!selectedRoom?.reservation_id) throw new Error('No active reservation found for this room.')
+    if (!String(reason || '').trim()) throw new Error('Cancellation reason is required.')
+    const reservationId = selectedRoom.reservation_id
+    const nowIso = new Date().toISOString()
+    const { error: reservationError } = await supabase
+      .from('reservations')
+      .update({
+        status: 'cancelled',
+        cancellation_reason: String(reason).trim(),
+        cancellation_fee: Number(fee) || 0,
+        cancelled_at: nowIso,
+      })
+      .eq('id', reservationId)
+    if (reservationError) throw reservationError
+    if (selectedRoom.room_id) {
+      const { error: roomError } = await supabase.from('rooms').update({ status: 'available' }).eq('id', selectedRoom.room_id)
+      if (roomError) throw roomError
+    }
+    const cancellationPayload = {
+      reservation_id: reservationId,
+      room_number: roomId,
+      reason: String(reason).trim(),
+      cancellation_fee: Number(fee) || 0,
+      created_at: nowIso,
+    }
+    const cancellationWrite = await supabase.from('cancellation_log').insert(cancellationPayload)
+    if (cancellationWrite.error && !isMissingRelationError(cancellationWrite.error) && !isRlsPolicyError(cancellationWrite.error)) {
+      console.warn('Cancellation log write failed:', cancellationWrite.error?.message || cancellationWrite.error)
+    }
+    await appendAuditLog({
+      action: 'reservation_cancelled',
+      reservationId,
+      roomNumber: roomId,
+      oldValue: { status: selectedRoom.status || 'reserved' },
+      newValue: { status: 'cancelled', reason: String(reason).trim(), fee: Number(fee) || 0 },
+    })
+    setRoomData((prev) => prev.map((room) => {
+      if (room.room === roomId || room.roomNumber === roomId) {
+        return clearGuestContextForAvailableRoom({
+          ...room,
+          status: 'cancelled',
+          cancellation_reason: String(reason).trim(),
+          cancellation_fee: Number(fee) || 0,
+          cancellation_at: nowIso,
+        }, 'available')
+      }
+      return room
+    }))
+    setCheckInPanelRoomId(null)
+    notify(`Reservation for Room ${roomId} cancelled.`, 'info')
+  }, [appendAuditLog, notify, roomStatusMap])
+
+  const handleMarkNoShow = useCallback(async ({ roomId, reason }) => {
+    const selectedRoom = roomStatusMap[roomId] ?? roomStatusMap[canonicalRoomKey(roomId)]
+    if (!selectedRoom?.reservation_id) throw new Error('No reservation found for this room.')
+    const reservationId = selectedRoom.reservation_id
+    const nowIso = new Date().toISOString()
+    const { error: reservationError } = await supabase
+      .from('reservations')
+      .update({ status: 'no_show', no_show_reason: String(reason || '').trim() || null, no_show_at: nowIso })
+      .eq('id', reservationId)
+    if (reservationError) throw reservationError
+    if (selectedRoom.room_id) {
+      const { error: roomError } = await supabase.from('rooms').update({ status: 'available' }).eq('id', selectedRoom.room_id)
+      if (roomError) throw roomError
+    }
+    await appendAuditLog({
+      action: 'reservation_no_show',
+      reservationId,
+      roomNumber: roomId,
+      oldValue: { status: selectedRoom.status || 'reserved' },
+      newValue: { status: 'no_show', reason: String(reason || '').trim() || null },
+    })
+    setRoomData((prev) => prev.map((room) => {
+      if (room.room === roomId || room.roomNumber === roomId) {
+        return clearGuestContextForAvailableRoom({
+          ...room,
+          status: 'no_show',
+          no_show_reason: String(reason || '').trim() || null,
+          no_show_at: nowIso,
+        }, 'available')
+      }
+      return room
+    }))
+    setCheckInPanelRoomId(null)
+    notify(`Room ${roomId} marked no-show and released to inventory.`, 'warning')
+  }, [appendAuditLog, notify, roomStatusMap])
+
+  const handleAddRemark = useCallback(async ({ roomId, noteType, noteText }) => {
+    const selectedRoom = roomStatusMap[roomId] ?? roomStatusMap[canonicalRoomKey(roomId)]
+    const remark = makeRemarkEvent({
+      reservationId: selectedRoom?.reservation_id || null,
+      guestId: selectedRoom?.guest_id || null,
+      roomNumber: roomId,
+      type: noteType,
+      text: noteText,
+    })
+    const { error } = await supabase.from('remarks').insert(remark)
+    if (error && !isMissingRelationError(error) && !isRlsPolicyError(error)) throw error
+    await appendAuditLog({
+      action: 'remark_added',
+      reservationId: selectedRoom?.reservation_id || null,
+      roomNumber: roomId,
+      oldValue: null,
+      newValue: { note_type: noteType, note_text: noteText },
+    })
+    setRoomData((prev) => prev.map((room) => {
+      if (room.room === roomId || room.roomNumber === roomId) {
+        const nextRemarks = Array.isArray(room.remarks) ? [...room.remarks, remark] : [remark]
+        return { ...room, remarks: nextRemarks }
+      }
+      return room
+    }))
+    notify('Remark added to guest stay.', 'success')
+  }, [appendAuditLog, notify, roomStatusMap])
 
   const handleCompleteCheckIn = useCallback(async ({ balanceDue, paymentMethod, amountReceived }) => {
     if (!checkInPanelRoomId) throw new Error('No room selected.')
@@ -3062,6 +3812,154 @@ function MotelCommandCenter({
       notify(`✅ ${guestName} checked out from Room ${roomNumber}. Payment log was blocked by DB policy (RLS).`, 'warning')
     }
   }, [notify, occupiedPanelRoomId, occupiedRoomOverlay, roomStatusMap])
+
+  const handleTransferGuest = useCallback(async ({
+    fromRoomId,
+    toRoomId,
+    reason,
+    managerOverride,
+    approver,
+    applyRateChange,
+    newRatePerNight,
+  }) => {
+    const sourceRoom = roomStatusMap[fromRoomId] ?? roomStatusMap[canonicalRoomKey(fromRoomId)]
+    const targetRoom = roomStatusMap[toRoomId] ?? roomStatusMap[canonicalRoomKey(toRoomId)]
+    if (!sourceRoom?.room_id || !targetRoom?.room_id) {
+      throw new Error('Source or destination room is missing a room record id.')
+    }
+    const targetStatus = normalizeRoomStatus(targetRoom.status || 'available')
+    const blockedStatuses = new Set(['occupied', 'checked_in', 'maintenance', 'out_of_order', 'unavailable'])
+    if (blockedStatuses.has(targetStatus) && !managerOverride) {
+      throw new Error(`Room ${toRoomId} cannot be assigned while status is "${targetStatus}".`)
+    }
+    const reservationId = sourceRoom?.reservation_id
+    if (!reservationId) throw new Error('No active reservation found for transfer.')
+
+    const nowIso = new Date().toISOString()
+    const sourceRoomDbId = sourceRoom.room_id
+    const targetRoomDbId = targetRoom.room_id
+    const sourceRate = Number(sourceRoom.rate_per_night ?? sourceRoom.ratePerNight ?? 0) || 0
+    const effectiveRate = applyRateChange ? (Number(newRatePerNight) || 0) : sourceRate
+
+    const { error: reservationUpdateError } = await supabase
+      .from('reservations')
+      .update({
+        room_id: targetRoomDbId,
+        ...(applyRateChange ? { rate_per_night: effectiveRate } : {}),
+      })
+      .eq('id', reservationId)
+    if (reservationUpdateError) throw reservationUpdateError
+
+    const { error: targetUpdateError } = await supabase
+      .from('rooms')
+      .update({ status: 'occupied' })
+      .eq('id', targetRoomDbId)
+    if (targetUpdateError) {
+      await supabase.from('reservations').update({ room_id: sourceRoomDbId }).eq('id', reservationId)
+      throw targetUpdateError
+    }
+
+    const { error: sourceUpdateError } = await supabase
+      .from('rooms')
+      .update({ status: 'dirty' })
+      .eq('id', sourceRoomDbId)
+    if (sourceUpdateError) {
+      await supabase.from('rooms').update({ status: sourceRoom.status || 'occupied' }).eq('id', targetRoomDbId)
+      await supabase.from('reservations').update({ room_id: sourceRoomDbId }).eq('id', reservationId)
+      throw sourceUpdateError
+    }
+
+    const logPayload = {
+      reservation_id: reservationId,
+      guest_name: sourceRoom.guest_name || sourceRoom.guestName || null,
+      from_room: fromRoomId,
+      to_room: toRoomId,
+      reason: String(reason || '').trim() || 'Room transfer',
+      transferred_by: approver || 'Front Desk',
+      manager_override: !!managerOverride,
+      approved_by: approver || null,
+      old_rate_per_night: sourceRate,
+      new_rate_per_night: effectiveRate,
+      housekeeping_impact: 'source_room_dirty',
+      maintenance_impact: targetStatus === 'maintenance' ? 'override_to_occupied' : null,
+      created_at: nowIso,
+    }
+    const taskPayload = {
+      room_id: sourceRoomDbId,
+      reservation_id: reservationId,
+      status: 'dirty',
+      priority: 'high',
+      notes: `Room transfer from ${fromRoomId} to ${toRoomId}. ${String(reason || '').trim()}`,
+      created_at: nowIso,
+    }
+    const occupancyPayload = [
+      { room_id: sourceRoomDbId, reservation_id: reservationId, event_type: 'ROOM_STATUS_CHANGED', status: 'dirty', created_at: nowIso },
+      { room_id: targetRoomDbId, reservation_id: reservationId, event_type: 'ROOM_TRANSFER_COMPLETED', status: 'occupied', created_at: nowIso },
+    ]
+    const auditPayload = {
+      event_type: 'ROOM_TRANSFER_COMPLETED',
+      entity_type: 'reservation',
+      entity_id: reservationId,
+      payload: logPayload,
+      created_at: nowIso,
+    }
+
+    const optionalWrites = [
+      supabase.from('room_transfer_log').insert(logPayload),
+      supabase.from('housekeeping_tasks').insert(taskPayload),
+      supabase.from('occupancy_events').insert(occupancyPayload),
+      supabase.from('audit_log').insert(auditPayload),
+    ]
+    const optionalResults = await Promise.all(optionalWrites)
+    optionalResults.forEach((result) => {
+      if (result.error && !isMissingRelationError(result.error) && !isRlsPolicyError(result.error)) {
+        console.warn('Optional room-transfer write failed:', result.error?.message || result.error)
+      }
+    })
+
+    setRoomData((prev) => {
+      const source = prev.find((room) => room.room === fromRoomId || room.roomNumber === fromRoomId) || null
+      return prev.map((room) => {
+        if (room.room === fromRoomId || room.roomNumber === fromRoomId) {
+          return {
+            ...room,
+            status: 'dirty',
+            reservation_id: null,
+            room_transfer_out_at: nowIso,
+            room_transfer_reason: String(reason || '').trim(),
+          }
+        }
+        if (room.room === toRoomId || room.roomNumber === toRoomId) {
+          return {
+            ...room,
+            ...(source ? {
+              guestName: source.guestName ?? source.guest_name ?? room.guestName,
+              guest_name: source.guest_name ?? source.guestName ?? room.guest_name,
+              checkIn: source.checkIn ?? source.check_in ?? room.checkIn,
+              check_in: source.check_in ?? source.checkIn ?? room.check_in,
+              checkOut: source.checkOut ?? source.check_out ?? room.checkOut,
+              check_out: source.check_out ?? source.checkOut ?? room.check_out,
+              actual_check_in: source.actual_check_in ?? room.actual_check_in,
+              adults: source.adults ?? room.adults,
+              children: source.children ?? room.children,
+              payment_history: source.payment_history ?? room.payment_history,
+              reservation_id: source.reservation_id ?? room.reservation_id,
+              id_scan_url: source.id_scan_url ?? room.id_scan_url,
+              id_scan_name: source.id_scan_name ?? room.id_scan_name,
+            } : {}),
+            status: 'occupied',
+            room_transfer_in_at: nowIso,
+            room_transfer_reason: String(reason || '').trim(),
+            rate_per_night: effectiveRate,
+          }
+        }
+        return room
+      })
+    })
+
+    setOccupiedPanelRoomId(toRoomId)
+    notify(`Guest moved from Room ${fromRoomId} to Room ${toRoomId}. Housekeeping task created for Room ${fromRoomId}.`, 'success')
+  }, [notify, roomStatusMap])
 
   const handleAppendPaymentEntry = useCallback(async (roomId, entry) => {
     if (!roomId || !entry) return
@@ -3400,6 +4298,29 @@ function MotelCommandCenter({
         {!commandCenterMode && (
         <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-end gap-3">
+            <div className="inline-flex rounded-xl border border-white/15 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setRoomViewMode('map')}
+                className={`px-3 py-2 text-sm font-semibold ${roomViewMode === 'map' ? 'bg-teal-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+              >
+                Map View
+              </button>
+              <button
+                type="button"
+                onClick={() => setRoomViewMode('table')}
+                className={`px-3 py-2 text-sm font-semibold ${roomViewMode === 'table' ? 'bg-teal-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+              >
+                Table View
+              </button>
+              <button
+                type="button"
+                onClick={() => setRoomViewMode('stats')}
+                className={`px-3 py-2 text-sm font-semibold ${roomViewMode === 'stats' ? 'bg-teal-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+              >
+                Statistics
+              </button>
+            </div>
             <Link
               to="/floormap-ai"
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm font-semibold transition-colors"
@@ -3563,12 +4484,16 @@ function MotelCommandCenter({
             </div>
           )}
           <div
-            className="w-full flex-1 min-h-0 flex items-center justify-center"
-            style={{
-              transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})`,
-              transformOrigin: 'center center',
-              minHeight: commandCenterMode ? 520 : 620,
-            }}
+            className={`w-full flex-1 min-h-0 ${roomViewMode === 'map' ? 'flex items-center justify-center' : ''}`}
+            style={roomViewMode === 'map'
+              ? {
+                transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})`,
+                transformOrigin: 'center center',
+                minHeight: commandCenterMode ? 520 : 620,
+              }
+              : {
+                minHeight: commandCenterMode ? 520 : 620,
+              }}
           >
             {error ? (
               <div className="text-center py-16 text-red-400">
@@ -3577,6 +4502,25 @@ function MotelCommandCenter({
               </div>
             ) : loading && roomData.length === 0 ? (
               <div className="text-slate-400">Loading floor map…</div>
+            ) : roomViewMode === 'table' ? (
+              <div className="w-full h-full min-h-0">
+                <RoomStatusTable
+                  roomOverlays={roomOverlays}
+                  roomStatusMap={roomStatusMapWithTimeline}
+                  statusFilter={statusFilter}
+                  isInfrastructureCheck={checkInfrastructureOverlay}
+                  onSelectRoom={(roomId) => handleRoomClick(roomId)}
+                />
+              </div>
+            ) : roomViewMode === 'stats' ? (
+              <div className="w-full h-full min-h-0">
+                <VisualizationStatisticsPanel
+                  roomOverlays={roomOverlays}
+                  roomStatusMap={roomStatusMapWithTimeline}
+                  metrics={metrics}
+                  isInfrastructureCheck={checkInfrastructureOverlay}
+                />
+              </div>
             ) : (
               <div className="w-full h-full min-h-0 flex items-center justify-center">
                 <BlueprintImage
@@ -3599,7 +4543,7 @@ function MotelCommandCenter({
               </div>
             )}
           </div>
-          {!commandCenterMode && (
+          {!commandCenterMode && roomViewMode === 'map' && (
           <div className="absolute bottom-4 right-4 flex flex-col gap-1">
             <button type="button" onClick={() => setScale((s) => Math.min(3, s + 0.2))} className="w-10 h-10 rounded-lg bg-slate-800/90 border border-white/10 flex items-center justify-center text-lg hover:bg-slate-700">+</button>
             <button type="button" onClick={() => setScale((s) => Math.max(0.5, s - 0.2))} className="w-10 h-10 rounded-lg bg-slate-800/90 border border-white/10 flex items-center justify-center text-lg hover:bg-slate-700">−</button>
@@ -3608,7 +4552,7 @@ function MotelCommandCenter({
             </button>
           </div>
           )}
-          {hoveredRoomData && !commandCenterMode && (
+          {hoveredRoomData && !commandCenterMode && roomViewMode === 'map' && (
             <RoomTooltip
               roomData={hoveredRoomData}
               tooltipPos={tooltipPos}
@@ -3618,17 +4562,7 @@ function MotelCommandCenter({
           )}
         </div>
 
-        <div className={`flex flex-col gap-3 shrink-0 order-last ${commandCenterMode ? 'w-full lg:w-64 min-w-0' : 'w-full lg:w-80'}`}>
-          <MotelRoomContextCard roomData={hoveredRoomData} roomOverlays={roomOverlays} />
-          <SidePanelComponent
-            selectedTime={displayTime}
-            roomOverlays={roomOverlays}
-            roomStatusMap={roomStatusMapWithTimeline}
-            roomIdToUnit={roomIdToUnit}
-            highlightAlerts={commandCenterMode}
-            metrics={metrics}
-          />
-        </div>
+        {/* Right-side context/alerts panel intentionally hidden for now. */}
         </div>
 
         {!commandCenterMode && (
@@ -3650,6 +4584,9 @@ function MotelCommandCenter({
         roomData={checkInRoomData}
         onClose={() => setCheckInPanelRoomId(null)}
         onComplete={handleCompleteCheckIn}
+        onCancelReservation={handleCancelReservation}
+        onMarkNoShow={handleMarkNoShow}
+        onAddRemark={handleAddRemark}
         hotelName={brandName}
       />
       <OccupiedRoomPanel
@@ -3659,6 +4596,8 @@ function MotelCommandCenter({
         onClose={() => setOccupiedPanelRoomId(null)}
         onCompleteCheckout={handleCompleteCheckout}
         onAppendPaymentEntry={handleAppendPaymentEntry}
+        onTransferGuest={handleTransferGuest}
+        transferCandidates={transferCandidateRooms}
       />
       <HousekeepingPanel
         isOpen={!!housekeepingPanelRoomId}
