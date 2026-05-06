@@ -226,6 +226,216 @@ function HospitalRoomContextCard({ roomData, patientFlow, unit }) {
   )
 }
 
+function HospitalRoomStatusTable({
+  roomOverlays,
+  roomStatusMap,
+  roomIdToUnit,
+  statusFilter,
+  unitFilters,
+  selectedRoomId,
+  onSelectRoom,
+}) {
+  const rows = useMemo(() => {
+    return (Array.isArray(roomOverlays) ? roomOverlays : [])
+      .filter((r) => r && typeof r.id === 'string')
+      .filter((r) => {
+        const isWaitingSlot = WAITING_ROOM_SLOTS.some((slot) => slot.id === r.id)
+        const isInfrastructure = !isWaitingSlot && (
+          INFRASTRUCTURE_ROOM_IDS.has(r.id) ||
+          NON_PATIENT_ROOM_TYPES.has(r.type) ||
+          isInfrastructureByLabel(r.label)
+        )
+        return !isInfrastructure
+      })
+      .map((r) => {
+        const roomData = roomStatusMap[r.id] ?? { room: r.id, status: 'available' }
+        const status = roomData.status || 'available'
+        const flowStatus = normalizeFlowStatus(roomData.flow_status)
+        const mappedDelayReason = mapFlowStatusToDelayReason(flowStatus)
+        const predMins = roomData.predictedInMinutes ?? roomData.predicted_in_minutes
+        const unit = roomIdToUnit.get(r.id) || r.unit || '—'
+        const { level: pressureLevel, losLabel } = getRoomPressureLevel(roomData)
+        const waitingProvider = unit === 'ER' && status === 'occupied' && (
+          roomData.waiting_for_provider === true || String(roomData.flow_status || '').toLowerCase().includes('waiting provider')
+        )
+        return {
+          id: r.id,
+          unit,
+          status,
+          patient: roomData.patient_name || '—',
+          doctor: roomData.doctor || '—',
+          flowStatus: roomData.flow_status || '—',
+          los: losLabel || '—',
+          predicted: predMins != null ? `~${formatPredictionMins(predMins)}` : '—',
+          pressure: PRESSURE_LABELS[pressureLevel] || 'Normal',
+          waitingProvider,
+          mappedDelayReason,
+          pressureLevel,
+        }
+      })
+      .filter((row) => {
+        const matchesUnit = unitFilters.size === 0 || unitFilters.has(row.unit)
+        if (!matchesUnit) return false
+        if (!statusFilter) return true
+        if (statusFilter === 'predicted') return row.predicted !== '—'
+        if (statusFilter === 'waitingProvider') return row.waitingProvider
+        if (statusFilter === 'highPressure') return row.pressureLevel === 'high'
+        if (statusFilter === 'critical') return row.pressureLevel === 'critical'
+        if (statusFilter === 'delayBoarding') return row.mappedDelayReason === 'boarding'
+        if (statusFilter === 'delayConsult') return row.mappedDelayReason === 'consult'
+        if (statusFilter === 'delayResults') return row.mappedDelayReason === 'results'
+        if (statusFilter === 'delayTransfer') return row.mappedDelayReason === 'transfer'
+        if (statusFilter === 'delayDisposition') return row.mappedDelayReason === 'disposition'
+        if (statusFilter === 'delayCleaning') return row.mappedDelayReason === 'cleaning'
+        if (statusFilter === 'delayOperationalHold') return row.mappedDelayReason === 'operationalHold'
+        return row.status === statusFilter
+      })
+  }, [roomIdToUnit, roomOverlays, roomStatusMap, statusFilter, unitFilters])
+
+  return (
+    <div className="w-full h-full min-h-[620px] overflow-auto rounded-xl border border-[#1e3a5f] bg-[#020817]">
+      <table className="w-full text-sm">
+        <thead className="sticky top-0 z-10 bg-[#0b1728] border-b border-[#1e3a5f]">
+          <tr className="text-[#8aa4c2]">
+            <th className="text-left px-3 py-2">Room</th>
+            <th className="text-left px-3 py-2">Status</th>
+            <th className="text-left px-3 py-2">Patient</th>
+            <th className="text-left px-3 py-2">Doctor</th>
+            <th className="text-left px-3 py-2">Flow</th>
+            <th className="text-left px-3 py-2">LOS</th>
+            <th className="text-left px-3 py-2">Predicted</th>
+            <th className="text-left px-3 py-2">Pressure</th>
+            <th className="text-left px-3 py-2">Unit</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => {
+            const color = STATUS_FILL_COLORS[row.status] || DEFAULT_ROOM_FILL
+            return (
+              <tr
+                key={row.id}
+                onClick={() => onSelectRoom?.(row.id)}
+                className={`border-b border-white/5 cursor-pointer hover:bg-slate-800/70 ${selectedRoomId === row.id ? 'ring-1 ring-cyan-300/50' : ''}`}
+                style={{ backgroundColor: `${color}18` }}
+              >
+                <td className="px-3 py-2 font-semibold text-white">
+                  <span className="inline-flex items-center gap-2">
+                    <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color }} />
+                    {row.id}
+                  </span>
+                </td>
+                <td className="px-3 py-2">
+                  <span
+                    className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold"
+                    style={{ borderColor: `${color}77`, backgroundColor: `${color}22`, color }}
+                  >
+                    {STATUS_LABELS[row.status] || row.status}
+                  </span>
+                </td>
+                <td className="px-3 py-2 text-slate-200">{row.patient}</td>
+                <td className="px-3 py-2 text-slate-300">{row.doctor}</td>
+                <td className="px-3 py-2 text-slate-300">{row.flowStatus}</td>
+                <td className="px-3 py-2 text-cyan-300">{row.los}</td>
+                <td className="px-3 py-2 text-slate-300">{row.predicted}</td>
+                <td className="px-3 py-2 text-slate-300">{row.pressure}</td>
+                <td className="px-3 py-2 text-slate-400">{row.unit}</td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function HospitalStatisticsPanel({ roomOverlays, roomStatusMap, roomIdToUnit, metrics }) {
+  const statusCounts = useMemo(() => {
+    const counts = {}
+    ;(Array.isArray(roomOverlays) ? roomOverlays : [])
+      .filter((r) => r && typeof r.id === 'string')
+      .forEach((r) => {
+      const isWaitingSlot = WAITING_ROOM_SLOTS.some((slot) => slot.id === r.id)
+      const isInfrastructure = !isWaitingSlot && (
+        INFRASTRUCTURE_ROOM_IDS.has(r.id) ||
+        NON_PATIENT_ROOM_TYPES.has(r.type) ||
+        isInfrastructureByLabel(r.label)
+      )
+      if (isInfrastructure) return
+      const status = roomStatusMap[r.id]?.status || 'available'
+      counts[status] = (counts[status] || 0) + 1
+    })
+    return Object.entries(counts).sort((a, b) => b[1] - a[1])
+  }, [roomOverlays, roomStatusMap])
+
+  const unitWorkload = useMemo(() => {
+    const counts = {}
+    ;(Array.isArray(roomOverlays) ? roomOverlays : [])
+      .filter((r) => r && typeof r.id === 'string')
+      .forEach((r) => {
+      const status = roomStatusMap[r.id]?.status || 'available'
+      const unit = roomIdToUnit.get(r.id) || r.unit || 'Other'
+      counts[unit] = counts[unit] || { total: 0, occupied: 0, cleaning: 0, reserved: 0 }
+      counts[unit].total += 1
+      if (status === 'occupied') counts[unit].occupied += 1
+      if (status === 'cleaning') counts[unit].cleaning += 1
+      if (status === 'reserved') counts[unit].reserved += 1
+    })
+    return Object.entries(counts).sort((a, b) => b[1].occupied - a[1].occupied)
+  }, [roomIdToUnit, roomOverlays, roomStatusMap])
+
+  const maxStatusCount = statusCounts.reduce((m, [, c]) => Math.max(m, c), 1)
+
+  return (
+    <div className="w-full h-full min-h-[620px] overflow-auto p-3 space-y-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <MetricCard label="Occupancy" value={`${metrics.occupancyRatePct ?? 0}%`} color="text-rose-300" />
+        <MetricCard label="Available" value={metrics.available ?? 0} color="text-emerald-300" />
+        <MetricCard label="Occupied" value={metrics.occupied ?? 0} color="text-rose-300" />
+        <MetricCard label="Cleaning" value={metrics.cleaning ?? 0} color="text-amber-300" />
+        <MetricCard label="Reserved" value={metrics.reserved ?? 0} color="text-sky-300" />
+        <MetricCard label="Avg LOS" value={metrics.avgLOSLabel ?? '0h 00m'} color="text-violet-300" />
+        <MetricCard label="High Pressure" value={metrics.highPressureCount ?? 0} color="text-orange-300" />
+        <MetricCard label="Waiting Provider" value={metrics.waitingForProvider ?? 0} color="text-yellow-300" />
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <div className="rounded-xl border border-[#1e3a5f] bg-[#0b1728] p-4 space-y-3">
+          <h3 className="text-sm font-semibold text-white">Room Status Distribution</h3>
+          {statusCounts.map(([status, count]) => {
+            const widthPct = Math.max(4, Math.round((count / maxStatusCount) * 100))
+            const color = STATUS_FILL_COLORS[status] || DEFAULT_ROOM_FILL
+            return (
+              <div key={status} className="space-y-1">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-slate-200">{STATUS_LABELS[status] || status}</span>
+                  <span className="text-slate-400">{count}</span>
+                </div>
+                <div className="h-2.5 rounded bg-[#07111f] overflow-hidden">
+                  <div className="h-full rounded" style={{ width: `${widthPct}%`, backgroundColor: color }} />
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        <div className="rounded-xl border border-[#1e3a5f] bg-[#0b1728] p-4 space-y-2">
+          <h3 className="text-sm font-semibold text-white">Unit Workload</h3>
+          {unitWorkload.map(([unit, counts]) => (
+            <div key={unit} className="flex items-center justify-between text-xs border-b border-white/5 py-1.5">
+              <span className="text-slate-300">{unit}</span>
+              <span className="text-slate-400">
+                {counts.occupied}/{counts.total} occupied
+                {counts.cleaning ? ` · ${counts.cleaning} cleaning` : ''}
+                {counts.reserved ? ` · ${counts.reserved} reserved` : ''}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function ContextRow({ label, value }) {
   return (
     <div className="flex items-start justify-between gap-4">
@@ -735,6 +945,7 @@ function HospitalBedCommandCenter() {
   const [activePatientTransitions, setActivePatientTransitions] = useState([])
   const [erOccupancyPrediction, setErOccupancyPrediction] = useState(null)
   const [commandCenterMode, setCommandCenterMode] = useState(false)
+  const [roomViewMode, setRoomViewMode] = useState('map')
   // Scenario Demo Mode state
   const [currentScenarioId, setCurrentScenarioId] = useState(null)
   const [scenarioState, setScenarioState] = useState(null)
@@ -1674,6 +1885,29 @@ function HospitalBedCommandCenter() {
         {!commandCenterMode && (
         <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-end gap-3">
+            <div className="inline-flex rounded-xl border border-white/15 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setRoomViewMode('map')}
+                className={`px-3 py-2 text-sm font-semibold ${roomViewMode === 'map' ? 'bg-teal-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+              >
+                Map View
+              </button>
+              <button
+                type="button"
+                onClick={() => setRoomViewMode('table')}
+                className={`px-3 py-2 text-sm font-semibold ${roomViewMode === 'table' ? 'bg-teal-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+              >
+                Table View
+              </button>
+              <button
+                type="button"
+                onClick={() => setRoomViewMode('stats')}
+                className={`px-3 py-2 text-sm font-semibold ${roomViewMode === 'stats' ? 'bg-teal-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+              >
+                Statistics
+              </button>
+            </div>
             <Link
               to="/floormap-ai"
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm font-semibold transition-colors"
@@ -1986,6 +2220,7 @@ function HospitalBedCommandCenter() {
         )}
 
         {/* Main content: Map + Side Panel - centered block in Command Center Mode for wide displays */}
+        {roomViewMode === 'map' ? (
         <div className={`flex flex-col flex-1 min-h-0 w-full ${commandCenterMode ? 'lg:flex-row gap-3 lg:gap-4 lg:max-w-[1920px] lg:mx-auto lg:self-center' : 'lg:flex-row gap-4'}`}>
         {/* Blueprint image with Zoom/Pan */}
         <div
@@ -2091,7 +2326,6 @@ function HospitalBedCommandCenter() {
             />
           )}
         </div>
-
         {/* Side Panel: Scenario Controls + Patient Flow + Alerts */}
         <div className={`flex flex-col gap-3 shrink-0 order-last ${commandCenterMode ? 'w-full lg:w-64 min-w-0' : 'w-full lg:w-80'}`}>
           <HospitalRoomContextCard
@@ -2152,6 +2386,28 @@ function HospitalBedCommandCenter() {
           {!commandCenterMode && <PatientFlowPanel selectedRoomId={selectedRoom} selectedTime={displayTime} />}
         </div>
         </div>
+        ) : roomViewMode === 'table' ? (
+          <div className="rounded-2xl border border-[#1e3a5f] bg-[#07111f] p-3 min-h-[60vh]">
+            <HospitalRoomStatusTable
+              roomOverlays={roomOverlays}
+              roomStatusMap={roomStatusMapWithTimeline}
+              roomIdToUnit={roomIdToUnit}
+              statusFilter={statusFilter}
+              unitFilters={unitFilters}
+              selectedRoomId={selectedRoom}
+              onSelectRoom={setSelectedRoom}
+            />
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-[#1e3a5f] bg-[#07111f] p-3 min-h-[60vh]">
+            <HospitalStatisticsPanel
+              roomOverlays={roomOverlays}
+              roomStatusMap={roomStatusMapWithTimeline}
+              roomIdToUnit={roomIdToUnit}
+              metrics={displayMetrics}
+            />
+          </div>
+        )}
 
         {/* Timeline Playback */}
         <div className={`shrink-0 ${commandCenterMode ? 'py-1' : 'space-y-2'}`}>
