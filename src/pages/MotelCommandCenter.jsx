@@ -743,7 +743,6 @@ function NewReservationPanel({ isOpen, roomOverlay, roomData, onClose, onSave })
                     className={inputClass}
                     type="text"
                     inputMode="numeric"
-                    pattern="[0-9]*"
                     value={formValues.ratePerNight}
                     onFocus={(e) => e.target.select()}
                     onClick={(e) => e.target.select()}
