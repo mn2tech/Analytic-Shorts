@@ -440,12 +440,17 @@ function appendPaymentEvent(existing, nextEvent) {
   return [...list, nextEvent]
 }
 
+function sumPaymentHistory(history) {
+  const list = Array.isArray(history) ? history : []
+  return list.reduce((sum, entry) => sum + (Number(entry?.amount) || 0), 0)
+}
+
 function createPaymentReference(prefix = 'PMT') {
   const rand = Math.floor(Math.random() * 100000).toString().padStart(5, '0')
   return `${prefix}-${Date.now().toString().slice(-6)}-${rand}`
 }
 
-function makePaymentEvent({ amount, method, timestamp, stage, kind = 'payment', note = '' }) {
+function makePaymentEvent({ amount, method, timestamp, stage, kind = 'payment', note = '', targetReference = null }) {
   const reference = createPaymentReference(kind === 'refund' ? 'RFD' : kind === 'void' ? 'VOID' : 'PMT')
   return {
     id: reference,
@@ -456,7 +461,46 @@ function makePaymentEvent({ amount, method, timestamp, stage, kind = 'payment', 
     stage: stage || 'front_desk',
     kind,
     note: String(note || '').trim() || null,
+    target_reference: targetReference || null,
   }
+}
+
+function mapPaymentsToLedgerHistory(payments) {
+  const list = Array.isArray(payments) ? payments : []
+  return list.map((payment, idx) => {
+    const amount = Number(payment?.amount) || 0
+    const kind = amount < 0 ? 'refund' : 'payment'
+    const ts = payment?.created_at || new Date().toISOString()
+    const ref = `DB-${String(new Date(ts).getTime() || Date.now())}-${idx + 1}`
+    return {
+      id: ref,
+      reference: ref,
+      amount,
+      method: payment?.payment_method || 'Unknown',
+      timestamp: ts,
+      stage: 'db_sync',
+      kind,
+      note: null,
+      target_reference: null,
+    }
+  })
+}
+
+function getVoidedReferences(history) {
+  const list = Array.isArray(history) ? history : []
+  const refs = new Set()
+  list.forEach((entry) => {
+    if ((entry?.kind || '').toLowerCase() !== 'void') return
+    const explicit = String(entry?.target_reference || '').trim()
+    if (explicit) {
+      refs.add(explicit)
+      return
+    }
+    const note = String(entry?.note || '')
+    const match = note.match(/void reference\s+([A-Z]+-\d+-\d+)/i)
+    if (match?.[1]) refs.add(match[1])
+  })
+  return refs
 }
 
 function NewReservationPanel({ isOpen, roomOverlay, roomData, onClose, onSave }) {
@@ -546,6 +590,16 @@ function NewReservationPanel({ isOpen, roomOverlay, roomData, onClose, onSave })
       return next
     })
     setErrors((prev) => ({ ...prev, [field]: undefined, form: undefined }))
+  }
+
+  const handleRatePerNightChange = (rawValue) => {
+    const value = String(rawValue ?? '').trim()
+    // Fast-entry behavior: typing a single digit like "4" becomes "0.4".
+    if (/^\d$/.test(value)) {
+      updateValue('ratePerNight', `0.${value}`)
+      return
+    }
+    updateValue('ratePerNight', value)
   }
 
   const validate = () => {
@@ -692,7 +746,7 @@ function NewReservationPanel({ isOpen, roomOverlay, roomData, onClose, onSave })
                     value={formValues.ratePerNight}
                     onFocus={(e) => e.target.select()}
                     onClick={(e) => e.target.select()}
-                    onChange={(e) => updateValue('ratePerNight', e.target.value)}
+                    onChange={(e) => handleRatePerNightChange(e.target.value)}
                   />
                   {errors.ratePerNight && <p className="mt-1 text-xs text-red-400">{errors.ratePerNight}</p>}
                 </div>
@@ -808,6 +862,13 @@ function ReservedCheckInPanel({ isOpen, roomOverlay, roomData, onClose, onComple
 
   useEffect(() => {
     if (!isOpen) return
+    const seededBalance = Math.max(
+      0,
+      Number(
+        roomData?.balanceDue ??
+        ((Number(roomData?.totalAmount) || 0) - (Number(roomData?.amountPaid ?? roomData?.depositCollected) || 0))
+      ) || 0
+    )
     setChecklist({
       idVerified: false,
       paymentVerified: false,
@@ -815,10 +876,10 @@ function ReservedCheckInPanel({ isOpen, roomOverlay, roomData, onClose, onComple
       requestsShared: false,
     })
     setPaymentMethod('Cash')
-    setAmountReceived('')
+    setAmountReceived(seededBalance > 0 ? seededBalance.toFixed(2) : '')
     setError('')
     setIsSaving(false)
-  }, [isOpen, roomOverlay?.id])
+  }, [isOpen, roomData?.amountPaid, roomData?.balanceDue, roomData?.depositCollected, roomData?.totalAmount, roomOverlay?.id])
 
   const roomTypeLabel = roomOverlay?.label || roomOverlay?.type || roomData?.room_type || 'Room'
   const roomDisplay = roomOverlay ? getRoomDisplayLabel(roomOverlay.id, roomOverlay) : roomData?.room || '—'
@@ -1105,6 +1166,7 @@ function OccupiedRoomPanel({ isOpen, roomOverlay, roomData, onClose, onCompleteC
   const [waiveBalance, setWaiveBalance] = useState(false)
   const [refundAmount, setRefundAmount] = useState('')
   const [refundNote, setRefundNote] = useState('')
+  const [voidTargetReference, setVoidTargetReference] = useState('')
   const [voidNote, setVoidNote] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState('')
@@ -1120,7 +1182,12 @@ function OccupiedRoomPanel({ isOpen, roomOverlay, roomData, onClose, onCompleteC
   const computedRoomChargeTotal = nights * ratePerNight
   const roomChargeTotal = Number.isNaN(roomChargeSubtotalFromState) ? computedRoomChargeTotal : roomChargeSubtotalFromState
   const taxBreakdown = calculateInnsoftTaxBreakdown(roomChargeTotal, nights)
-  const depositsPaid = Number(roomData?.amountPaid ?? roomData?.depositCollected ?? 0) || 0
+  const paymentHistory = Array.isArray(roomData?.payment_history) ? roomData.payment_history : []
+  const ledgerNetPaid = sumPaymentHistory(paymentHistory)
+  const hasPaymentHistory = paymentHistory.length > 0
+  const depositsPaid = hasPaymentHistory
+    ? ledgerNetPaid
+    : Number(roomData?.amountPaid ?? roomData?.depositCollected ?? 0) || 0
   const extraChargesTotal = extraCharges.reduce((sum, charge) => sum + (Number(charge.amount) || 0), 0)
   const totalCharges = roomChargeTotal + taxBreakdown.taxTotal + extraChargesTotal
   const balanceBeforePayment = Math.max(0, totalCharges - depositsPaid)
@@ -1133,21 +1200,27 @@ function OccupiedRoomPanel({ isOpen, roomOverlay, roomData, onClose, onCompleteC
   const remainingBalance = remainingBalanceCents / 100
   const changeDue = paymentMethod === 'Cash' ? Math.max(0, amountReceivedNumber - balanceBeforePayment) : 0
   const canCompleteCheckout = !isSaving && (remainingBalanceCents === 0 || waiveBalance)
-  const paymentHistory = Array.isArray(roomData?.payment_history) ? roomData.payment_history : []
+  const voidedReferences = getVoidedReferences(paymentHistory)
+  const voidablePaymentEntries = paymentHistory.filter((entry) => {
+    const amount = Number(entry?.amount) || 0
+    const reference = String(entry?.reference || '').trim()
+    return (entry?.kind || 'payment') === 'payment' && amount > 0 && reference && !voidedReferences.has(reference)
+  })
 
   useEffect(() => {
     if (!isOpen) return
     setIsCheckoutMode(false)
     setExtraCharges([])
     setPaymentMethod('Cash')
-    setAmountReceived('')
+    setAmountReceived(balanceBeforePayment > 0 ? balanceBeforePayment.toFixed(2) : '')
     setWaiveBalance(false)
     setRefundAmount('')
     setRefundNote('')
+    setVoidTargetReference('')
     setVoidNote('')
     setIsSaving(false)
     setError('')
-  }, [isOpen, roomOverlay?.id])
+  }, [balanceBeforePayment, isOpen, roomOverlay?.id])
 
   const chargeOptions = ['Parking', 'Room Service', 'Minibar', 'Laundry', 'Pet Fee', 'Damages', 'Other']
   const addCharge = () => {
@@ -1175,6 +1248,10 @@ function OccupiedRoomPanel({ isOpen, roomOverlay, roomData, onClose, onCompleteC
         setError('Refund amount must be greater than zero.')
         return
       }
+      if (amt > Math.max(0, depositsPaid)) {
+        setError(`Refund cannot exceed collected amount (${formatCurrency(Math.max(0, depositsPaid))}).`)
+        return
+      }
       await onAppendPaymentEntry(roomOverlay.id, makePaymentEvent({
         amount: -Math.abs(amt),
         method: paymentMethod,
@@ -1189,14 +1266,25 @@ function OccupiedRoomPanel({ isOpen, roomOverlay, roomData, onClose, onCompleteC
       return
     }
 
+    const target = voidablePaymentEntries.find((entry) => entry.reference === voidTargetReference)
+    if (!target) {
+      setError('Select a payment reference to void.')
+      return
+    }
+    if (voidedReferences.has(target.reference)) {
+      setError('That payment reference has already been voided.')
+      return
+    }
     await onAppendPaymentEntry(roomOverlay.id, makePaymentEvent({
-      amount: 0,
-      method: paymentMethod,
+      amount: -(Math.abs(Number(target.amount) || 0)),
+      method: target.method || paymentMethod,
       timestamp: new Date().toISOString(),
       stage: 'checkout_adjustment',
       kind: 'void',
-      note: voidNote || 'Voided entry',
+      note: voidNote || `Void reference ${target.reference || 'unknown'}`,
+      targetReference: target.reference || null,
     }))
+    setVoidTargetReference('')
     setVoidNote('')
     setError('')
   }
@@ -1441,6 +1529,18 @@ function OccupiedRoomPanel({ isOpen, roomOverlay, roomData, onClose, onCompleteC
                   >
                     Add Refund Entry
                   </button>
+                  <select
+                    className="w-full rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-white"
+                    value={voidTargetReference}
+                    onChange={(e) => setVoidTargetReference(e.target.value)}
+                  >
+                    <option value="">Select payment reference to void</option>
+                    {voidablePaymentEntries.map((entry, idx) => (
+                      <option key={`${entry.reference || idx}-${entry.timestamp || ''}`} value={entry.reference || ''}>
+                        {(entry.reference || 'NoRef')} - {formatCurrency(entry.amount)} - {entry.method || 'Unknown'}
+                      </option>
+                    ))}
+                  </select>
                   <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2">
                     <input
                       className="w-full rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-white"
@@ -1453,7 +1553,7 @@ function OccupiedRoomPanel({ isOpen, roomOverlay, roomData, onClose, onCompleteC
                       onClick={() => addLedgerEntry('void')}
                       className="px-3 py-2 rounded-md border border-amber-400/40 bg-slate-800 hover:bg-slate-700 text-amber-100 text-sm font-semibold"
                     >
-                      Add Void Note
+                      Void Selected Payment
                     </button>
                   </div>
                 </section>
@@ -2418,7 +2518,9 @@ function MotelCommandCenter({
             rate_per_night,
             source,
             payments (
-              amount
+              amount,
+              payment_method,
+              created_at
             ),
             guests (
               first_name,
@@ -2443,6 +2545,7 @@ function MotelCommandCenter({
           : null
         const payments = Array.isArray(activeReservation?.payments) ? activeReservation.payments : []
         const amountPaid = payments.reduce((sum, payment) => sum + (Number(payment?.amount) || 0), 0)
+        const paymentHistory = mapPaymentsToLedgerHistory(payments)
         const roomNumber = String(room.room_number || '')
         const overlayRoomId = resolveOverlayRoomId(roomNumber)
         const derivedStatus = normalizeRoomStatus(room.status || activeReservation?.status || 'available')
@@ -2474,6 +2577,7 @@ function MotelCommandCenter({
           roomSubtotal,
           totalAmount,
           amountPaid,
+          payment_history: paymentHistory,
           balanceDue: Math.max(0, totalAmount - amountPaid),
           updatedAt: new Date().toISOString(),
         }
@@ -2960,6 +3064,22 @@ function MotelCommandCenter({
 
   const handleAppendPaymentEntry = useCallback(async (roomId, entry) => {
     if (!roomId || !entry) return
+    const selectedRoom = roomStatusMap[roomId] ?? roomStatusMap[canonicalRoomKey(roomId)]
+    if (!selectedRoom?.reservation_id) {
+      throw new Error('No active reservation found for this room.')
+    }
+    const { error: paymentError } = await supabase
+      .from('payments')
+      .insert({
+        reservation_id: selectedRoom.reservation_id,
+        amount: Number(entry.amount) || 0,
+        payment_method: entry.method || 'Unknown',
+        created_at: entry.timestamp || new Date().toISOString(),
+      })
+    if (paymentError && !isRlsPolicyError(paymentError)) {
+      throw paymentError
+    }
+
     setRoomData((prev) => prev.map((room) => {
       if (room.room === roomId || room.roomNumber === roomId) {
         return {
@@ -2969,7 +3089,10 @@ function MotelCommandCenter({
       }
       return room
     }))
-  }, [])
+    if (paymentError && isRlsPolicyError(paymentError)) {
+      notify('Ledger saved locally, but payment insert was blocked by DB policy (RLS).', 'warning')
+    }
+  }, [notify, roomStatusMap])
 
   const handleMarkCleaningInProgress = useCallback(async ({ assignedTo, notes, startedAt }) => {
     if (!housekeepingPanelRoomId) throw new Error('No room selected.')
