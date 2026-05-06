@@ -43,6 +43,29 @@ const STATUS_LABELS = {
   dirty: 'Dirty',
 }
 
+const TABLE_STATUS_STYLES = {
+  available: {
+    row: 'bg-emerald-500/10',
+    badge: 'border-emerald-300/50 bg-emerald-400/20 text-emerald-200',
+    dot: 'bg-emerald-400',
+  },
+  occupied: {
+    row: 'bg-rose-500/10',
+    badge: 'border-rose-300/50 bg-rose-400/20 text-rose-200',
+    dot: 'bg-rose-400',
+  },
+  reserved: {
+    row: 'bg-sky-500/10',
+    badge: 'border-sky-300/50 bg-sky-400/20 text-sky-200',
+    dot: 'bg-sky-400',
+  },
+  dirty: {
+    row: 'bg-amber-500/10',
+    badge: 'border-amber-300/50 bg-amber-400/20 text-amber-200',
+    dot: 'bg-amber-300',
+  },
+}
+
 const STATUS_SEQUENCE = ['available', 'occupied', 'reserved', 'dirty']
 
 const SYNTHETIC_OCCUPIED_ROOM_IDS = new Set([
@@ -125,6 +148,7 @@ export default function MedStarMontgomeryERCommandCenter() {
   const [hoveredRoom, setHoveredRoom] = useState(null)
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 })
   const [statusFilter, setStatusFilter] = useState(null)
+  const [roomViewMode, setRoomViewMode] = useState('map')
   const [mapScale, setMapScale] = useState(1)
   const [roomStatuses, setRoomStatuses] = useState(() => buildSyntheticRoomStatuses(MEDSTAR_MONTGOMERY_ER_LAYOUT.rooms))
 
@@ -372,6 +396,29 @@ export default function MedStarMontgomeryERCommandCenter() {
 
       <div className="mx-auto max-w-[1900px] px-3 py-4 sm:px-4 space-y-4">
         <div className="flex flex-wrap items-center justify-end gap-3">
+            <div className="inline-flex rounded-xl border border-white/15 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setRoomViewMode('map')}
+                className={`px-3 py-2 text-sm font-semibold ${roomViewMode === 'map' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+              >
+                Map View
+              </button>
+              <button
+                type="button"
+                onClick={() => setRoomViewMode('table')}
+                className={`px-3 py-2 text-sm font-semibold ${roomViewMode === 'table' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+              >
+                Table View
+              </button>
+              <button
+                type="button"
+                onClick={() => setRoomViewMode('stats')}
+                className={`px-3 py-2 text-sm font-semibold ${roomViewMode === 'stats' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+              >
+                Statistics
+              </button>
+            </div>
             <Link
               to="/floormap-ai"
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm font-semibold transition-colors"
@@ -489,6 +536,7 @@ export default function MedStarMontgomeryERCommandCenter() {
           )}
         </div>
 
+        {roomViewMode === 'map' ? (
         <div ref={panelRef} className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_340px] 2xl:grid-cols-[minmax(0,1fr)_380px] gap-4 bg-[#020817]">
           <div ref={mapRef} className="relative rounded-2xl border border-[#1e3a5f] bg-[#07111f] p-2 shadow-2xl shadow-blue-950/30">
             <div className="relative overflow-auto rounded-xl border border-[#1e3a5f] bg-[#020817]">
@@ -599,6 +647,25 @@ export default function MedStarMontgomeryERCommandCenter() {
             <div className="pt-2 border-t border-[#1e3a5f] text-xs text-[#8aa4c2]">Loaded {roomCount} overlays from your MedStar ER floor-map JSON.</div>
           </aside>
         </div>
+        ) : roomViewMode === 'table' ? (
+          <div className="rounded-2xl border border-[#1e3a5f] bg-[#07111f] p-3">
+            <ERRoomStatusTable
+              rooms={layout.rooms}
+              roomStatuses={roomStatuses}
+              selectedRoomId={selectedRoomId}
+              statusFilter={statusFilter}
+              onSelectRoom={(roomId) => setSelectedRoomId(roomId)}
+            />
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-[#1e3a5f] bg-[#07111f] p-3">
+            <ERStatisticsPanel
+              rooms={layout.rooms}
+              roomStatuses={roomStatuses}
+              metrics={metrics}
+            />
+          </div>
+        )}
       </div>
       {hoveredRoom && (
         <RoomHoverCard
@@ -926,6 +993,132 @@ function ZoneSummaryPanel({ rooms, roomStatuses }) {
           </div>
         )
       })}
+    </div>
+  )
+}
+
+function ERRoomStatusTable({ rooms, roomStatuses, selectedRoomId, statusFilter, onSelectRoom }) {
+  const rows = useMemo(() => rooms
+    .map((room, idx) => {
+      const status = roomStatuses[room.room_id] || 'available'
+      const details = buildSyntheticRoomDetails(room, idx, status)
+      return {
+        roomId: room.room_id,
+        status,
+        zone: getZoneName(getRoomZoneId(room.room_id)),
+        patient: details.patient,
+        doctor: details.doctor,
+        erStatus: details.erStatus,
+        los: details.los,
+        predicted: details.predicted,
+        pressure: details.pressure,
+      }
+    })
+    .filter((row) => !statusFilter ||
+      statusFilter === row.status ||
+      (statusFilter === 'waitingProvider' && row.erStatus === 'Waiting Provider') ||
+      (statusFilter === 'highPressure' && row.pressure === 'High')),
+  [roomStatuses, rooms, statusFilter])
+
+  return (
+    <div className="w-full min-h-[620px] overflow-auto rounded-xl border border-[#1e3a5f] bg-[#020817]">
+      <table className="w-full text-sm">
+        <thead className="sticky top-0 z-10 bg-[#0b1728] border-b border-[#1e3a5f]">
+          <tr className="text-[#8aa4c2]">
+            <th className="text-left px-3 py-2">Room</th>
+            <th className="text-left px-3 py-2">Status</th>
+            <th className="text-left px-3 py-2">Patient</th>
+            <th className="text-left px-3 py-2">Doctor</th>
+            <th className="text-left px-3 py-2">ER Status</th>
+            <th className="text-left px-3 py-2">LOS</th>
+            <th className="text-left px-3 py-2">Predicted</th>
+            <th className="text-left px-3 py-2">Pressure</th>
+            <th className="text-left px-3 py-2">Zone</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            (() => {
+              const style = TABLE_STATUS_STYLES[row.status] || TABLE_STATUS_STYLES.available
+              return (
+            <tr
+              key={row.roomId}
+              onClick={() => onSelectRoom?.(row.roomId)}
+              className={`border-b border-white/5 cursor-pointer hover:bg-slate-800/70 ${style.row} ${selectedRoomId === row.roomId ? 'ring-1 ring-cyan-300/50' : ''}`}
+            >
+              <td className="px-3 py-2 font-semibold text-white">
+                <span className="inline-flex items-center gap-2">
+                  <span className={`inline-block h-2.5 w-2.5 rounded-full ${style.dot}`} />
+                  {row.roomId}
+                </span>
+              </td>
+              <td className="px-3 py-2 text-slate-200">
+                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${style.badge}`}>
+                  {STATUS_LABELS[row.status] || row.status}
+                </span>
+              </td>
+              <td className="px-3 py-2 text-slate-300">{row.patient}</td>
+              <td className="px-3 py-2 text-slate-300">{row.doctor}</td>
+              <td className="px-3 py-2 text-slate-200">{row.erStatus}</td>
+              <td className="px-3 py-2 text-cyan-300">{row.los}</td>
+              <td className="px-3 py-2 text-slate-300">{row.predicted}</td>
+              <td className="px-3 py-2 text-slate-300">{row.pressure}</td>
+              <td className="px-3 py-2 text-slate-400">{row.zone}</td>
+            </tr>
+              )
+            })()
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function ERStatisticsPanel({ rooms, roomStatuses, metrics }) {
+  const zoneLoads = useMemo(() => {
+    const counts = {}
+    rooms.forEach((room) => {
+      const zone = getZoneName(getRoomZoneId(room.room_id))
+      const status = roomStatuses[room.room_id] || 'available'
+      counts[zone] = counts[zone] || { total: 0, occupied: 0, dirty: 0 }
+      counts[zone].total += 1
+      if (status === 'occupied') counts[zone].occupied += 1
+      if (status === 'dirty') counts[zone].dirty += 1
+    })
+    return Object.entries(counts).sort((a, b) => b[1].occupied - a[1].occupied)
+  }, [roomStatuses, rooms])
+  const maxOccupied = zoneLoads.reduce((m, [, c]) => Math.max(m, c.occupied), 1)
+
+  return (
+    <div className="min-h-[620px] space-y-4 p-2">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <MetricCard label="ER Occupancy" value={`${metrics.utilizationPct ?? 0}%`} color="text-rose-300" />
+        <MetricCard label="Available Rooms" value={metrics.available ?? 0} color="text-emerald-300" />
+        <MetricCard label="Occupied Rooms" value={metrics.occupied ?? 0} color="text-rose-300" />
+        <MetricCard label="Dirty Rooms" value={metrics.dirty ?? 0} color="text-amber-300" />
+        <MetricCard label="Reserved Rooms" value={metrics.reserved ?? 0} color="text-sky-300" />
+        <MetricCard label="Avg LOS" value={metrics.avgLos ?? '0h 00m'} color="text-violet-300" />
+        <MetricCard label="Waiting Provider" value={metrics.waitingProvider ?? 0} color="text-amber-300" />
+        <MetricCard label="High Pressure" value={metrics.highPressure ?? 0} color="text-orange-300" />
+      </div>
+
+      <div className="rounded-xl border border-[#1e3a5f] bg-[#0b1728] p-4 space-y-3">
+        <h3 className="text-sm font-semibold text-white">Zone Occupancy</h3>
+        {zoneLoads.map(([zone, counts]) => {
+          const widthPct = Math.max(4, Math.round((counts.occupied / maxOccupied) * 100))
+          return (
+            <div key={zone} className="space-y-1">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-200">{zone}</span>
+                <span className="text-slate-400">{counts.occupied}/{counts.total} occupied {counts.dirty ? `· ${counts.dirty} dirty` : ''}</span>
+              </div>
+              <div className="h-2.5 rounded bg-[#07111f] overflow-hidden">
+                <div className="h-full rounded bg-gradient-to-r from-cyan-400 to-red-400" style={{ width: `${widthPct}%` }} />
+              </div>
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }

@@ -4,6 +4,7 @@ const navItems = [
   { to: '/portals/command-centers/best-western', label: 'Best Western', icon: '🏨' },
   { to: '/portals/command-centers/data-center', label: 'Data Center', icon: '🖥️' },
   { to: '/portals/command-centers/kumon', label: 'Kumon', icon: '📚' },
+  { to: '/portals/command-centers/medstar-montgomery-er', label: 'Medstar Montgomery ER Command Center', icon: '🚑' },
   { to: '/portals/command-centers/motel', label: 'Motel', icon: '🛎️' },
 ]
 

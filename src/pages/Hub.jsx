@@ -29,7 +29,7 @@ const PRODUCT_CARDS = [
   },
   {
     title: 'Healthcare AI',
-    description: 'FloorMap, ER Map, and Bed Tracking products.',
+    description: 'FloorMap, ER Map, Bed Tracking, and Medstar Montgomery ER Command Center.',
     to: '/healthcare/floormap',
     salesOnly: true,
     contactSubject: 'Healthcare+AI+Pricing',
@@ -37,6 +37,7 @@ const PRODUCT_CARDS = [
       { label: 'FloorMap', to: '/healthcare/floormap' },
       { label: 'ER Map', to: '/healthcare/er-map' },
       { label: 'Bed Tracking', to: '/healthcare/bed-tracking' },
+      { label: 'Medstar Montgomery ER', to: '/medstar-montgomery-er-command-center' },
     ],
   },
   {

@@ -213,6 +213,7 @@ function App() {
               <Route path="best-western" element={<BestWesternCommandCenter />} />
               <Route path="data-center" element={<DataCenterCommandCenter />} />
               <Route path="kumon" element={<KumonLearningCommandCenter />} />
+              <Route path="medstar-montgomery-er" element={<MedStarMontgomeryERCommandCenter />} />
               <Route path="motel" element={<MotelCommandCenter />} />
             </Route>
 
