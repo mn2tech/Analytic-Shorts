@@ -15,15 +15,7 @@ export const ROOM_STATUS = {
   occupied: 'occupied',
   dirty: 'dirty',
   reserved: 'reserved',
-  clean: 'clean',
-  inspected: 'inspected',
-  out_of_order: 'out_of_order',
   maintenance: 'maintenance',
-  blocked: 'blocked',
-  hold: 'hold',
-  no_show: 'no_show',
-  checked_out: 'checked_out',
-  cancelled: 'cancelled',
 }
 
 export const STATUS_LABELS = {
@@ -31,15 +23,7 @@ export const STATUS_LABELS = {
   [ROOM_STATUS.occupied]: 'Occupied',
   [ROOM_STATUS.dirty]: 'Dirty',
   [ROOM_STATUS.reserved]: 'Reserved / Check-in Pending',
-  [ROOM_STATUS.clean]: 'Clean',
-  [ROOM_STATUS.inspected]: 'Inspected',
-  [ROOM_STATUS.out_of_order]: 'Out of Order',
   [ROOM_STATUS.maintenance]: 'Maintenance',
-  [ROOM_STATUS.blocked]: 'Blocked',
-  [ROOM_STATUS.hold]: 'On Hold',
-  [ROOM_STATUS.no_show]: 'No Show',
-  [ROOM_STATUS.checked_out]: 'Checked Out',
-  [ROOM_STATUS.cancelled]: 'Cancelled',
 }
 
 /** Status → fill color for SVG blueprint rooms */
@@ -48,15 +32,7 @@ export const STATUS_FILL_COLORS = {
   [ROOM_STATUS.occupied]: '#E74C3C',
   [ROOM_STATUS.dirty]: '#F1C40F',
   [ROOM_STATUS.reserved]: '#3498DB',
-  [ROOM_STATUS.clean]: '#10B981',
-  [ROOM_STATUS.inspected]: '#14B8A6',
-  [ROOM_STATUS.out_of_order]: '#334155',
   [ROOM_STATUS.maintenance]: '#6B7280',
-  [ROOM_STATUS.blocked]: '#475569',
-  [ROOM_STATUS.hold]: '#0EA5E9',
-  [ROOM_STATUS.no_show]: '#F97316',
-  [ROOM_STATUS.checked_out]: '#A78BFA',
-  [ROOM_STATUS.cancelled]: '#64748B',
 }
 
 export const DEFAULT_ROOM_FILL = '#95A5A6'
@@ -223,10 +199,6 @@ export function computeRoomMetrics(rooms, opts = {}) {
   const dirty = list.filter((r) => r.status === 'dirty').length
   const reserved = list.filter((r) => r.status === 'reserved').length
   const maintenance = list.filter((r) => r.status === 'maintenance').length
-  const noShow = list.filter((r) => r.status === 'no_show').length
-  const checkedOut = list.filter((r) => r.status === 'checked_out').length
-  const cancelled = list.filter((r) => r.status === 'cancelled').length
-  const blocked = list.filter((r) => r.status === 'blocked' || r.status === 'out_of_order').length
   const total = list.length
   const utilizationPct = total > 0 ? Math.round((occupied / total) * 100) : 0
   const avgLOS = calculateAvgLOS(list)
@@ -248,10 +220,6 @@ export function computeRoomMetrics(rooms, opts = {}) {
     dirty,
     reserved,
     maintenance,
-    noShow,
-    checkedOut,
-    cancelled,
-    blocked,
     utilizationPct,
     avgLOS,
     predictedAvailable,
