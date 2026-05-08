@@ -89,6 +89,14 @@ function toDateOnly(value) {
   return `${year}-${month}-${day}`
 }
 
+function todayIsoDate() {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 function addOneCalendarDay(iso) {
   if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null
   const [y, m, d] = iso.split('-').map(Number)
@@ -294,7 +302,8 @@ function buildRoomRows(previewRooms) {
   return Array.from(roomMap.values())
 }
 
-async function persistInnsoftImport(previewData, supabaseClient) {
+async function persistInnsoftImport(previewData, supabaseClient, options = {}) {
+  const snapshotMode = options?.snapshotMode !== false
   const roomRows = buildRoomRows(previewData.rooms)
   if (roomRows.length === 0) {
     throw new Error('No valid rooms found in import file.')
@@ -311,6 +320,21 @@ async function persistInnsoftImport(previewData, supabaseClient) {
   if (fetchRoomsError) throw fetchRoomsError
 
   const roomIdByNumber = new Map((insertedRooms || []).map((room) => [room.room_number, room.id]))
+  const importedRoomIds = Array.from(new Set((insertedRooms || []).map((room) => room.id).filter(Boolean)))
+
+  if (importedRoomIds.length > 0) {
+    const closeOutDate = todayIsoDate()
+    const { error: closePriorReservationsError } = await supabaseClient
+      .from('reservations')
+      .update({
+        status: 'checked_out',
+        actual_check_out: closeOutDate,
+      })
+      .in('room_id', importedRoomIds)
+      .in('status', ['checked_in', 'reserved'])
+    if (closePriorReservationsError) throw closePriorReservationsError
+  }
+
   const guestRows = previewData.guests.map((guest) => ({
     first_name: guest.firstName || 'Guest',
     last_name: guest.lastName || 'Unknown',
@@ -353,10 +377,28 @@ async function persistInnsoftImport(previewData, supabaseClient) {
     if (insertReservationsError) throw insertReservationsError
   }
 
+  let roomsResetToAvailable = 0
+  if (snapshotMode && importedRoomIds.length > 0) {
+    const activeRoomIds = Array.from(new Set(reservationRows.map((row) => row.room_id).filter(Boolean)))
+    const inactiveRoomIds = importedRoomIds.filter((roomId) => !activeRoomIds.includes(roomId))
+    if (inactiveRoomIds.length > 0) {
+      const { data: resetRows, error: resetRoomsError } = await supabaseClient
+        .from('rooms')
+        .update({ status: 'available' })
+        .in('id', inactiveRoomIds)
+        .in('status', ['occupied', 'reserved'])
+        .select('id')
+      if (resetRoomsError) throw resetRoomsError
+      roomsResetToAvailable = Array.isArray(resetRows) ? resetRows.length : 0
+    }
+  }
+
   return {
     roomsUpserted: roomRows.length,
     guestsInserted: guestRows.length,
     reservationsInserted: reservationRows.length,
+    roomsResetToAvailable,
+    snapshotMode,
   }
 }
 

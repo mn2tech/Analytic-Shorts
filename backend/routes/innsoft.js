@@ -2,6 +2,7 @@ const express = require('express')
 const multer = require('multer')
 const path = require('path')
 const crypto = require('crypto')
+const JSZip = require('jszip')
 
 const { getSupabaseAdmin } = require('../utils/supabaseAdmin')
 const { buildPreviewModel, persistInnsoftImport } = require('../../src/utils/innsoft/importCore')
@@ -13,13 +14,26 @@ const router = express.Router()
 const PENDING_STATUS = 'failed'
 const PENDING_MARKER = 'started'
 
+async function extractTodayDtaBytesFromZip(zipBuffer) {
+  const zip = await JSZip.loadAsync(zipBuffer)
+  const entries = Object.values(zip.files || {})
+  const todayEntry = entries.find((entry) => {
+    const normalized = String(entry?.name || '').replace(/\\/g, '/').toLowerCase()
+    return normalized.endsWith('/today.dta') || normalized === 'today.dta'
+  })
+  if (!todayEntry) {
+    throw new Error('TODAY.DTA not found inside ZIP backup.')
+  }
+  return todayEntry.async('uint8array')
+}
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 100 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const ext = String(path.extname(file.originalname || '')).toLowerCase()
-    if (ext === '.dta') return cb(null, true)
-    return cb(new Error('Only .dta files are supported for auto-import'))
+    if (ext === '.dta' || ext === '.zip') return cb(null, true)
+    return cb(new Error('Only .dta or .zip files are supported for auto-import'))
   },
 })
 
@@ -90,9 +104,13 @@ router.post('/auto-import', upload.single('file'), async (req, res) => {
       })
     }
 
-    const dtaBytes = new Uint8Array(req.file.buffer)
+    const sourceExt = String(path.extname(req.file.originalname || '')).toLowerCase()
+    const dtaBytes = sourceExt === '.zip'
+      ? await extractTodayDtaBytesFromZip(req.file.buffer)
+      : new Uint8Array(req.file.buffer)
     const previewData = buildPreviewModel(dtaBytes)
-    const result = await persistInnsoftImport(previewData, supabase)
+    const snapshotMode = String(req.body?.snapshot_mode ?? 'true').toLowerCase() !== 'false'
+    const result = await persistInnsoftImport(previewData, supabase, { snapshotMode })
 
     await supabase
       .from('innsoft_sync_runs')
@@ -115,6 +133,7 @@ router.post('/auto-import', upload.single('file'), async (req, res) => {
         guests: previewData?.summary?.guests || 0,
       },
       result,
+      snapshot_mode: snapshotMode,
     })
   } catch (error) {
     if (supabase && runId) {

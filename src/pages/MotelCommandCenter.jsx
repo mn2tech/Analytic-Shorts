@@ -142,6 +142,18 @@ function canonicalRoomKey(value) {
     .replace(/[^a-z0-9]/g, '')
 }
 
+function getRoomAliasCandidates(roomId, overlay = null) {
+  const raw = new Set()
+  if (roomId != null) raw.add(String(roomId))
+  const display = getRoomDisplayLabel(roomId, overlay)
+  if (display && display !== '—') raw.add(String(display))
+  const suffix = String(roomId || '').replace(/^room_0*/i, '')
+  if (suffix) raw.add(suffix)
+  const numericSuffix = Number.parseInt(suffix, 10)
+  if (Number.isFinite(numericSuffix)) raw.add(String(numericSuffix))
+  return Array.from(raw)
+}
+
 function formatRoomTypeLabel(value) {
   const text = String(value || '').trim()
   if (!text) return ''
@@ -216,6 +228,93 @@ function parseDateOnly(value) {
   const [year, month, day] = text.split('-').map(Number)
   const date = new Date(year, month - 1, day, 12, 0, 0)
   return Number.isNaN(date.getTime()) ? null : date
+}
+
+function getReservationSortTime(reservation) {
+  if (!reservation) return 0
+  const candidates = [
+    reservation.actual_check_in,
+    reservation.check_in_date,
+    reservation.actual_check_out,
+    reservation.check_out_date,
+  ]
+  for (const value of candidates) {
+    if (!value) continue
+    const text = String(value).trim()
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(text) ? parseDateOnly(text) : new Date(value)
+    if (date && !Number.isNaN(date.getTime())) return date.getTime()
+  }
+  return 0
+}
+
+function pickLatestReservationByStatus(reservations, statuses) {
+  const statusSet = new Set((Array.isArray(statuses) ? statuses : []).map((s) => String(s || '').toLowerCase()))
+  return (Array.isArray(reservations) ? reservations : [])
+    .filter((r) => statusSet.has(String(r?.status || '').toLowerCase()))
+    .sort((a, b) => getReservationSortTime(b) - getReservationSortTime(a))[0] || null
+}
+
+function normalizeReservationStatus(status) {
+  return String(status || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_')
+    .replace(/-/g, '_')
+}
+
+function reservationSpansToday(reservation, now = new Date()) {
+  const inDate = parseDateOnly(reservation?.check_in_date)
+  const outDate = parseDateOnly(reservation?.check_out_date)
+  if (!inDate || !outDate) return false
+  const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0)
+  const dayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
+  // Date-only reservations should cover the whole calendar day.
+  return inDate.getTime() <= dayEnd.getTime() && outDate.getTime() >= dayStart.getTime()
+}
+
+function isLikelyCurrentReservation(reservation, now = new Date()) {
+  const status = normalizeReservationStatus(reservation?.status)
+  if (status !== 'checked_in' && status !== 'reserved') return false
+  if (reservationSpansToday(reservation, now)) return true
+  const outDate = parseDateOnly(reservation?.check_out_date)
+  if (!outDate) return true
+  const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0)
+  return outDate.getTime() >= dayStart.getTime()
+}
+
+function pickBestReservationContext(reservations, roomStatus) {
+  const now = new Date()
+  const sorted = (Array.isArray(reservations) ? reservations : [])
+    .slice()
+    .sort((a, b) => getReservationSortTime(b) - getReservationSortTime(a))
+  if (sorted.length === 0) return { activeReservation: null, latestCheckedOutReservation: null, contextReservation: null }
+
+  const currentCandidates = sorted.filter((r) => isLikelyCurrentReservation(r, now))
+  const currentCheckedIn = currentCandidates.find((r) => normalizeReservationStatus(r?.status) === 'checked_in') || null
+  const currentReserved = currentCandidates.find((r) => normalizeReservationStatus(r?.status) === 'reserved') || null
+  const currentSpanningToday = currentCandidates.find((r) => reservationSpansToday(r, now)) || null
+
+  const checkedIn = sorted.find((r) => normalizeReservationStatus(r?.status) === 'checked_in') || null
+  const reserved = sorted.find((r) => normalizeReservationStatus(r?.status) === 'reserved') || null
+  const latestCheckedOutReservation = sorted.find((r) => normalizeReservationStatus(r?.status) === 'checked_out') || null
+  const spanningToday = sorted.find((r) => {
+    const s = normalizeReservationStatus(r?.status)
+    return (s === 'checked_in' || s === 'reserved') && reservationSpansToday(r, now)
+  }) || null
+
+  const normalizedRoomStatus = normalizeRoomStatus(roomStatus)
+  let activeReservation = currentCheckedIn || currentSpanningToday || currentReserved || null
+  if (normalizedRoomStatus === 'occupied' || normalizedRoomStatus === 'checked_in') {
+    activeReservation = currentCheckedIn || currentSpanningToday || null
+  } else if (normalizedRoomStatus === 'reserved') {
+    activeReservation = currentReserved || currentSpanningToday || null
+  } else {
+    activeReservation = currentCheckedIn || currentSpanningToday || currentReserved || checkedIn || spanningToday || reserved || null
+  }
+
+  const allowHistoricalContext = ['dirty', 'maintenance', 'checked_out', 'occupied', 'checked_in', 'reserved'].includes(normalizedRoomStatus)
+  const contextReservation = activeReservation || (allowHistoricalContext ? (latestCheckedOutReservation || sorted[0] || null) : null)
+  return { activeReservation, latestCheckedOutReservation, contextReservation }
 }
 
 function addDays(dateValue, days) {
@@ -400,13 +499,21 @@ function isRlsPolicyError(error) {
   return message.includes('row-level security') || message.includes('violates row-level security policy')
 }
 
-function nightsStayedSoFar(value) {
-  if (!value) return 0
-  const text = String(value).trim()
-  const start = /^\d{4}-\d{2}-\d{2}$/.test(text) ? parseDateOnly(text) : new Date(value)
+function nightsStayedSoFar(checkInValue, endCapValue = null) {
+  if (!checkInValue) return 0
+  const checkInText = String(checkInValue).trim()
+  const start = /^\d{4}-\d{2}-\d{2}$/.test(checkInText) ? parseDateOnly(checkInText) : new Date(checkInValue)
   if (!start || Number.isNaN(start.getTime())) return 0
   const now = new Date()
-  const diffMs = now.getTime() - start.getTime()
+  let effectiveEnd = now
+  if (endCapValue) {
+    const endText = String(endCapValue).trim()
+    const parsedEnd = /^\d{4}-\d{2}-\d{2}$/.test(endText) ? parseDateOnly(endText) : new Date(endCapValue)
+    if (parsedEnd && !Number.isNaN(parsedEnd.getTime()) && parsedEnd.getTime() < now.getTime()) {
+      effectiveEnd = parsedEnd
+    }
+  }
+  const diffMs = effectiveEnd.getTime() - start.getTime()
   if (diffMs <= 0) return 0
   return Math.floor(diffMs / (1000 * 60 * 60 * 24))
 }
@@ -513,7 +620,8 @@ function getVoidedReferences(history) {
 function NewReservationPanel({ isOpen, roomOverlay, roomData, onClose, onSave }) {
   const defaultCheckInDate = toDateInputValue(new Date())
   const defaultCheckOutDate = toDateInputValue(addDays(new Date(), 1))
-  const defaultRatePerNight = getDefaultRatePerNight(roomData?.rate_per_night ?? roomData?.ratePerNight)
+  // Always start new reservations at 0.00 to avoid stale carry-over.
+  const defaultRatePerNight = '0.00'
   const [formValues, setFormValues] = useState(() => ({
     firstName: '',
     lastName: '',
@@ -1176,7 +1284,8 @@ function OccupiedRoomPanel({ isOpen, roomOverlay, roomData, onClose, onCompleteC
   const guestName = roomData?.guestName || roomData?.guest_name || '—'
   const checkInDate = roomData?.actual_check_in || roomData?.checkIn || roomData?.check_in
   const checkOutDate = roomData?.checkOut || roomData?.check_out
-  const stayed = nightsStayedSoFar(checkInDate)
+  const stayEndCap = roomData?.actual_check_out || checkOutDate || null
+  const stayed = nightsStayedSoFar(checkInDate, stayEndCap)
   const nights = Math.max(1, roomData?.nights ?? dateDiffNights(checkInDate, checkOutDate) ?? stayed ?? 1)
   const ratePerNight = Number(roomData?.rate_per_night ?? roomData?.ratePerNight ?? 0) || 0
   const roomChargeSubtotalFromState = Number(roomData?.roomSubtotal ?? roomData?.room_subtotal)
@@ -2481,9 +2590,8 @@ function MotelCommandCenter({
       const target = canonicalRoomKey(roomNumber)
       if (!target) return roomNumber
       const match = roomOverlays.find((overlay) => {
-        const idKey = canonicalRoomKey(overlay.id)
-        const labelKey = canonicalRoomKey(getRoomDisplayLabel(overlay.id, overlay))
-        return target === idKey || target === labelKey
+        const aliases = getRoomAliasCandidates(overlay.id, overlay)
+        return aliases.some((alias) => target === canonicalRoomKey(alias))
       })
       return match?.id || roomNumber
     },
@@ -2534,12 +2642,7 @@ function MotelCommandCenter({
 
       const normalizedRooms = (Array.isArray(data) ? data : []).map((room) => {
         const reservations = Array.isArray(room.reservations) ? room.reservations : []
-        const activeReservation =
-          reservations.find((r) => r?.status === 'checked_in') ||
-          reservations.find((r) => r?.status === 'reserved') ||
-          null
-        const latestCheckedOutReservation = reservations.find((r) => r?.status === 'checked_out') || null
-        const contextReservation = activeReservation || latestCheckedOutReservation || reservations[0] || null
+        const { activeReservation, contextReservation } = pickBestReservationContext(reservations, room.status)
         const guest = contextReservation?.guests || null
         const guestName = guest
           ? `${guest.first_name || ''} ${guest.last_name || ''}`.trim()
@@ -2765,6 +2868,7 @@ function MotelCommandCenter({
   const handleSaveReservation = useCallback(async (values) => {
     if (!reservationPanelRoomId) throw new Error('No room selected.')
     const roomNumber = getRoomDisplayLabel(reservationPanelRoomId, reservationRoomOverlay)
+    const roomLookupCandidates = getRoomAliasCandidates(reservationPanelRoomId, reservationRoomOverlay)
     const cleanEmail = String(values.email || '').trim().toLowerCase()
     const cleanFirstName = String(values.firstName || '').trim()
     const cleanLastName = String(values.lastName || '').trim()
@@ -2815,20 +2919,10 @@ function MotelCommandCenter({
     let { data: roomRecord, error: roomLookupError } = await supabase
       .from('rooms')
       .select('id')
-      .eq('room_number', String(roomNumber))
+      .in('room_number', roomLookupCandidates)
       .single()
     if (roomLookupError || !roomRecord?.id) {
-      // Fallback for environments where rooms are keyed by overlay id.
-      const fallback = await supabase
-        .from('rooms')
-        .select('id')
-        .eq('room_number', String(reservationPanelRoomId))
-        .single()
-      roomRecord = fallback.data
-      roomLookupError = fallback.error
-    }
-    if (roomLookupError || !roomRecord?.id) {
-      throw new Error(`Room ${roomNumber} was not found in rooms table.`)
+      throw new Error(`Room ${roomNumber} was not found in rooms table. Tried: ${roomLookupCandidates.join(', ')}`)
     }
 
     const reservationPayload = {
@@ -2853,8 +2947,11 @@ function MotelCommandCenter({
     if (updateRoomError) throw updateRoomError
 
     const guestName = `${cleanFirstName} ${cleanLastName}`.trim()
+    const selectedRoomKey = canonicalRoomKey(reservationPanelRoomId)
     setRoomData((prev) => prev.map((room) => {
-      if (room.room === reservationPanelRoomId || room.roomNumber === reservationPanelRoomId) {
+      const roomOverlayKey = canonicalRoomKey(room.room)
+      const roomNumberKey = canonicalRoomKey(room.roomNumber)
+      if (roomOverlayKey === selectedRoomKey || roomNumberKey === selectedRoomKey) {
         return {
           ...room,
           status: 'reserved',
@@ -2897,7 +2994,7 @@ function MotelCommandCenter({
         .select('id')
         .eq('room_id', selectedRoom.room_id)
         .eq('status', 'reserved')
-        .order('check_in_date', { ascending: true })
+        .order('check_in_date', { ascending: false })
         .limit(1)
         .maybeSingle()
       if (reservationLookupError) throw reservationLookupError
@@ -2978,7 +3075,7 @@ function MotelCommandCenter({
         .select('id')
         .eq('room_id', selectedRoom.room_id)
         .in('status', ['checked_in', 'reserved'])
-        .order('check_in_date', { ascending: true })
+        .order('check_in_date', { ascending: false })
         .limit(1)
         .maybeSingle()
       if (reservationLookupError) throw reservationLookupError
@@ -3491,6 +3588,21 @@ function MotelCommandCenter({
                   Go
                 </button>
               </div>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (dataSourceMode === 'api') {
+                    await fetchRoomStatus()
+                    return
+                  }
+                  setDataSourceMode('api')
+                  await fetchRoomStatus()
+                }}
+                disabled={loading}
+                className="px-3 py-1.5 rounded border border-white/20 bg-slate-700 hover:bg-slate-600 text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? 'Refreshing…' : dataSourceMode === 'api' ? 'Refresh' : 'Switch to Live API'}
+              </button>
             </div>
           </div>
           <p className="text-[10px] text-slate-500">Click a metric to filter map</p>

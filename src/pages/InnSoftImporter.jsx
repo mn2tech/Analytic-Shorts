@@ -1,14 +1,15 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
 import { useNotification } from '../contexts/NotificationContext'
-import { parseUploadedInnsoftFile, persistInnsoftImport as persistInnsoftImportCore } from '../utils/innsoft/importCore'
+import { parseUploadedInnsoftFile } from '../utils/innsoft/importCore'
 
 export default function InnSoftImporter() {
   const [parsing, setParsing] = useState(false)
   const [importing, setImporting] = useState(false)
   const [previewData, setPreviewData] = useState(null)
+  const [selectedFile, setSelectedFile] = useState(null)
   const [lastResult, setLastResult] = useState(null)
+  const [snapshotMode, setSnapshotMode] = useState(true)
   const navigate = useNavigate()
   const { notify } = useNotification()
 
@@ -27,10 +28,12 @@ export default function InnSoftImporter() {
       const preview = await parseUploadedInnsoftFile(file)
       if (!preview.rooms.length) {
         setPreviewData(null)
+        setSelectedFile(null)
         notify('No room records found in uploaded file.', 'warning')
         return
       }
       setPreviewData(preview)
+      setSelectedFile(file)
       notify('File parsed. Review preview and click Import to Supabase.', 'info')
     } catch (error) {
       notify(`InnSoft import failed: ${error?.message || 'Unknown error'}`, 'error')
@@ -41,12 +44,47 @@ export default function InnSoftImporter() {
   }
 
   const handleImportToSupabase = async () => {
-    if (!previewData) return
+    if (!previewData || !selectedFile) return
     try {
       setImporting(true)
-      const result = await persistInnsoftImportCore(previewData, supabase)
-      setLastResult(result)
-      notify('InnSoft backup imported successfully.', 'success')
+      const formData = new FormData()
+      formData.append('file', selectedFile)
+      formData.append('snapshot_mode', snapshotMode ? 'true' : 'false')
+
+      const response = await fetch('/api/innsoft/auto-import', {
+        method: 'POST',
+        body: formData,
+      })
+      const rawBody = await response.text()
+      let payload = {}
+      try {
+        payload = rawBody ? JSON.parse(rawBody) : {}
+      } catch {
+        payload = {}
+      }
+      if (!response.ok) {
+        throw new Error(
+          payload?.message ||
+          payload?.error ||
+          (rawBody && rawBody.slice(0, 240)) ||
+          `InnSoft auto-import request failed (HTTP ${response.status}).`
+        )
+      }
+
+      const summary = payload?.result || {}
+      setLastResult({
+        roomsUpserted: Number(summary.roomsUpserted || 0),
+        guestsInserted: Number(summary.guestsInserted || 0),
+        reservationsInserted: Number(summary.reservationsInserted || 0),
+        roomsResetToAvailable: Number(summary.roomsResetToAvailable || 0),
+        snapshotMode: payload?.snapshot_mode !== false,
+        status: payload?.status || 'success',
+      })
+      if (payload?.status === 'skipped') {
+        notify('InnSoft import skipped (duplicate file already loaded).', 'warning')
+      } else {
+        notify('InnSoft backup imported successfully.', 'success')
+      }
       navigate('/motel-command-center')
     } catch (error) {
       notify(`Import to Supabase failed: ${error?.message || 'Unknown error'}`, 'error')
@@ -87,7 +125,7 @@ export default function InnSoftImporter() {
         </div>
 
         {previewData && (
-          <div className="mt-6 flex items-center gap-3">
+          <div className="mt-6 flex flex-wrap items-center gap-3">
             <button
               type="button"
               onClick={handleImportToSupabase}
@@ -96,6 +134,16 @@ export default function InnSoftImporter() {
             >
               Import to Supabase
             </button>
+            <label className="inline-flex items-center gap-2 text-xs text-slate-300">
+              <input
+                type="checkbox"
+                checked={snapshotMode}
+                onChange={(e) => setSnapshotMode(e.target.checked)}
+                className="rounded border-white/20 bg-slate-800"
+                disabled={importing}
+              />
+              Snapshot mode (testing): reset imported occupied/reserved rooms without guest rows to available
+            </label>
             <span className="text-xs text-slate-400">Imports rooms, guests, and reservations, then redirects.</span>
           </div>
         )}
@@ -105,6 +153,8 @@ export default function InnSoftImporter() {
             <p>Rooms upserted: {lastResult.roomsUpserted}</p>
             <p>Guests inserted: {lastResult.guestsInserted}</p>
             <p>Reservations inserted: {lastResult.reservationsInserted}</p>
+            <p>Rooms reset to available: {lastResult.roomsResetToAvailable ?? 0}</p>
+            <p>Snapshot mode: {lastResult.snapshotMode ? 'On' : 'Off'}</p>
           </div>
         )}
       </div>
