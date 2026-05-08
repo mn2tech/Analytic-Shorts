@@ -56,6 +56,7 @@ const migrationRoutes = require('./routes/migration')
 const v1Routes = require('./routes/v1')
 const trainingRoutes = require('./routes/training')
 const mlRoutes = require('./routes/ml')
+const crackitRoutes = require('./routes/crackit.routes')
 const accessLogger = require('./middleware/accessLogger')
 
 const app = express()
@@ -290,6 +291,7 @@ app.use('/api/migration', migrationRoutes)
 app.use('/api/v1', v1Routes)
 app.use('/api/training', trainingRoutes)
 app.use('/api/ml', mlRoutes)
+app.use('/api/crackit', crackitRoutes)
 // POST /api/ai/dashboard-spec — register first so it always matches (avoids 404)
 const handleDashboardSpec = aiDashboardSpecRoutes.handleDashboardSpec
 if (typeof handleDashboardSpec !== 'function') {

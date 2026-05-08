@@ -127,11 +127,29 @@ export default function TrainingModules() {
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
         <header className="mb-10">
           <p className="text-sm font-medium text-blue-600 uppercase tracking-wide mb-2">Learn by doing</p>
-          <h1 className="text-3xl font-bold text-slate-900">AI Training</h1>
+          <h1 className="text-3xl font-bold text-slate-900">AI Learning</h1>
           <p className="mt-3 text-slate-800 max-w-3xl text-lg font-semibold leading-relaxed">
             Turn any Excel file into AI insights in seconds — and learn how it works step by step.
           </p>
         </header>
+
+        <section className="mb-7 rounded-2xl border border-indigo-200 bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 p-6 text-white shadow-xl">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="max-w-2xl">
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-indigo-300">CrackIt by Analytics Shorts</p>
+              <h2 className="mt-2 text-2xl font-bold">CrackIt Interview Prep</h2>
+              <p className="mt-2 text-sm text-slate-200">
+                Practice mock interviews, debugging, prompt engineering, and AI-assisted interview strategy.
+              </p>
+            </div>
+            <Link
+              to="/ai-learning/crackit"
+              className="inline-flex items-center justify-center rounded-xl bg-indigo-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-400"
+            >
+              Start Practice
+            </Link>
+          </div>
+        </section>
 
         {error && (
           <div className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">

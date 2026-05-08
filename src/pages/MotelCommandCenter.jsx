@@ -990,7 +990,7 @@ function ReservedCheckInPanel({ isOpen, roomOverlay, roomData, onClose, onComple
     setIsSaving(false)
   }, [isOpen, roomData?.amountPaid, roomData?.balanceDue, roomData?.depositCollected, roomData?.totalAmount, roomOverlay?.id])
 
-  const roomTypeLabel = roomOverlay?.label || roomOverlay?.type || roomData?.room_type || 'Room'
+  const roomTypeLabel = formatRoomTypeLabel(roomOverlay?.label || roomOverlay?.type || roomData?.room_type || 'Room')
   const roomDisplay = roomOverlay ? getRoomDisplayLabel(roomOverlay.id, roomOverlay) : roomData?.room || '—'
   const guestName = roomData?.guestName || roomData?.guest_name || 'Guest not assigned'
   const source = roomData?.bookingSource || roomData?.source || '—'
@@ -1279,7 +1279,7 @@ function OccupiedRoomPanel({ isOpen, roomOverlay, roomData, onClose, onCompleteC
   const [voidNote, setVoidNote] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState('')
-  const roomTypeLabel = roomOverlay?.label || roomOverlay?.type || roomData?.room_type || 'Room'
+  const roomTypeLabel = formatRoomTypeLabel(roomOverlay?.label || roomOverlay?.type || roomData?.room_type || 'Room')
   const roomDisplay = roomOverlay ? getRoomDisplayLabel(roomOverlay.id, roomOverlay) : roomData?.room || '—'
   const guestName = roomData?.guestName || roomData?.guest_name || '—'
   const checkInDate = roomData?.actual_check_in || roomData?.checkIn || roomData?.check_in
@@ -1779,7 +1779,7 @@ function HousekeepingPanel({ isOpen, roomOverlay, roomData, onClose, onMarkInPro
   }, [isOpen])
 
   const roomDisplay = roomOverlay ? getRoomDisplayLabel(roomOverlay.id, roomOverlay) : roomData?.room || '—'
-  const roomTypeLabel = roomOverlay?.type || roomData?.room_type || roomOverlay?.label || 'Room'
+  const roomTypeLabel = formatRoomTypeLabel(roomOverlay?.type || roomData?.room_type || roomOverlay?.label || 'Room')
   const previousGuestName = roomData?.guestName || roomData?.guest_name || '—'
   const checkedOutAt = roomData?.actual_check_out || roomData?.check_out || roomData?.checkOut || null
   const cleaningStartedAt = roomData?.maintenance_started_at || null
@@ -1992,7 +1992,7 @@ function RoomTooltip({ roomData, tooltipPos, unit, roomOverlays = [] }) {
       <div className="p-4 space-y-2 text-sm">
         <div className="flex justify-between gap-4">
           <span className="text-slate-400">Type</span>
-          <span className="font-medium text-right">{roomData.room_type || '—'}</span>
+          <span className="font-medium text-right">{formatRoomTypeLabel(roomData.room_type) || '—'}</span>
         </div>
         <div className="flex justify-between gap-4">
           <span className="text-slate-400">Guest</span>
@@ -2338,6 +2338,114 @@ function KpiPanels({ metrics, statusFilter, onFilterChange }) {
   )
 }
 
+function RoomStatusTable({ rows, roomOverlays, isInfrastructureCheck, statusFilter, onSelectRoom }) {
+  const overlayById = useMemo(
+    () => new Map((Array.isArray(roomOverlays) ? roomOverlays : []).map((overlay) => [overlay.id, overlay])),
+    [roomOverlays]
+  )
+  const filtered = useMemo(() => {
+    return (Array.isArray(rows) ? rows : []).filter((row) => {
+      const overlay = overlayById.get(row.room)
+      if (overlay && isInfrastructureCheck(overlay)) return false
+      if (!statusFilter) return true
+      return normalizeRoomStatus(row.status) === normalizeRoomStatus(statusFilter)
+    })
+  }, [rows, overlayById, isInfrastructureCheck, statusFilter])
+
+  return (
+    <div className="flex-1 w-full h-full min-h-0 max-h-full overflow-y-auto overflow-x-auto rounded-2xl border border-[#1e3a5f] bg-[#020817] p-3">
+      <table className="w-full text-sm">
+        <thead className="sticky top-0 bg-[#020817] text-[#8aa4c2] uppercase text-[11px] tracking-[0.08em]">
+          <tr>
+            <th className="text-left py-2 px-2">Room</th>
+            <th className="text-left py-2 px-2">Status</th>
+            <th className="text-left py-2 px-2">Guest</th>
+            <th className="text-left py-2 px-2">Check-in</th>
+            <th className="text-left py-2 px-2">Check-out</th>
+            <th className="text-right py-2 px-2">Balance</th>
+          </tr>
+        </thead>
+        <tbody>
+          {filtered.map((row) => {
+            const normalizedStatus = normalizeRoomStatus(row.status)
+            const dot = MAP_STATUS_FILL_COLORS[normalizedStatus] || MAP_STATUS_FILL_COLORS.available
+            const selectableRoomId = row.room || row.roomNumber
+            return (
+              <tr
+                key={`${row.room}-${row.room_id || ''}`}
+                className="border-t border-white/10 cursor-pointer hover:bg-slate-800/40 transition-colors"
+                onClick={(e) => onSelectRoom?.(selectableRoomId, e)}
+              >
+                <td className="py-2 px-2 font-semibold text-white">{row.roomNumber || row.room}</td>
+                <td className="py-2 px-2 text-slate-200">
+                  <span className="inline-flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: dot }} />
+                    {DISPLAY_STATUS_LABELS[normalizedStatus] || normalizedStatus}
+                  </span>
+                </td>
+                <td className="py-2 px-2 text-slate-100">{row.guestName || row.guest_name || '—'}</td>
+                <td className="py-2 px-2 text-slate-300">{formatDateDisplay(row.checkIn || row.check_in)}</td>
+                <td className="py-2 px-2 text-slate-300">{formatDateDisplay(row.checkOut || row.check_out)}</td>
+                <td className="py-2 px-2 text-right text-slate-100">{formatCurrency(row.balanceDue || 0)}</td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function VisualizationStatisticsPanel({ rows, metrics, roomOverlays, isInfrastructureCheck }) {
+  const overlayById = useMemo(
+    () => new Map((Array.isArray(roomOverlays) ? roomOverlays : []).map((overlay) => [overlay.id, overlay])),
+    [roomOverlays]
+  )
+  const guestRows = useMemo(
+    () => (Array.isArray(rows) ? rows : []).filter((row) => {
+      const overlay = overlayById.get(row.room)
+      return !(overlay && isInfrastructureCheck(overlay))
+    }),
+    [rows, overlayById, isInfrastructureCheck]
+  )
+  const statusCounts = useMemo(() => {
+    const counts = {}
+    guestRows.forEach((row) => {
+      const status = normalizeRoomStatus(row.status)
+      counts[status] = (counts[status] || 0) + 1
+    })
+    return counts
+  }, [guestRows])
+  const total = guestRows.length || 1
+  return (
+    <div className="flex-1 w-full h-full min-h-0 max-h-full overflow-y-auto overflow-x-hidden rounded-2xl border border-[#1e3a5f] bg-[#020817] p-4 space-y-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="rounded-xl border border-white/10 bg-slate-800/60 p-3"><p className="text-xs text-slate-400">Occupancy</p><p className="text-xl font-bold">{metrics.occupancyRatePct ?? 0}%</p></div>
+        <div className="rounded-xl border border-white/10 bg-slate-800/60 p-3"><p className="text-xs text-slate-400">Occupied</p><p className="text-xl font-bold">{metrics.occupied ?? 0}</p></div>
+        <div className="rounded-xl border border-white/10 bg-slate-800/60 p-3"><p className="text-xs text-slate-400">Available</p><p className="text-xl font-bold">{metrics.available ?? 0}</p></div>
+        <div className="rounded-xl border border-white/10 bg-slate-800/60 p-3"><p className="text-xs text-slate-400">Dirty</p><p className="text-xl font-bold">{metrics.dirty ?? 0}</p></div>
+      </div>
+      <div className="space-y-2">
+        <p className="text-xs uppercase tracking-[0.1em] text-slate-400">Status distribution</p>
+        {Object.entries(statusCounts).sort((a, b) => b[1] - a[1]).map(([status, count]) => {
+          const percent = Math.round((count / total) * 100)
+          return (
+            <div key={status} className="space-y-1">
+              <div className="flex items-center justify-between text-sm text-slate-200">
+                <span>{DISPLAY_STATUS_LABELS[status] || status}</span>
+                <span>{count} ({percent}%)</span>
+              </div>
+              <div className="h-2 rounded bg-slate-700 overflow-hidden">
+                <div className="h-full" style={{ width: `${percent}%`, backgroundColor: MAP_STATUS_FILL_COLORS[status] || '#60a5fa' }} />
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 const ROOM_CONTEXT_CARD_CLASS = 'rounded-2xl border border-[#1e3a5f] bg-[#0b1728] p-4 shadow-[0_0_10px_rgba(0,0,0,0.4)] min-h-[236px]'
 
 function MotelRoomContextCard({ roomData, roomOverlays = [] }) {
@@ -2467,6 +2575,7 @@ function MotelCommandCenter({
   const [selectedTime, setSelectedTime] = useState(null)
   const [isTimelinePlaying, setIsTimelinePlaying] = useState(false)
   const [dataSourceMode, setDataSourceMode] = useState('api')
+  const [roomViewMode, setRoomViewMode] = useState('map')
   const [commandCenterMode, setCommandCenterMode] = useState(initialCommandCenterMode)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [liveTime, setLiveTime] = useState(() => new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false }))
@@ -3485,7 +3594,7 @@ function MotelCommandCenter({
 
         {!commandCenterMode && (
           <CommandCenterHeader
-            appName="Hospitality Command Center"
+            appName="Motel Command Center"
             facilityName={brandName.replace(/\s*-\s*Live Command Center$/i, '').replace(/\s*Command Center$/i, '')}
             facilityType={brandSubtitle}
             mode="Command Center"
@@ -3566,6 +3675,24 @@ function MotelCommandCenter({
           <div className="flex flex-wrap items-start justify-between gap-4">
             <KpiPanels metrics={metrics} statusFilter={statusFilter} onFilterChange={setStatusFilter} />
             <div className="flex flex-wrap items-center gap-3 shrink-0 ml-auto">
+              <div className="inline-flex items-center rounded-lg border border-white/20 bg-slate-800 p-1">
+                {[
+                  { id: 'map', label: 'Map View' },
+                  { id: 'table', label: 'Table View' },
+                  { id: 'stats', label: 'Statistics' },
+                ].map((view) => (
+                  <button
+                    key={view.id}
+                    type="button"
+                    onClick={() => setRoomViewMode(view.id)}
+                    className={`px-3 py-1.5 rounded text-xs font-semibold transition-colors ${
+                      roomViewMode === view.id ? 'bg-teal-600 text-white' : 'text-slate-300 hover:bg-slate-700'
+                    }`}
+                  >
+                    {view.label}
+                  </button>
+                ))}
+              </div>
               <div className="flex items-center gap-2 sm:border-r sm:border-white/20 sm:pr-3">
                 <div className="relative">
                   <input
@@ -3659,15 +3786,15 @@ function MotelCommandCenter({
           </div>
         )}
 
-        <div className={`flex flex-col flex-1 min-h-0 w-full ${commandCenterMode ? 'lg:flex-row gap-3 lg:gap-4 lg:max-w-[1920px] lg:mx-auto lg:self-center' : 'lg:flex-row gap-4'}`}>
+        <div className={`flex flex-col flex-1 min-h-0 w-full overflow-hidden ${commandCenterMode ? 'lg:flex-row gap-3 lg:gap-4 lg:max-w-[1920px] lg:mx-auto lg:self-center' : 'lg:flex-row gap-4'}`}>
         <div
           ref={containerRef}
-          className={`relative rounded-2xl border border-[#1e3a5f] overflow-hidden bg-[#020817] flex-[1_1_70%] min-w-0 min-h-[60vh] flex flex-col shadow-[0_0_10px_rgba(0,0,0,0.4)] ${commandCenterMode ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'}`}
-          onMouseDown={commandCenterMode ? undefined : handleMouseDown}
+          className={`relative rounded-2xl border border-[#1e3a5f] overflow-hidden bg-[#020817] flex-1 w-full h-full min-w-0 min-h-[60vh] flex flex-col shadow-[0_0_10px_rgba(0,0,0,0.4)] ${commandCenterMode ? 'cursor-default' : roomViewMode === 'map' ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'}`}
+          onMouseDown={commandCenterMode || roomViewMode !== 'map' ? undefined : handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
-          onClick={commandCenterMode ? undefined : (e) => { if (!e.target.closest('[data-room-id]')) setSelectedRoom(null) }}
+          onClick={commandCenterMode || roomViewMode !== 'map' ? undefined : (e) => { if (!e.target.closest('[data-room-id]')) setSelectedRoom(null) }}
         >
           {selectedTime && (
             <div className="absolute top-2 left-1/2 -translate-x-1/2 z-20 px-4 py-2 rounded-lg bg-slate-800/95 border border-white/20 text-sm font-medium shadow-lg">
@@ -3675,11 +3802,12 @@ function MotelCommandCenter({
             </div>
           )}
           <div
-            className="w-full flex-1 min-h-0 flex items-center justify-center"
+            className={`w-full flex-1 min-h-0 flex ${roomViewMode === 'map' ? 'items-center justify-center' : 'items-stretch justify-stretch'} overflow-hidden`}
             style={{
-              transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})`,
+              transform: roomViewMode === 'map' ? `translate(${pan.x}px, ${pan.y}px) scale(${scale})` : 'none',
               transformOrigin: 'center center',
-              minHeight: commandCenterMode ? 520 : 620,
+              minHeight: roomViewMode === 'map' ? (commandCenterMode ? 520 : 620) : 0,
+              height: roomViewMode === 'map' ? undefined : '100%',
             }}
           >
             {error ? (
@@ -3689,6 +3817,21 @@ function MotelCommandCenter({
               </div>
             ) : loading && roomData.length === 0 ? (
               <div className="text-slate-400">Loading floor map…</div>
+            ) : roomViewMode === 'table' ? (
+              <RoomStatusTable
+                rows={roomData}
+                roomOverlays={roomOverlays}
+                isInfrastructureCheck={checkInfrastructureOverlay}
+                statusFilter={statusFilter}
+                onSelectRoom={handleRoomClick}
+              />
+            ) : roomViewMode === 'stats' ? (
+              <VisualizationStatisticsPanel
+                rows={roomData}
+                metrics={metrics}
+                roomOverlays={roomOverlays}
+                isInfrastructureCheck={checkInfrastructureOverlay}
+              />
             ) : (
               <div className="w-full h-full min-h-0 flex items-center justify-center">
                 <BlueprintImage
@@ -3711,7 +3854,7 @@ function MotelCommandCenter({
               </div>
             )}
           </div>
-          {!commandCenterMode && (
+          {!commandCenterMode && roomViewMode === 'map' && (
           <div className="absolute bottom-4 right-4 flex flex-col gap-1">
             <button type="button" onClick={() => setScale((s) => Math.min(3, s + 0.2))} className="w-10 h-10 rounded-lg bg-slate-800/90 border border-white/10 flex items-center justify-center text-lg hover:bg-slate-700">+</button>
             <button type="button" onClick={() => setScale((s) => Math.max(0.5, s - 0.2))} className="w-10 h-10 rounded-lg bg-slate-800/90 border border-white/10 flex items-center justify-center text-lg hover:bg-slate-700">−</button>
@@ -3720,7 +3863,7 @@ function MotelCommandCenter({
             </button>
           </div>
           )}
-          {hoveredRoomData && !commandCenterMode && (
+          {hoveredRoomData && !commandCenterMode && roomViewMode === 'map' && (
             <RoomTooltip
               roomData={hoveredRoomData}
               tooltipPos={tooltipPos}
@@ -3730,17 +3873,6 @@ function MotelCommandCenter({
           )}
         </div>
 
-        <div className={`flex flex-col gap-3 shrink-0 order-last ${commandCenterMode ? 'w-full lg:w-64 min-w-0' : 'w-full lg:w-80'}`}>
-          <MotelRoomContextCard roomData={hoveredRoomData} roomOverlays={roomOverlays} />
-          <SidePanelComponent
-            selectedTime={displayTime}
-            roomOverlays={roomOverlays}
-            roomStatusMap={roomStatusMapWithTimeline}
-            roomIdToUnit={roomIdToUnit}
-            highlightAlerts={commandCenterMode}
-            metrics={metrics}
-          />
-        </div>
         </div>
 
         {!commandCenterMode && (

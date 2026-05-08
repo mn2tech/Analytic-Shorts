@@ -55,6 +55,7 @@ import AnalyticsApps from './pages/AnalyticsApps'
 import KumonLearningCommandCenter from './pages/KumonLearningCommandCenter'
 import TrainingModules from './pages/training/TrainingModules'
 import TrainingLesson from './pages/training/TrainingLesson'
+import CrackIt from './pages/CrackIt'
 import AuditQueuePage from './pages/audit/AuditQueuePage'
 import AuditCaseDetailPage from './pages/audit/AuditCaseDetailPage'
 import ResponsibleAiCopilotBanking from './pages/ResponsibleAiCopilotBanking'
@@ -225,6 +226,7 @@ function App() {
               <Route path="/advanced-analytics" element={<AdvancedAnalytics />} />
               <Route path="/training" element={<TrainingModules />} />
               <Route path="/training/:id" element={<TrainingLesson />} />
+              <Route path="/ai-learning/crackit" element={<CrackIt />} />
               <Route path="/apps" element={<AnalyticsApps />} />
               <Route path="/govcon-4pack" element={<GovCon4Pack />} />
               <Route path="/hospital-bed-command-center" element={<HospitalBedCommandCenter />} />

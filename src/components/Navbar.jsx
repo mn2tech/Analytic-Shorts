@@ -87,7 +87,7 @@ function Navbar({
               to="/training"
               className="hidden sm:inline text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium transition-colors dark:text-slate-300 dark:hover:text-white"
             >
-              AI Training
+              AI Learning
             </Link>
             <Link
               to="/help"
