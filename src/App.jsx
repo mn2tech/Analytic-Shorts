@@ -12,6 +12,7 @@ import NM2TECHLandingPage from './pages/NM2TECHLandingPage'
 import HospitalDemoRequestLandingPage from './pages/HospitalDemoRequestLandingPage'
 import Login from './pages/Login'
 import Signup from './pages/Signup'
+import AuthCallback from './pages/AuthCallback'
 import Dashboard from './pages/Dashboard'
 import SharedDashboard from './pages/SharedDashboard'
 import MyDashboards from './pages/MyDashboards'
@@ -132,6 +133,7 @@ function App() {
             {/* Routes WITHOUT layout (no sidebar): login, signup, public share, app view. SharedDashboard stays minimal. */}
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
+            <Route path="/auth/callback" element={<AuthCallback />} />
             <Route path="/dashboard/shared/:shareId" element={<SharedDashboard />} />
             <Route path="/apps/execution-api" element={<AppLayout />}>
               <Route index element={<ExecutionApi />} />

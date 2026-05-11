@@ -11,7 +11,7 @@ function Login() {
   const [loading, setLoading] = useState(false)
   const [searchParams] = useSearchParams()
   const redirectTo = searchParams.get('redirect')
-  const { signIn, user } = useAuth()
+  const { signIn, signInWithGoogle, user } = useAuth()
   const navigate = useNavigate()
 
   const safeRedirect =
@@ -92,6 +92,18 @@ function Login() {
       
       setError(errorMessage)
     } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleGoogleSignIn = async () => {
+    try {
+      setError('')
+      setLoading(true)
+      await signInWithGoogle(safeRedirect)
+    } catch (err) {
+      console.error('Google login error:', err)
+      setError(err?.message || 'Google sign-in failed. Please try again.')
       setLoading(false)
     }
   }
@@ -181,6 +193,28 @@ function Login() {
               )}
             </button>
           </form>
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center" aria-hidden="true">
+              <div className="w-full border-t border-gray-200" />
+            </div>
+            <div className="relative flex justify-center">
+              <span className="bg-white px-2 text-xs uppercase tracking-wide text-gray-500">Or</span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleGoogleSignIn}
+            disabled={loading}
+            className="w-full inline-flex items-center justify-center gap-2 py-2.5 px-4 border border-gray-300 rounded-lg shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                fill="#EA4335"
+                d="M12 10.2v3.9h5.5c-.2 1.3-1.6 3.9-5.5 3.9-3.3 0-6-2.8-6-6.2s2.7-6.2 6-6.2c1.9 0 3.2.8 3.9 1.5l2.6-2.5C16.8 2.9 14.6 2 12 2 6.9 2 2.8 6.3 2.8 11.6S6.9 21.2 12 21.2c6.9 0 9.2-4.9 9.2-7.4 0-.5 0-.9-.1-1.3H12z"
+              />
+            </svg>
+            Continue with Google
+          </button>
           <p className="text-center text-sm text-gray-600">
             Don't have an account?{' '}
             <Link to="/signup" className="font-medium text-blue-600 hover:text-blue-500">

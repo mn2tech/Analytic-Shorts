@@ -178,9 +178,15 @@ export const AuthProvider = ({ children }) => {
     }
   }
 
-  const signInWithGoogle = async () => {
+  const signInWithGoogle = async (nextPath = '/hub') => {
     try {
-      const redirectTo = `${window.location.origin}/feed`
+      const safeNext =
+        typeof nextPath === 'string' &&
+        nextPath.startsWith('/') &&
+        !nextPath.startsWith('//')
+          ? nextPath
+          : '/hub'
+      const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(safeNext)}`
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: { redirectTo },
