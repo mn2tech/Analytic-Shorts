@@ -186,7 +186,14 @@ export const AuthProvider = ({ children }) => {
         !nextPath.startsWith('//')
           ? nextPath
           : '/hub'
-      const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(safeNext)}`
+      // Supabase often returns with ?code=&state= only, dropping other query params.
+      // Persist target so /auth/callback can read it after OAuth.
+      try {
+        sessionStorage.setItem('oauth_post_login_path', safeNext)
+      } catch (_) {
+        // ignore (private mode, etc.)
+      }
+      const redirectTo = `${window.location.origin}/auth/callback`
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: { redirectTo },

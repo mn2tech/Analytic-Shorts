@@ -9,13 +9,38 @@ function AuthCallback() {
   useEffect(() => {
     let isMounted = true
 
-    const next = searchParams.get('next')
-    const safeNext =
-      next && next.startsWith('/') && !next.startsWith('//')
-        ? decodeURIComponent(next)
-        : '/hub'
+    const resolvePostLoginPath = () => {
+      const fromQuery = searchParams.get('next')
+      if (fromQuery) {
+        try {
+          const decoded = decodeURIComponent(fromQuery)
+          if (decoded.startsWith('/') && !decoded.startsWith('//')) return decoded
+        } catch (_) {
+          if (fromQuery.startsWith('/') && !fromQuery.startsWith('//')) return fromQuery
+        }
+      }
+      try {
+        const stored = sessionStorage.getItem('oauth_post_login_path')
+        if (stored && stored.startsWith('/') && !stored.startsWith('//')) {
+          sessionStorage.removeItem('oauth_post_login_path')
+          return stored
+        }
+      } catch (_) {
+        // ignore
+      }
+      return '/hub'
+    }
+
+    const safeNext = resolvePostLoginPath()
 
     const completeOAuth = async () => {
+      const code = searchParams.get('code')
+      if (code) {
+        const { error } = await supabase.auth.exchangeCodeForSession(window.location.href)
+        if (error) {
+          console.error('OAuth code exchange failed:', error)
+        }
+      }
       const { data } = await supabase.auth.getSession()
       if (data?.session && isMounted) {
         navigate(safeNext, { replace: true })

@@ -189,7 +189,7 @@ export default function KumonLearningCommandCenter() {
       }
       setInsightsLoading(true)
       try {
-        const response = await apiClient.post('/api/ai/chat', {
+        const response = await apiClient.post('/api/ai/app-chat', {
           messages: [{ role: 'user', content: buildInsightPrompt() }],
         })
         const lines = String(response?.data?.reply || '')

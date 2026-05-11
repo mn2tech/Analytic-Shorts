@@ -57,6 +57,8 @@ const v1Routes = require('./routes/v1')
 const trainingRoutes = require('./routes/training')
 const mlRoutes = require('./routes/ml')
 const crackitRoutes = require('./routes/crackit.routes')
+const contractorPortalRoutes = require('./routes/contractorPortal')
+const { postContractorAiChat } = require('./routes/aiChat')
 const accessLogger = require('./middleware/accessLogger')
 
 const app = express()
@@ -147,6 +149,14 @@ app.use(
     windowMs: 60 * 60 * 1000,
     limit: 120,
     message: 'Too many AI requests. Please wait a bit and try again.',
+  })
+)
+app.use(
+  '/api/contractor-portal',
+  jsonRateLimit({
+    windowMs: 60 * 60 * 1000,
+    limit: 80,
+    message: 'Too many contractor portal requests. Please wait and try again.',
   })
 )
 app.use(
@@ -315,6 +325,27 @@ const riskAnalysisHandler = (req, res, next) => {
 }
 app.post('/api/ai/risk-analysis', riskAnalysisHandler)
 app.post('/api/ai/risk-analysis/', riskAnalysisHandler)
+// Contractor portal HR chat (Anthropic + requireAuth). Wrapped so async rejections always return JSON.
+app.post('/api/ai/chat', requireAuth, (req, res) => {
+  Promise.resolve(postContractorAiChat(req, res)).catch((err) => {
+    if (res.headersSent) return
+    console.error('[api/ai/chat] unhandled', err)
+    res.status(500).json({
+      error: String(err?.message || err || 'Unexpected server error'),
+      code: 'AI_CHAT_UNHANDLED',
+    })
+  })
+})
+app.post('/api/ai/chat/', requireAuth, (req, res) => {
+  Promise.resolve(postContractorAiChat(req, res)).catch((err) => {
+    if (res.headersSent) return
+    console.error('[api/ai/chat] unhandled', err)
+    res.status(500).json({
+      error: String(err?.message || err || 'Unexpected server error'),
+      code: 'AI_CHAT_UNHANDLED',
+    })
+  })
+})
 app.use('/api/ai', aiRiskAnalysisRoutes)
 app.use('/api/ai', aiDashboardSpecRoutes)
 app.use('/api/ai', aiResponsibleCopilotRoutes)
@@ -331,6 +362,7 @@ app.use('/api', careersRoutes)
 app.use('/api', followRoutes)
 app.use('/api', postsRoutes)
 app.use('/api/live', liveRoutes)
+app.use('/api/contractor-portal', contractorPortalRoutes)
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -370,6 +402,7 @@ app.use((req, res) => {
       'GET /api/ai/dataset-data',
       'POST /api/ai/dashboard-spec',
       'POST /api/ai/risk-analysis',
+      'POST /api/ai/chat',
       'GET /api/training/modules',
       'GET /api/training/modules/:id',
       'GET /api/training/dataset/:name',

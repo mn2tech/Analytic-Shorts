@@ -6,6 +6,8 @@
     "dev": "vite",
     "dev:3010": "vite --port 3010",
     "dev:5173": "vite --port 5173",
+    "dev:contractor-portal": "npm run dev --prefix contractor-portal",
+    "dev:contractor-all": "concurrently -n portal,backend -c green,blue \"npm run dev --prefix contractor-portal\" \"npm run server\"",
     "build": "vite build",
     "preview": "vite preview",
     "server": "node backend/server.js",

@@ -24,7 +24,7 @@ router.get('/', (req, res) => {
       'GET /api/ai/dataset-schema?dataset=<id>',
       'GET /api/ai/dataset-data?dataset=<id>',
       'POST /api/ai/dataset-chat',
-      'POST /api/ai/chat',
+      'POST /api/ai/app-chat',
       'POST /api/ai/dashboard-spec',
       'POST /api/ai/risk-analysis'
     ]
@@ -39,8 +39,8 @@ const APP_CHAT_SYSTEM = `You are a helpful assistant for NM2TECH Analytics Short
 - General: how to get started, upload data, create charts, share to the feed, go live on a post, or find help.
 Keep answers concise and friendly. If you don't know something, suggest visiting the Help page or exploring the app. Do not make up feature names; stick to what exists (Feed, Studio, Careers, Profile, Messages, Dashboards).`
 
-// POST /api/ai/chat - app-wide assistant (chatbot widget)
-router.post('/chat', async (req, res) => {
+// POST /api/ai/app-chat - app-wide assistant (chatbot widget; OpenAI). Contractor HR uses POST /api/ai/chat (Anthropic + requireAuth).
+router.post('/app-chat', async (req, res) => {
   try {
     if (!openai) {
       return res.status(503).json({ error: 'Chat is not available right now.', message: 'AI is not configured.' })
@@ -71,7 +71,7 @@ router.post('/chat', async (req, res) => {
     if (!reply) return res.status(502).json({ error: 'No reply from assistant' })
     res.json({ reply })
   } catch (err) {
-    console.error('POST /api/ai/chat', err)
+    console.error('POST /api/ai/app-chat', err)
     res.status(500).json({ error: err.message || 'Chat failed' })
   }
 })

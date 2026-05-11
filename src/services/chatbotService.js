@@ -5,6 +5,6 @@ import apiClient from '../config/api'
  * Returns { reply: string }
  */
 export async function sendChatMessage(messages) {
-  const { data } = await apiClient.post('/api/ai/chat', { messages })
+  const { data } = await apiClient.post('/api/ai/app-chat', { messages })
   return data
 }
