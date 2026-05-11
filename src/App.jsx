@@ -72,6 +72,7 @@ import HealthcareLayout from './layouts/HealthcareLayout'
 import CommandCenterLayout from './layouts/CommandCenterLayout'
 import DataCenterCommandCenter from './pages/DataCenterCommandCenter'
 import MarketingLanding from './pages/MarketingLanding'
+import PortalRoutes from './portal/PortalRoutes'
 
 /** Redirect /studio to /studio/chat, preserving search (e.g. ?open=:id). */
 function StudioIndexRedirect() {
@@ -134,6 +135,7 @@ function App() {
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
             <Route path="/auth/callback" element={<AuthCallback />} />
+            <Route path="/portal/*" element={<PortalRoutes />} />
             <Route path="/dashboard/shared/:shareId" element={<SharedDashboard />} />
             <Route path="/apps/execution-api" element={<AppLayout />}>
               <Route index element={<ExecutionApi />} />

@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
+    "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.85.0",
     "axios": "^1.6.2",
     "file-saver": "^2.0.5",

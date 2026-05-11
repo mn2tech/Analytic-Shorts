@@ -1,0 +1,22 @@
+version: 1
+# NOTE: This repo is a monorepo. In the Amplify Console, set the app root to `contractor-portal`
+# (Amplify will set AMPLIFY_MONOREPO_APP_ROOT automatically) so this build spec applies to the contractor portal.
+applications:
+  - appRoot: contractor-portal
+    frontend:
+      buildPath: /
+      phases:
+        preBuild:
+          commands:
+            - cd contractor-portal
+            - npm ci
+        build:
+          commands:
+            - npm run build
+      artifacts:
+        baseDirectory: contractor-portal/dist
+        files:
+          - '**/*'
+      cache:
+        paths:
+          - contractor-portal/node_modules/**/*
