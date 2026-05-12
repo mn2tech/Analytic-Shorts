@@ -352,6 +352,42 @@ function formatReceiptDateTime(value) {
   })
 }
 
+/** Gateway Inn standard times on guest receipt (stay lines, not payment timestamps). */
+const GATEWAY_RECEIPT_CHECK_IN_HOUR = 15
+const GATEWAY_RECEIPT_CHECK_IN_MINUTE = 0
+const GATEWAY_RECEIPT_CHECK_OUT_HOUR = 11
+const GATEWAY_RECEIPT_CHECK_OUT_MINUTE = 0
+
+function formatReceiptStayDateTime(value, hour, minute) {
+  if (!value) return '—'
+  const text = String(value).trim()
+  let d = null
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    const [y, m, day] = text.split('-').map(Number)
+    d = new Date(y, m - 1, day, hour, minute, 0, 0)
+  } else {
+    const parsed = new Date(value)
+    if (Number.isNaN(parsed.getTime())) return String(value)
+    d = new Date(
+      parsed.getFullYear(),
+      parsed.getMonth(),
+      parsed.getDate(),
+      hour,
+      minute,
+      0,
+      0
+    )
+  }
+  if (!d || Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleString([], {
+    month: '2-digit',
+    day: '2-digit',
+    year: '2-digit',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
+
 function buildGatewayReceiptHtml({
   roomDisplay,
   guestName,
@@ -440,8 +476,8 @@ function buildGatewayReceiptHtml({
         </div>
 
         <div class="stay-grid">
-          <div>Check-in: ${formatReceiptDateTime(checkInDate)}</div>
-          <div>Check-out: ${formatReceiptDateTime(checkOutDate)}</div>
+          <div>Check-in: ${formatReceiptStayDateTime(checkInDate, GATEWAY_RECEIPT_CHECK_IN_HOUR, GATEWAY_RECEIPT_CHECK_IN_MINUTE)}</div>
+          <div>Check-out: ${formatReceiptStayDateTime(checkOutDate, GATEWAY_RECEIPT_CHECK_OUT_HOUR, GATEWAY_RECEIPT_CHECK_OUT_MINUTE)}</div>
           <div>Nights: ${nights}</div>
           <div>Clerk: ${clerkName}</div>
         </div>
@@ -476,7 +512,7 @@ function buildGatewayReceiptHtml({
         </div>
         ${paymentHistoryHtml}
 
-        <p class="center">Check-in time: 3:00 pm &nbsp;&nbsp; Check-out time: 11:00 am</p>
+        <p class="center">Check-in time: 3:00 PM &nbsp;&nbsp; Check-out time: 11:00 AM</p>
         ${noteHtml}
 
         <p class="guest-sign">Guest Signature: <span class="line"></span></p>
