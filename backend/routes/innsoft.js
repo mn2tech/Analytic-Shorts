@@ -9,6 +9,10 @@ const { buildPreviewModel, persistInnsoftImport } = require('../../src/utils/inn
 
 const router = express.Router()
 
+router.get('/health', (req, res) => {
+  res.json({ status: 'ok', service: 'innsoft-import' })
+})
+
 // DB check constraint on innsoft_sync_runs.status does not allow literal "started"
 // in this environment; use an allowed interim status + marker until completion.
 const PENDING_STATUS = 'failed'
