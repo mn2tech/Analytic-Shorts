@@ -1,7 +1,29 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useNotification } from '../contexts/NotificationContext'
+import apiClient from '../config/api'
 import { parseUploadedInnsoftFile } from '../utils/innsoft/importCore'
+
+function importErrorMessage(error) {
+  if (error?.code === 'ERR_NETWORK' || error?.message?.includes('Network Error')) {
+    if (import.meta.env.PROD && !import.meta.env.VITE_API_URL) {
+      return 'Cannot reach the import API. Set VITE_API_URL in Amplify and redeploy the frontend.'
+    }
+    return 'Cannot reach the import API. Check that the backend is running and VITE_API_URL is correct.'
+  }
+  if (error?.code === 'ECONNABORTED' || error?.message?.includes('timeout')) {
+    return 'Import timed out. Try again with a smaller backup or check the backend logs.'
+  }
+  if (error?.response?.status === 404) {
+    return 'Import API was not found on the backend. Redeploy the backend with the InnSoft routes enabled.'
+  }
+  return (
+    error?.response?.data?.message ||
+    error?.response?.data?.error ||
+    error?.message ||
+    'Unknown error'
+  )
+}
 
 export default function InnSoftImporter() {
   const [parsing, setParsing] = useState(false)
@@ -51,25 +73,8 @@ export default function InnSoftImporter() {
       formData.append('file', selectedFile)
       formData.append('snapshot_mode', snapshotMode ? 'true' : 'false')
 
-      const response = await fetch('/api/innsoft/auto-import', {
-        method: 'POST',
-        body: formData,
-      })
-      const rawBody = await response.text()
-      let payload = {}
-      try {
-        payload = rawBody ? JSON.parse(rawBody) : {}
-      } catch {
-        payload = {}
-      }
-      if (!response.ok) {
-        throw new Error(
-          payload?.message ||
-          payload?.error ||
-          (rawBody && rawBody.slice(0, 240)) ||
-          `InnSoft auto-import request failed (HTTP ${response.status}).`
-        )
-      }
+      const response = await apiClient.post('/api/innsoft/auto-import', formData)
+      const payload = response.data || {}
 
       const summary = payload?.result || {}
       setLastResult({
@@ -87,7 +92,7 @@ export default function InnSoftImporter() {
       }
       navigate('/motel-command-center')
     } catch (error) {
-      notify(`Import to Supabase failed: ${error?.message || 'Unknown error'}`, 'error')
+      notify(`Import to Supabase failed: ${importErrorMessage(error)}`, 'error')
     } finally {
       setImporting(false)
     }
@@ -120,7 +125,7 @@ export default function InnSoftImporter() {
             />
           </label>
           <span className="text-xs text-slate-400">
-            {parsing ? 'Parsing file...' : importing ? 'Importing and syncing...' : 'Accepted: .ZIP backup, .DTA files'}
+            {parsing ? 'Parsing file...' : 'Accepted: .ZIP backup, .DTA files'}
           </span>
         </div>
 
@@ -144,7 +149,9 @@ export default function InnSoftImporter() {
               />
               Snapshot mode (testing): reset imported occupied/reserved rooms without guest rows to available
             </label>
-            <span className="text-xs text-slate-400">Imports rooms, guests, and reservations, then redirects.</span>
+            <span className="text-xs text-slate-400">
+              {importing ? 'Importing and syncing with Supabase...' : 'Imports rooms, guests, and reservations, then redirects.'}
+            </span>
           </div>
         )}
 
