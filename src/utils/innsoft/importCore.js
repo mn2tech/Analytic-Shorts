@@ -368,6 +368,7 @@ async function persistInnsoftImport(previewData, supabaseClient, options = {}) {
         status: 'checked_in',
         rate_per_night: parseRate(guest.rate),
         source: guest.source || 'innsoft_import',
+        non_refundable: false,
       }
     })
     .filter(Boolean)
